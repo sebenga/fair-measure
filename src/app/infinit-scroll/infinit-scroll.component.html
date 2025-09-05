@@ -1,0 +1,45 @@
+<app-fb-header></app-fb-header>
+<ion-content>
+  <div class="fb-layout">
+    <div class="fb-left">
+      <app-user-profile></app-user-profile>
+    </div>
+    <div class="fb-center">
+      <ion-list>
+        @if (competitions.length === 0) {
+          <ion-item>
+            <ion-label>No competitions available.</ion-label>
+          </ion-item>
+        } @else {
+          @for (competition of competitions; track competition; let index = $index) {
+            <ion-card class="fb-card">
+              <ion-item lines="none">
+                <ion-avatar slot="start" class="fb-avatar">
+                  <img [src]="competition.image || 'https://via.placeholder.com/80?text=Competition'" alt="avatar" />
+                </ion-avatar>
+                <ion-label class="fb-title">
+                  <span class="fb-name">{{ competition.name || competition.title || 'Competition ' + (index + 1) }}</span>
+                  <span class="fb-date">Just now</span>
+                </ion-label>
+              </ion-item>
+              <div class="fb-content">
+                <p>{{ competition.description || 'This is a sample competition description.' }}</p>
+              </div>
+              <div class="fb-actions">
+                <ion-button fill="clear" size="small" color="primary"><ion-icon name="thumbs-up-outline"></ion-icon> Like</ion-button>
+                <ion-button fill="clear" size="small" color="primary"><ion-icon name="chatbubble-outline"></ion-icon> Comment</ion-button>
+                <ion-button fill="clear" size="small" color="primary"><ion-icon name="share-outline"></ion-icon> Share</ion-button>
+              </div>
+            </ion-card>
+          }
+        }
+      </ion-list>
+      <ion-infinite-scroll (ionInfinite)="onIonInfinite($event)">
+        <ion-infinite-scroll-content></ion-infinite-scroll-content>
+      </ion-infinite-scroll>
+    </div>
+    <div class="fb-right">
+      <app-rightbar></app-rightbar>
+    </div>
+  </div>
+</ion-content>

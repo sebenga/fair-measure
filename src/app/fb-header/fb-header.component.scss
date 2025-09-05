@@ -1,0 +1,53 @@
+.fb-header {
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+.fb-header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.fb-logo {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  color: #1877f2;
+  font-weight: bold;
+  font-size: 1.5rem;
+  margin-right: 16px;
+}
+.fb-search {
+  flex: 1;
+  max-width: 300px;
+}
+.fb-tabs {
+  display: flex;
+  gap: 8px;
+}
+.fb-tab {
+  display: flex;
+  align-items: center;
+  font-size: 1rem;
+  color: #444;
+}
+.tab-label {
+  margin-left: 4px;
+  display: none;
+}
+@media (min-width: 700px) {
+  .tab-label {
+    display: inline;
+  }
+  .fb-search {
+    max-width: 400px;
+  }
+}
+@media (max-width: 699px) {
+  .fb-header-content {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .fb-tabs {
+    justify-content: space-between;
+  }
+}

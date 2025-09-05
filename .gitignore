@@ -68,3 +68,16 @@ testem.log
 # System files
 .DS_Store
 Thumbs.db
+
+# VS Code
+.vscode/
+
+# Mac system files
+.DS_Store
+
+# Environment files
+.env
+
+# Capacitor
+android/
+ios/
