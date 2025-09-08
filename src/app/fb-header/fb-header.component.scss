@@ -1,12 +1,15 @@
 .fb-header {
   background: #fff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  /* Removed box-shadow for a cleaner look */
 }
-.fb-header-content {
+// ...existing code...
+.fb-header-content,
+.merged-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 24px;
+  width: 100%;
 }
 .fb-logo {
   font-family: 'Segoe UI', Arial, sans-serif;
@@ -18,17 +21,51 @@
 .fb-search {
   flex: 1;
   max-width: 300px;
-}
-.fb-tabs {
-  display: flex;
-  gap: 8px;
-}
-.fb-tab {
-  display: flex;
-  align-items: center;
-  font-size: 1rem;
-  color: #444;
-}
+    border: none !important;
+    outline: none !important;
+    background: #f0f2f5;
+    border-radius: 24px;
+    padding: 0 16px;
+    height: 40px;
+    font-size: 1rem;
+    box-shadow: 0 1px 2px rgba(60,72,88,0.08);
+    transition: box-shadow 0.2s;
+  }
+  .fb-search .searchbar-input {
+    background: transparent !important;
+    border: none !important;
+    font-size: 1rem;
+    color: #050505;
+  }
+  .fb-search .searchbar-search-icon {
+    color: #65676b;
+  }
+  .fb-tabs {
+    display: flex;
+    gap: 8px;
+    margin: 0 16px;
+  }
+  .fb-tab {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    color: #444;
+    gap: 6px;
+    padding: 0 8px;
+  }
+  .tab-svg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0;
+  }
+  .tab-label {
+    margin-left: 4px;
+    display: inline;
+    vertical-align: middle;
+  }
 .tab-label {
   margin-left: 4px;
   display: none;
@@ -49,5 +86,6 @@
   }
   .fb-tabs {
     justify-content: space-between;
+    margin-left: 16px;
   }
 }

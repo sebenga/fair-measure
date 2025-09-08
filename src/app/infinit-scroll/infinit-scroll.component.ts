@@ -15,19 +15,20 @@ import {
 } from '@ionic/angular/standalone';
 import { UserProfileComponent } from '../user-profile/user-profile.component';
 import { RightbarComponent } from '../rightbar/rightbar.component';
-import { FbHeaderComponent } from '../fb-header/fb-header.component';
+// ...existing code...
 
 @Component({
   selector: 'app-infinit-scroll',
   templateUrl: './infinit-scroll.component.html',
   styleUrls: ['./infinit-scroll.component.scss'],
-  imports: [IonAvatar, IonContent, IonInfiniteScroll, IonInfiniteScrollContent, IonItem, IonLabel, IonList, IonCard, IonButton, IonIcon, UserProfileComponent, RightbarComponent, FbHeaderComponent],
+  imports: [IonAvatar, IonContent, IonInfiniteScroll, IonInfiniteScrollContent, IonItem, IonLabel, IonList, IonCard, IonButton, IonIcon, UserProfileComponent, RightbarComponent],
 })
 
 export class InfinitScrollComponent implements OnInit {
   competitions: any[] = [];
   page: number = 1;
   pageSize: number = 20;
+  maxCompetitions: number = 100; // Set this to your desired maximum
 
   constructor(private apiService: ApiService) {}
 
@@ -42,11 +43,18 @@ export class InfinitScrollComponent implements OnInit {
     });
   }
 
-  onIonInfinite(event: InfiniteScrollCustomEvent) {
-    this.page++;
-    this.loadCompetitions();
+  onIonInfinite(event: any) {
+    // Simulate loading more competitions
     setTimeout(() => {
+      // Add more competitions to your array here
+      // this.loadMoreCompetitions();
+      
       event.target.complete();
-    }, 500);
+      
+      // Disable infinite scroll if no more data
+      if (this.competitions.length >= this.maxCompetitions) {
+        event.target.disabled = true;
+      }
+    }, 1000);
   }
 }

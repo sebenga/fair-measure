@@ -1,14 +1,15 @@
 import { Component, OnInit } from '@angular/core';
 import { ApiService } from '../api.service';
 import { createSampleCompetitions } from '../create-sample-competitions';
-import { IonHeader, IonToolbar, IonTitle, IonContent } from '@ionic/angular/standalone';
+import { IonContent } from '@ionic/angular/standalone';
 import { InfinitScrollComponent } from '../infinit-scroll/infinit-scroll.component';
+import { FbHeaderComponent } from '../fb-header/fb-header.component';
 
 @Component({
   selector: 'app-tab1',
   templateUrl: 'tab1.page.html',
   styleUrls: ['tab1.page.scss'],
-  imports: [IonHeader, IonToolbar, IonTitle, IonContent, InfinitScrollComponent],
+  imports: [IonContent, InfinitScrollComponent, FbHeaderComponent],
 })
 export class Tab1Page implements OnInit {
   constructor(private apiService: ApiService) {}
