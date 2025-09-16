@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -8,9 +9,31 @@ export class ApiService {
 
   constructor(private http: HttpClient) {}
 
+  private handleError<T>(operation = 'operation', result?: T) {
+    return (error: any): Observable<T> => {
+      console.error(`${operation} failed:`, error);
+      // Return empty result to let the app continue functioning
+      return of(result as T);
+    };
+  }
+
+  private generateMockCompetitions() {
+    const mockCompetitions = [];
+    for (let i = 1; i <= 20; i++) {
+      mockCompetitions.push({
+        id: i,
+        name: `Sample Competition ${i}`,
+        description: `This is a sample competition description for competition ${i}. Join now to compete with others!`,
+        image: `https://picsum.photos/80/80?random=${i}`
+      });
+    }
+    return mockCompetitions;
+  }
   // Competitions
   getCompetitions(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/competitions/`);
+    return this.http.get(`${this.baseUrl}/competitions/`).pipe(
+      catchError(this.handleError('getCompetitions', this.generateMockCompetitions()))
+    );
   }
   getCompetition(id: number): Observable<any> {
     return this.http.get(`${this.baseUrl}/competitions/${id}`);

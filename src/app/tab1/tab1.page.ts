@@ -1,6 +1,5 @@
 import { Component, OnInit } from '@angular/core';
 import { ApiService } from '../api.service';
-import { createSampleCompetitions } from '../create-sample-competitions';
 import { IonContent } from '@ionic/angular/standalone';
 import { InfinitScrollComponent } from '../infinit-scroll/infinit-scroll.component';
 import { FbHeaderComponent } from '../fb-header/fb-header.component';
@@ -15,6 +14,7 @@ export class Tab1Page implements OnInit {
   constructor(private apiService: ApiService) {}
 
   async ngOnInit() {
-    await createSampleCompetitions(this.apiService);
+    // Removed automatic sample creation to prevent API errors
+    console.log('Tab1 page initialized');
   }
 }
