@@ -35,17 +35,7 @@ export class ApiService {
   }
   // Competitions
   getCompetitions(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/competitions/`, { responseType: 'text' }).pipe(
-      map(response => {
-        if (!response || response.trim() === '') {
-          return [];
-        }
-        try {
-          return JSON.parse(response);
-        } catch (error) {
-          throw new SyntaxError('Invalid JSON response from server');
-        }
-      }),
+    return this.http.get(`${this.baseUrl}/competitions/`).pipe(
       catchError(this.handleError('getCompetitions', this.generateMockCompetitions()))
     );
   }
