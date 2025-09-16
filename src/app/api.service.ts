@@ -11,7 +11,11 @@ export class ApiService {
 
   private handleError<T>(operation = 'operation', result?: T) {
     return (error: any): Observable<T> => {
-      console.error(`${operation} failed:`, error);
+      if (error instanceof SyntaxError) {
+        console.error(`${operation} failed: Invalid JSON response`, error);
+      } else {
+        console.error(`${operation} failed:`, error);
+      }
       // Return empty result to let the app continue functioning
       return of(result as T);
     };
@@ -31,7 +35,17 @@ export class ApiService {
   }
   // Competitions
   getCompetitions(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/competitions/`).pipe(
+    return this.http.get(`${this.baseUrl}/competitions/`, { responseType: 'text' }).pipe(
+      map(response => {
+        if (!response || response.trim() === '') {
+          return [];
+        }
+        try {
+          return JSON.parse(response);
+        } catch (error) {
+          throw new SyntaxError('Invalid JSON response from server');
+        }
+      }),
       catchError(this.handleError('getCompetitions', this.generateMockCompetitions()))
     );
   }
