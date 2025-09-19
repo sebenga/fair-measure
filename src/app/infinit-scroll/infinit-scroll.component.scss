@@ -33,26 +33,229 @@
   padding: 0 8px;
 }
 
-.create-competition-btn {
-  --background: #1877f2;
-  --color: white;
-  --border-radius: 8px;
+/* Sporty Create Button */
+.sporty-create-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  background: linear-gradient(135deg, #ff6b35 0%, #ff8800 50%, #ffaa00 100%);
+  border-radius: 16px;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: 
+    0 8px 32px rgba(255, 107, 53, 0.4),
+    0 4px 16px rgba(255, 136, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.sporty-create-btn:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 
+    0 12px 40px rgba(255, 107, 53, 0.5),
+    0 6px 20px rgba(255, 136, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.sporty-create-btn:active {
+  transform: translateY(-1px) scale(1.01);
+  transition: all 0.1s ease;
+}
+
+/* Background Effects */
+.btn-background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  border-radius: 16px;
+}
+
+.energy-pulse {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 30% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
+  animation: energyPulse 3s ease-in-out infinite;
+}
+
+.energy-pulse.pulse-2 {
+  background: radial-gradient(circle at 70% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
+  animation-delay: 1.5s;
+}
+
+@keyframes energyPulse {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.05); }
+}
+
+/* Button Content */
+.btn-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 20px;
+  z-index: 2;
+}
+
+.logo-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
   height: 48px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.sporty-create-btn:hover .logo-section {
+  background: rgba(255, 255, 255, 0.2);
+  transform: rotate(5deg) scale(1.1);
+}
+
+.btn-logo {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  transition: all 0.3s ease;
+}
+
+.sporty-create-btn:hover .btn-logo {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+}
+
+.text-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 16px;
+}
+
+.main-text {
+  font-size: 18px;
+  font-weight: 800;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  letter-spacing: 1px;
+  line-height: 1;
+  margin-bottom: 2px;
+  transition: all 0.3s ease;
+}
+
+.sub-text {
+  font-size: 12px;
   font-weight: 600;
-  font-size: 1rem;
-  box-shadow: 0 2px 8px rgba(24, 119, 242, 0.3);
-  transition: all 0.2s ease;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
-.create-competition-btn:hover {
-  --background: #166fe5;
+.sporty-create-btn:hover .main-text {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(24, 119, 242, 0.4);
+  text-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
 }
 
-.create-competition-btn ion-icon {
-  font-size: 20px;
-  margin-right: 8px;
+.action-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: white;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sporty-create-btn:hover .action-icon {
+  background: rgba(255, 255, 255, 0.3);
+  transform: rotate(90deg) scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Sport Elements */
+.sport-elements {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  z-index: 1;
+}
+
+.trophy-icon,
+.fire-icon {
+  font-size: 16px;
+  opacity: 0.7;
+  animation: float 2s ease-in-out infinite;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+.fire-icon {
+  animation-delay: 1s;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-3px); }
+}
+
+/* Responsive Design */
+@media (max-width: 767px) {
+  .sporty-create-btn {
+    height: 56px;
+  }
+  
+  .btn-content {
+    padding: 0 16px;
+  }
+  
+  .logo-section {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .btn-logo {
+    width: 24px;
+    height: 18px;
+  }
+  
+  .main-text {
+    font-size: 16px;
+  }
+  
+  .sub-text {
+    font-size: 11px;
+  }
+  
+  .action-icon {
+    width: 36px;
+    height: 36px;
+  }
+  
+  .sport-elements {
+    top: 6px;
+    right: 6px;
+  }
+  
+  .trophy-icon,
+  .fire-icon {
+    font-size: 14px;
+  }
 }
 
 /* Right sidebar */

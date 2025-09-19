@@ -6,15 +6,39 @@
     </div>
     <div class="fb-center">
       <div class="create-competition-section">
-        <ion-button 
-          expand="block" 
-          color="primary" 
-          routerLink="/create-competition"
-          class="create-competition-btn"
-        >
-          <ion-icon name="add-outline" slot="start"></ion-icon>
-          Create New Competition
-        </ion-button>
+        <div class="sporty-create-btn" routerLink="/create-competition">
+          <div class="btn-background">
+            <div class="energy-pulse"></div>
+            <div class="energy-pulse pulse-2"></div>
+          </div>
+          <div class="btn-content">
+            <div class="logo-section">
+              <svg width="32" height="24" viewBox="0 0 48 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="btn-logo">
+                <!-- Eye shapes -->
+                <ellipse cx="16" cy="16" rx="7" ry="9" fill="#fff" stroke="#fff" stroke-width="2" />
+                <ellipse cx="32" cy="16" rx="7" ry="9" fill="#fff" stroke="#fff" stroke-width="2" />
+                <!-- Pupils -->
+                <circle cx="16" cy="16" r="3" fill="#ff8800" />
+                <circle cx="32" cy="16" r="3" fill="#ff8800" />
+                <!-- Monitoring arc -->
+                <path d="M8 10 Q24 2 40 10" stroke="#fff" stroke-width="2" fill="none" />
+              </svg>
+            </div>
+            <div class="text-section">
+              <span class="main-text">CREATE COMPETITION</span>
+              <span class="sub-text">Start Your Tournament</span>
+            </div>
+            <div class="action-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+              </svg>
+            </div>
+          </div>
+          <div class="sport-elements">
+            <div class="trophy-icon">🏆</div>
+            <div class="fire-icon">🔥</div>
+          </div>
+        </div>
       </div>
       <ion-list>
         @if (competitions.length === 0) {
