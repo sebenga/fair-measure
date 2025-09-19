@@ -27,6 +27,34 @@
   position: relative;
 }
 
+/* Create Competition Section */
+.create-competition-section {
+  margin-bottom: 20px;
+  padding: 0 8px;
+}
+
+.create-competition-btn {
+  --background: #1877f2;
+  --color: white;
+  --border-radius: 8px;
+  height: 48px;
+  font-weight: 600;
+  font-size: 1rem;
+  box-shadow: 0 2px 8px rgba(24, 119, 242, 0.3);
+  transition: all 0.2s ease;
+}
+
+.create-competition-btn:hover {
+  --background: #166fe5;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(24, 119, 242, 0.4);
+}
+
+.create-competition-btn ion-icon {
+  font-size: 20px;
+  margin-right: 8px;
+}
+
 /* Right sidebar */
 .fb-right {
   flex: 0 0 280px;

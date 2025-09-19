@@ -5,6 +5,17 @@
       <app-user-profile></app-user-profile>
     </div>
     <div class="fb-center">
+      <div class="create-competition-section">
+        <ion-button 
+          expand="block" 
+          color="primary" 
+          routerLink="/create-competition"
+          class="create-competition-btn"
+        >
+          <ion-icon name="add-outline" slot="start"></ion-icon>
+          Create New Competition
+        </ion-button>
+      </div>
       <ion-list>
         @if (competitions.length === 0) {
           <ion-item>

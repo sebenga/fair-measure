@@ -1,0 +1,171 @@
+.create-competition-content {
+  --background: #f0f2f5;
+  --padding-start: 16px;
+  --padding-end: 16px;
+  --padding-top: 16px;
+  --padding-bottom: 16px;
+}
+
+.competition-form {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.form-card {
+  margin-bottom: 16px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: white;
+}
+
+.form-card ion-card-header {
+  padding-bottom: 8px;
+}
+
+.form-card ion-card-title {
+  color: #1877f2;
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+
+.form-card ion-card-subtitle {
+  color: #65676b;
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+
+.form-card ion-item {
+  --background: transparent;
+  --border-color: #e4e6ea;
+  --padding-start: 0;
+  --padding-end: 0;
+  margin-bottom: 12px;
+}
+
+.form-card ion-item:last-child {
+  margin-bottom: 0;
+}
+
+.form-card ion-input,
+.form-card ion-textarea,
+.form-card ion-select {
+  --background: #f8f9fa;
+  --border-radius: 8px;
+  --padding-start: 12px;
+  --padding-end: 12px;
+  --padding-top: 8px;
+  --padding-bottom: 8px;
+}
+
+.form-card ion-input:focus-within,
+.form-card ion-textarea:focus-within,
+.form-card ion-select:focus-within {
+  --background: white;
+  --border-color: #1877f2;
+  --border-width: 2px;
+}
+
+.rule-item,
+.scoring-item {
+  border: 1px solid #e4e6ea;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  background: #f8f9fa;
+  position: relative;
+}
+
+.rule-item:last-of-type,
+.scoring-item:last-of-type {
+  margin-bottom: 16px;
+}
+
+.remove-btn {
+  --color: #e41e3f;
+  --background: transparent;
+  margin-top: 8px;
+  font-size: 0.9rem;
+}
+
+.add-btn {
+  --color: #1877f2;
+  --border-color: #1877f2;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.form-actions {
+  margin-top: 24px;
+  padding: 16px 0;
+}
+
+.form-actions ion-button {
+  margin-bottom: 12px;
+  height: 48px;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.form-actions ion-button[type="submit"] {
+  --background: #1877f2;
+  --color: white;
+  --border-radius: 8px;
+}
+
+.form-actions ion-button[fill="outline"] {
+  --color: #65676b;
+  --border-color: #ccd0d5;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .create-competition-content {
+    --padding-start: 8px;
+    --padding-end: 8px;
+  }
+  
+  .form-card {
+    margin-bottom: 12px;
+  }
+  
+  .rule-item,
+  .scoring-item {
+    padding: 12px;
+  }
+}
+
+/* Loading state */
+ion-button[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Validation styles */
+.form-card ion-item.ion-invalid {
+  --border-color: #e41e3f;
+}
+
+.form-card ion-item.ion-valid {
+  --border-color: #42b883;
+}
+
+/* Checkbox styling */
+ion-checkbox {
+  --size: 20px;
+  --checkbox-background-checked: #1877f2;
+  --border-color-checked: #1877f2;
+}
+
+/* Header styling */
+ion-header ion-toolbar {
+  --background: #1877f2;
+  --color: white;
+}
+
+ion-header ion-title {
+  font-weight: 600;
+}
+
+ion-back-button {
+  --color: white;
+}

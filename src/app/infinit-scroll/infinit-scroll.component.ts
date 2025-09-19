@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { ApiService } from '../api.service';
+import { RouterModule } from '@angular/router';
 import {
   InfiniteScrollCustomEvent,
   IonAvatar,
@@ -13,6 +14,8 @@ import {
   IonButton,
   IonIcon,
 } from '@ionic/angular/standalone';
+import { addIcons } from 'ionicons';
+import { addOutline } from 'ionicons/icons';
 import { UserProfileComponent } from '../user-profile/user-profile.component';
 import { RightbarComponent } from '../rightbar/rightbar.component';
 // ...existing code...
@@ -21,7 +24,7 @@ import { RightbarComponent } from '../rightbar/rightbar.component';
   selector: 'app-infinit-scroll',
   templateUrl: './infinit-scroll.component.html',
   styleUrls: ['./infinit-scroll.component.scss'],
-  imports: [IonAvatar, IonContent, IonInfiniteScroll, IonInfiniteScrollContent, IonItem, IonLabel, IonList, IonCard, IonButton, IonIcon, UserProfileComponent, RightbarComponent],
+  imports: [RouterModule, IonAvatar, IonContent, IonInfiniteScroll, IonInfiniteScrollContent, IonItem, IonLabel, IonList, IonCard, IonButton, IonIcon, UserProfileComponent, RightbarComponent],
 })
 
 export class InfinitScrollComponent implements OnInit {
@@ -30,7 +33,9 @@ export class InfinitScrollComponent implements OnInit {
   pageSize: number = 20;
   maxCompetitions: number = 100; // Set this to your desired maximum
 
-  constructor(private apiService: ApiService) {}
+  constructor(private apiService: ApiService) {
+    addIcons({ addOutline });
+  }
 
   ngOnInit(): void {
     this.loadCompetitions();
