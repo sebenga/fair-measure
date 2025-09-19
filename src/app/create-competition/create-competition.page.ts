@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
+import { trigger, state, style, transition, animate } from '@angular/animations';
 import {
   IonContent,
   IonHeader,
@@ -75,6 +76,19 @@ interface Competition {
   templateUrl: './create-competition.page.html',
   styleUrls: ['./create-competition.page.scss'],
   standalone: true,
+  animations: [
+    trigger('slideInOut', [
+      state('in', style({ height: '*', opacity: 1 })),
+      state('out', style({ height: '0px', opacity: 0 })),
+      transition('in <=> out', animate('300ms ease-in-out'))
+    ]),
+    trigger('fadeInUp', [
+      transition(':enter', [
+        style({ opacity: 0, transform: 'translateY(20px)' }),
+        animate('300ms ease-out', style({ opacity: 1, transform: 'translateY(0)' }))
+      ])
+    ])
+  ],
   imports: [
     CommonModule,
     FormsModule,
@@ -101,6 +115,7 @@ interface Competition {
   ]
 })
 export class CreateCompetitionPage implements OnInit {
+  activeSection: string = 'basic';
   competition: Competition = {
     name: '',
     author: '',
@@ -143,6 +158,9 @@ export class CreateCompetitionPage implements OnInit {
     this.addScoringCategory();
   }
 
+  setActiveSection(section: string) {
+    this.activeSection = this.activeSection === section ? '' : section;
+  }
   addRule() {
     this.competition.rules.push({
       name: '',

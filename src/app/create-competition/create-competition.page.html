@@ -1,212 +1,335 @@
 <ion-header>
-  <ion-toolbar>
+  <ion-toolbar class="sporty-header">
     <ion-buttons slot="start">
-      <ion-back-button defaultHref="/tabs/tab1"></ion-back-button>
+      <ion-back-button defaultHref="/tabs/tab1" class="sporty-back-btn"></ion-back-button>
     </ion-buttons>
-    <ion-title>Create Competition</ion-title>
+    <ion-title class="sporty-title">
+      <div class="title-content">
+        <span class="trophy-icon">🏆</span>
+        <span class="title-text">CREATE COMPETITION</span>
+        <span class="fire-icon">🔥</span>
+      </div>
+    </ion-title>
   </ion-toolbar>
 </ion-header>
 
-<ion-content class="create-competition-content">
-  <form (ngSubmit)="onSubmit()" #competitionForm="ngForm" class="competition-form">
-    <ion-card class="form-card">
-      <ion-card-header>
-        <ion-card-title>Basic Information</ion-card-title>
-      </ion-card-header>
-      <ion-card-content>
-        <ion-item>
-          <ion-input
-            label="Competition Name"
-            labelPlacement="stacked"
-            placeholder="Enter competition name"
-            [(ngModel)]="competition.name"
-            name="name"
-            required
-          ></ion-input>
-        </ion-item>
+<ion-content class="sporty-content">
+  <div class="form-hero">
+    <div class="hero-background">
+      <div class="energy-wave wave-1"></div>
+      <div class="energy-wave wave-2"></div>
+      <div class="energy-wave wave-3"></div>
+    </div>
+    <div class="hero-content">
+      <div class="logo-container">
+        <svg width="64" height="48" viewBox="0 0 48 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="hero-logo">
+          <ellipse cx="16" cy="16" rx="7" ry="9" fill="#fff" stroke="#fff" stroke-width="2" />
+          <ellipse cx="32" cy="16" rx="7" ry="9" fill="#fff" stroke="#fff" stroke-width="2" />
+          <circle cx="16" cy="16" r="3" fill="#ff8800" />
+          <circle cx="32" cy="16" r="3" fill="#ff8800" />
+          <path d="M8 10 Q24 2 40 10" stroke="#fff" stroke-width="2" fill="none" />
+        </svg>
+      </div>
+      <h1 class="hero-title">Build Your Championship</h1>
+      <p class="hero-subtitle">Create an epic competition that brings out the best in everyone</p>
+    </div>
+  </div>
 
-        <ion-item>
-          <ion-input
-            label="Author"
-            labelPlacement="stacked"
-            placeholder="Enter author name"
-            [(ngModel)]="competition.author"
-            name="author"
-            required
-          ></ion-input>
-        </ion-item>
-
-        <ion-item>
-          <ion-select
-            label="Competition Type"
-            labelPlacement="stacked"
-            placeholder="Select type"
-            [(ngModel)]="competition.type"
-            name="type"
-            required
-          >
-            <ion-select-option value="league">League</ion-select-option>
-            <ion-select-option value="tournament">Tournament</ion-select-option>
-            <ion-select-option value="knockout">Knockout</ion-select-option>
-            <ion-select-option value="round-robin">Round Robin</ion-select-option>
-          </ion-select>
-        </ion-item>
-
-        <ion-item>
-          <ion-input
-            label="Logo URL"
-            labelPlacement="stacked"
-            placeholder="Enter logo URL (optional)"
-            [(ngModel)]="competition.logo_location"
-            name="logo_location"
-          ></ion-input>
-        </ion-item>
-
-        <ion-item>
-          <ion-checkbox [(ngModel)]="competition.is_private" name="is_private"></ion-checkbox>
-          <ion-label class="ion-margin-start">Private Competition</ion-label>
-        </ion-item>
-      </ion-card-content>
-    </ion-card>
-
-    <ion-card class="form-card">
-      <ion-card-header>
-        <ion-card-title>Point System</ion-card-title>
-      </ion-card-header>
-      <ion-card-content>
-        <ion-item>
-          <ion-input
-            label="Points for Win"
-            labelPlacement="stacked"
-            type="number"
-            placeholder="3"
-            [(ngModel)]="competition.point_accumulation.win"
-            name="win_points"
-            required
-          ></ion-input>
-        </ion-item>
-
-        <ion-item>
-          <ion-input
-            label="Points for Draw"
-            labelPlacement="stacked"
-            type="number"
-            placeholder="1"
-            [(ngModel)]="competition.point_accumulation.draw"
-            name="draw_points"
-            required
-          ></ion-input>
-        </ion-item>
-
-        <ion-item>
-          <ion-input
-            label="Points for Loss"
-            labelPlacement="stacked"
-            type="number"
-            placeholder="0"
-            [(ngModel)]="competition.point_accumulation.lose"
-            name="lose_points"
-            required
-          ></ion-input>
-        </ion-item>
-      </ion-card-content>
-    </ion-card>
-
-    <ion-card class="form-card">
-      <ion-card-header>
-        <ion-card-title>Rules</ion-card-title>
-        <ion-card-subtitle>Add competition rules</ion-card-subtitle>
-      </ion-card-header>
-      <ion-card-content>
-        <div *ngFor="let rule of competition.rules; let i = index" class="rule-item">
-          <ion-item>
+  <form (ngSubmit)="onSubmit()" #competitionForm="ngForm" class="sporty-form">
+    <!-- Basic Information Card -->
+    <div class="form-section" [class.active]="activeSection === 'basic'" (click)="setActiveSection('basic')">
+      <div class="section-header">
+        <div class="section-icon">⚡</div>
+        <h2 class="section-title">Competition Basics</h2>
+        <div class="section-badge">Essential</div>
+      </div>
+      
+      <div class="section-content" [@slideInOut]="activeSection === 'basic' ? 'in' : 'out'">
+        <div class="field-group">
+          <div class="floating-label-container">
             <ion-input
-              label="Rule Name"
-              labelPlacement="stacked"
-              placeholder="Enter rule name"
-              [(ngModel)]="rule.name"
-              [name]="'rule_name_' + i"
+              class="sporty-input"
+              [(ngModel)]="competition.name"
+              name="name"
+              required
+              placeholder=" "
             ></ion-input>
-          </ion-item>
-          <ion-item>
-            <ion-textarea
-              label="Rule Description"
-              labelPlacement="stacked"
-              placeholder="Enter rule description"
-              [(ngModel)]="rule.description"
-              [name]="'rule_desc_' + i"
-              rows="3"
-            ></ion-textarea>
-          </ion-item>
-          <ion-button fill="clear" color="danger" (click)="removeRule(i)" class="remove-btn">
-            <ion-icon name="trash-outline"></ion-icon>
-            Remove Rule
-          </ion-button>
+            <label class="floating-label">Competition Name *</label>
+            <div class="field-icon">🏅</div>
+          </div>
         </div>
-        <ion-button fill="outline" (click)="addRule()" class="add-btn">
-          <ion-icon name="add-outline"></ion-icon>
-          Add Rule
-        </ion-button>
-      </ion-card-content>
-    </ion-card>
 
-    <ion-card class="form-card">
-      <ion-card-header>
-        <ion-card-title>Scoring Categories</ion-card-title>
-        <ion-card-subtitle>Define scoring categories and points</ion-card-subtitle>
-      </ion-card-header>
-      <ion-card-content>
-        <div *ngFor="let category of competition.scoring_categories; let i = index" class="scoring-item">
-          <ion-item>
+        <div class="field-group">
+          <div class="floating-label-container">
             <ion-input
-              label="Category Name"
-              labelPlacement="stacked"
-              placeholder="e.g., Goal, Assist, Yellow Card"
-              [(ngModel)]="category.name"
-              [name]="'category_name_' + i"
+              class="sporty-input"
+              [(ngModel)]="competition.author"
+              name="author"
+              required
+              placeholder=" "
             ></ion-input>
-          </ion-item>
-          <ion-item>
-            <ion-textarea
-              label="Category Description"
-              labelPlacement="stacked"
-              placeholder="Enter category description"
-              [(ngModel)]="category.description"
-              [name]="'category_desc_' + i"
-              rows="2"
-            ></ion-textarea>
-          </ion-item>
-          <ion-item>
-            <ion-input
-              label="Points"
-              labelPlacement="stacked"
-              type="number"
-              placeholder="Enter points value"
-              [(ngModel)]="category.points"
-              [name]="'category_points_' + i"
-            ></ion-input>
-          </ion-item>
-          <ion-button fill="clear" color="danger" (click)="removeScoringCategory(i)" class="remove-btn">
-            <ion-icon name="trash-outline"></ion-icon>
-            Remove Category
-          </ion-button>
+            <label class="floating-label">Organizer Name *</label>
+            <div class="field-icon">👤</div>
+          </div>
         </div>
-        <ion-button fill="outline" (click)="addScoringCategory()" class="add-btn">
-          <ion-icon name="add-outline"></ion-icon>
-          Add Scoring Category
-        </ion-button>
-      </ion-card-content>
-    </ion-card>
 
+        <div class="field-group">
+          <div class="floating-label-container">
+            <ion-select
+              class="sporty-select"
+              [(ngModel)]="competition.type"
+              name="type"
+              required
+              placeholder=" "
+            >
+              <ion-select-option value="league">🏆 League Championship</ion-select-option>
+              <ion-select-option value="tournament">⚔️ Tournament Bracket</ion-select-option>
+              <ion-select-option value="knockout">💥 Knockout Cup</ion-select-option>
+              <ion-select-option value="round-robin">🔄 Round Robin</ion-select-option>
+            </ion-select>
+            <label class="floating-label">Competition Format *</label>
+            <div class="field-icon">🎯</div>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="floating-label-container">
+            <ion-input
+              class="sporty-input"
+              [(ngModel)]="competition.logo_location"
+              name="logo_location"
+              placeholder=" "
+            ></ion-input>
+            <label class="floating-label">Logo URL</label>
+            <div class="field-icon">🖼️</div>
+          </div>
+        </div>
+
+        <div class="checkbox-group">
+          <div class="sporty-checkbox-container">
+            <ion-checkbox 
+              [(ngModel)]="competition.is_private" 
+              name="is_private"
+              class="sporty-checkbox"
+            ></ion-checkbox>
+            <label class="checkbox-label">
+              <span class="checkbox-icon">🔒</span>
+              <span class="checkbox-text">Private Competition</span>
+              <span class="checkbox-desc">Only invited participants can join</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Point System Card -->
+    <div class="form-section" [class.active]="activeSection === 'points'" (click)="setActiveSection('points')">
+      <div class="section-header">
+        <div class="section-icon">📊</div>
+        <h2 class="section-title">Point System</h2>
+        <div class="section-badge">Scoring</div>
+      </div>
+      
+      <div class="section-content" [@slideInOut]="activeSection === 'points' ? 'in' : 'out'">
+        <div class="points-grid">
+          <div class="field-group">
+            <div class="floating-label-container points-field win-field">
+              <ion-input
+                class="sporty-input"
+                type="number"
+                [(ngModel)]="competition.point_accumulation.win"
+                name="win_points"
+                required
+                placeholder=" "
+              ></ion-input>
+              <label class="floating-label">Win Points *</label>
+              <div class="field-icon">🥇</div>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <div class="floating-label-container points-field draw-field">
+              <ion-input
+                class="sporty-input"
+                type="number"
+                [(ngModel)]="competition.point_accumulation.draw"
+                name="draw_points"
+                required
+                placeholder=" "
+              ></ion-input>
+              <label class="floating-label">Draw Points *</label>
+              <div class="field-icon">🤝</div>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <div class="floating-label-container points-field lose-field">
+              <ion-input
+                class="sporty-input"
+                type="number"
+                [(ngModel)]="competition.point_accumulation.lose"
+                name="lose_points"
+                required
+                placeholder=" "
+              ></ion-input>
+              <label class="floating-label">Loss Points *</label>
+              <div class="field-icon">💪</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rules Card -->
+    <div class="form-section" [class.active]="activeSection === 'rules'" (click)="setActiveSection('rules')">
+      <div class="section-header">
+        <div class="section-icon">📋</div>
+        <h2 class="section-title">Competition Rules</h2>
+        <div class="section-badge">Guidelines</div>
+      </div>
+      
+      <div class="section-content" [@slideInOut]="activeSection === 'rules' ? 'in' : 'out'">
+        <div class="dynamic-list">
+          <div *ngFor="let rule of competition.rules; let i = index" class="list-item rule-item" [@fadeInUp]>
+            <div class="item-header">
+              <span class="item-number">{{ i + 1 }}</span>
+              <span class="item-title">Rule {{ i + 1 }}</span>
+              <button type="button" class="remove-btn" (click)="removeRule(i)">
+                <ion-icon name="trash-outline"></ion-icon>
+              </button>
+            </div>
+            
+            <div class="field-group">
+              <div class="floating-label-container">
+                <ion-input
+                  class="sporty-input"
+                  [(ngModel)]="rule.name"
+                  [name]="'rule_name_' + i"
+                  placeholder=" "
+                ></ion-input>
+                <label class="floating-label">Rule Name</label>
+                <div class="field-icon">⚖️</div>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <div class="floating-label-container">
+                <ion-textarea
+                  class="sporty-textarea"
+                  [(ngModel)]="rule.description"
+                  [name]="'rule_desc_' + i"
+                  rows="3"
+                  placeholder=" "
+                ></ion-textarea>
+                <label class="floating-label">Rule Description</label>
+                <div class="field-icon">📝</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <button type="button" class="add-btn" (click)="addRule()">
+          <div class="btn-content">
+            <ion-icon name="add-outline"></ion-icon>
+            <span>Add New Rule</span>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Scoring Categories Card -->
+    <div class="form-section" [class.active]="activeSection === 'scoring'" (click)="setActiveSection('scoring')">
+      <div class="section-header">
+        <div class="section-icon">🎯</div>
+        <h2 class="section-title">Scoring Categories</h2>
+        <div class="section-badge">Actions</div>
+      </div>
+      
+      <div class="section-content" [@slideInOut]="activeSection === 'scoring' ? 'in' : 'out'">
+        <div class="dynamic-list">
+          <div *ngFor="let category of competition.scoring_categories; let i = index" class="list-item scoring-item" [@fadeInUp]>
+            <div class="item-header">
+              <span class="item-number">{{ i + 1 }}</span>
+              <span class="item-title">Category {{ i + 1 }}</span>
+              <button type="button" class="remove-btn" (click)="removeScoringCategory(i)">
+                <ion-icon name="trash-outline"></ion-icon>
+              </button>
+            </div>
+            
+            <div class="field-group">
+              <div class="floating-label-container">
+                <ion-input
+                  class="sporty-input"
+                  [(ngModel)]="category.name"
+                  [name]="'category_name_' + i"
+                  placeholder=" "
+                ></ion-input>
+                <label class="floating-label">Category Name</label>
+                <div class="field-icon">🏃</div>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <div class="floating-label-container">
+                <ion-textarea
+                  class="sporty-textarea"
+                  [(ngModel)]="category.description"
+                  [name]="'category_desc_' + i"
+                  rows="2"
+                  placeholder=" "
+                ></ion-textarea>
+                <label class="floating-label">Category Description</label>
+                <div class="field-icon">📄</div>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <div class="floating-label-container points-field">
+                <ion-input
+                  class="sporty-input"
+                  type="number"
+                  [(ngModel)]="category.points"
+                  [name]="'category_points_' + i"
+                  placeholder=" "
+                ></ion-input>
+                <label class="floating-label">Points Value</label>
+                <div class="field-icon">💯</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <button type="button" class="add-btn" (click)="addScoringCategory()">
+          <div class="btn-content">
+            <ion-icon name="add-outline"></ion-icon>
+            <span>Add Scoring Category</span>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Submit Actions -->
     <div class="form-actions">
-      <ion-button expand="block" type="submit" [disabled]="!competitionForm.form.valid || isSubmitting">
-        <ion-icon name="checkmark-outline" slot="start"></ion-icon>
-        {{ isSubmitting ? 'Creating...' : 'Create Competition' }}
-      </ion-button>
-      <ion-button expand="block" fill="outline" routerLink="/tabs/tab1">
-        <ion-icon name="close-outline" slot="start"></ion-icon>
-        Cancel
-      </ion-button>
+      <button 
+        type="submit" 
+        class="submit-btn"
+        [disabled]="!competitionForm.form.valid || isSubmitting"
+        [class.loading]="isSubmitting"
+      >
+        <div class="btn-background">
+          <div class="success-wave"></div>
+        </div>
+        <div class="btn-content">
+          <ion-icon name="checkmark-outline" *ngIf="!isSubmitting"></ion-icon>
+          <div class="loading-spinner" *ngIf="isSubmitting"></div>
+          <span>{{ isSubmitting ? 'Creating Championship...' : 'Launch Competition' }}</span>
+        </div>
+      </button>
+      
+      <button type="button" class="cancel-btn" routerLink="/tabs/tab1">
+        <ion-icon name="close-outline"></ion-icon>
+        <span>Cancel</span>
+      </button>
     </div>
   </form>
 </ion-content>
