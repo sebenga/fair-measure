@@ -49,11 +49,16 @@ export class InfinitScrollComponent implements OnInit {
   }
 
   onIonInfinite(event: any) {
+    // Add loading class for animation
+    event.target.classList.add('loading');
+    
     // Simulate loading more competitions
     setTimeout(() => {
       // Add more competitions to your array here
       // this.loadMoreCompetitions();
       
+      // Remove loading class
+      event.target.classList.remove('loading');
       event.target.complete();
       
       // Disable infinite scroll if no more data
