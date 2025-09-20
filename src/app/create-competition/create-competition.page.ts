@@ -46,6 +46,14 @@ interface ScoringCategory {
   points: number;
 }
 
+interface Participant {
+  id?: string;
+  competition_id?: string;
+  name: string;
+  description: string;
+  picture_location: string;
+}
+
 interface PointAccumulation {
   win: number;
   lose: number;
@@ -63,7 +71,7 @@ interface Competition {
   rules: Rule[];
   scoring_categories: ScoringCategory[];
   point_accumulation: PointAccumulation;
-  participants: any[];
+  participants: Participant[];
   fixtures: any[];
   league_table: any[];
   posts: any[];
@@ -156,6 +164,7 @@ export class CreateCompetitionPage implements OnInit {
     // Initialize with default rule and scoring category
     this.addRule();
     this.addScoringCategory();
+    this.addParticipant();
   }
 
   setActiveSection(section: string) {
@@ -184,6 +193,18 @@ export class CreateCompetitionPage implements OnInit {
     this.competition.scoring_categories.splice(index, 1);
   }
 
+  addParticipant() {
+    this.competition.participants.push({
+      name: '',
+      description: '',
+      picture_location: ''
+    });
+  }
+
+  removeParticipant(index: number) {
+    this.competition.participants.splice(index, 1);
+  }
+
   async onSubmit() {
     if (this.isSubmitting) return;
 
@@ -200,6 +221,11 @@ export class CreateCompetitionPage implements OnInit {
       
       this.competition.scoring_categories = this.competition.scoring_categories.filter(
         category => category.name.trim() !== ''
+      );
+
+      // Filter out empty participants
+      this.competition.participants = this.competition.participants.filter(
+        participant => participant.name.trim() !== ''
       );
 
       // Create the competition

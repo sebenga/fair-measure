@@ -309,6 +309,77 @@
     </div>
 
     <!-- Submit Actions -->
+    <!-- Participants Card -->
+    <div class="form-section" [class.active]="activeSection === 'participants'" (click)="setActiveSection('participants')">
+      <div class="section-header">
+        <div class="section-icon">👥</div>
+        <h2 class="section-title">Participants</h2>
+        <div class="section-badge">Teams</div>
+      </div>
+      
+      <div class="section-content" [@slideInOut]="activeSection === 'participants' ? 'in' : 'out'">
+        <div class="dynamic-list">
+          <div *ngFor="let participant of competition.participants; let i = index" class="list-item participant-item" [@fadeInUp]>
+            <div class="item-header">
+              <span class="item-number">{{ i + 1 }}</span>
+              <span class="item-title">Participant {{ i + 1 }}</span>
+              <button type="button" class="remove-btn" (click)="removeParticipant(i)">
+                <ion-icon name="trash-outline"></ion-icon>
+              </button>
+            </div>
+            
+            <div class="field-group">
+              <div class="floating-label-container">
+                <ion-input
+                  class="sporty-input"
+                  [(ngModel)]="participant.name"
+                  [name]="'participant_name_' + i"
+                  placeholder=" "
+                ></ion-input>
+                <label class="floating-label">Participant Name</label>
+                <div class="field-icon">🏃</div>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <div class="floating-label-container">
+                <ion-textarea
+                  class="sporty-textarea"
+                  [(ngModel)]="participant.description"
+                  [name]="'participant_desc_' + i"
+                  rows="2"
+                  placeholder=" "
+                ></ion-textarea>
+                <label class="floating-label">Participant Description</label>
+                <div class="field-icon">📄</div>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <div class="floating-label-container">
+                <ion-input
+                  class="sporty-input"
+                  [(ngModel)]="participant.picture_location"
+                  [name]="'participant_picture_' + i"
+                  placeholder=" "
+                ></ion-input>
+                <label class="floating-label">Picture URL</label>
+                <div class="field-icon">📸</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <button type="button" class="add-btn" (click)="addParticipant()">
+          <div class="btn-content">
+            <ion-icon name="add-outline"></ion-icon>
+            <span>Add Participant</span>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Submit Actions -->
     <div class="form-actions">
       <button 
         type="submit" 

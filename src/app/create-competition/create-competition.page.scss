@@ -404,6 +404,14 @@
   box-shadow: 0 4px 16px rgba(255, 136, 0, 0.1);
 }
 
+.participant-item {
+  border-left: 4px solid #28a745;
+}
+
+.participant-item:hover {
+  border-left-color: #20c997;
+}
+
 .item-header {
   display: flex;
   align-items: center;
