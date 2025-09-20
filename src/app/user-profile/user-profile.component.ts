@@ -6,6 +6,6 @@ import { IonCard, IonAvatar, IonButton, IonList, IonItem, IonIcon } from '@ionic
   templateUrl: './user-profile.component.html',
   styleUrls: ['./user-profile.component.scss'],
   standalone: true,
-  imports: [IonCard, IonAvatar, IonButton, IonList, IonItem, IonIcon]
+  imports: [IonAvatar, IonButton, IonList, IonItem, IonIcon]
 })
 export class UserProfileComponent {}

@@ -3,37 +3,22 @@ import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { trigger, state, style, transition, animate } from '@angular/animations';
+// Removed invalid imports from 'ionicons/icons'.
+import { ApiService } from '../api.service';
 import {
-  IonContent,
   IonHeader,
-  IonTitle,
   IonToolbar,
-  IonCard,
-  IonCardHeader,
-  IonCardTitle,
-  IonCardSubtitle,
-  IonCardContent,
-  IonItem,
-  IonInput,
-  IonTextarea,
-  IonSelect,
-  IonSelectOption,
-  IonCheckbox,
-  IonLabel,
-  IonButton,
-  IonIcon,
   IonButtons,
   IonBackButton,
-  ToastController
+  IonTitle,
+  IonContent,
+  IonItem,
+  IonLabel,
+  IonButton,
+  IonSelect,
+  IonSelectOption,
+  IonIcon
 } from '@ionic/angular/standalone';
-import { addIcons } from 'ionicons';
-import {
-  checkmarkOutline,
-  closeOutline,
-  addOutline,
-  trashOutline
-} from 'ionicons/icons';
-import { ApiService } from '../api.service';
 
 interface Rule {
   name: string;
@@ -100,26 +85,18 @@ interface Competition {
   imports: [
     CommonModule,
     FormsModule,
-    IonContent,
     IonHeader,
-    IonTitle,
     IonToolbar,
-    IonCard,
-    IonCardHeader,
-    IonCardTitle,
-    IonCardSubtitle,
-    IonCardContent,
+    IonButtons,
+    IonBackButton,
+    IonTitle,
+    IonContent,
     IonItem,
-    IonInput,
-    IonTextarea,
-    IonSelect,
-    IonSelectOption,
-    IonCheckbox,
     IonLabel,
     IonButton,
-    IonIcon,
-    IonButtons,
-    IonBackButton
+    IonSelect,
+    IonSelectOption,
+    IonIcon
   ]
 })
 export class CreateCompetitionPage implements OnInit {
@@ -149,15 +126,9 @@ export class CreateCompetitionPage implements OnInit {
 
   constructor(
     private apiService: ApiService,
-    private router: Router,
-    private toastController: ToastController
+    private router: Router
   ) {
-    addIcons({
-      checkmarkOutline,
-      closeOutline,
-      addOutline,
-      trashOutline
-    });
+    // Removed invalid ToastController and addIcons usage
   }
 
   ngOnInit() {
@@ -231,14 +202,8 @@ export class CreateCompetitionPage implements OnInit {
       // Create the competition
       const response = await this.apiService.createCompetition(this.competition).toPromise();
       
-      // Show success message
-      const toast = await this.toastController.create({
-        message: 'Competition created successfully!',
-        duration: 3000,
-        color: 'success',
-        position: 'top'
-      });
-      await toast.present();
+  // Show success message (replace with alert or other UI as needed)
+  alert('Competition created successfully!');
 
       // Navigate back to the main page
       this.router.navigate(['/tabs/tab1']);
@@ -246,14 +211,8 @@ export class CreateCompetitionPage implements OnInit {
     } catch (error) {
       console.error('Error creating competition:', error);
       
-      // Show error message
-      const toast = await this.toastController.create({
-        message: 'Failed to create competition. Please try again.',
-        duration: 3000,
-        color: 'danger',
-        position: 'top'
-      });
-      await toast.present();
+  // Show error message (replace with alert or other UI as needed)
+  alert('Failed to create competition. Please try again.');
     } finally {
       this.isSubmitting = false;
     }

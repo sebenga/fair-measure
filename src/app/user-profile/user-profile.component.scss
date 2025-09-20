@@ -2,9 +2,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 16px 0;
+  padding: 16px;
   animation: profileSlideIn 0.8s ease-out;
-}
 
 @keyframes profileSlideIn {
   from {
@@ -24,6 +23,7 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
+  border: none;
 }
 
 .profile-card::before {
@@ -68,6 +68,12 @@
   width: 100%;
   max-width: 250px;
   animation: menuSlideIn 0.6s ease-out 0.3s both;
+}
+
+.profile-menu .item {
+  justify-content: flex-start;
+  text-align: left;
+}
 }
 
 @keyframes menuSlideIn {
