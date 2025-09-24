@@ -40,6 +40,40 @@
           </div>
         </div>
       </div>
+      
+      <div class="media-upload-section">
+        <div class="sporty-media-btn" routerLink="/media-upload">
+          <div class="btn-background">
+            <div class="media-pulse"></div>
+            <div class="media-pulse pulse-2"></div>
+          </div>
+          <div class="btn-content">
+            <div class="logo-section">
+              <svg width="32" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="btn-logo">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" stroke="currentColor" stroke-width="2" fill="none"/>
+                <circle cx="8.5" cy="8.5" r="1.5" stroke="currentColor" stroke-width="2" fill="currentColor"/>
+                <polyline points="21,15 16,10 5,21" stroke="currentColor" stroke-width="2" fill="none"/>
+              </svg>
+            </div>
+            <div class="text-section">
+              <span class="main-text">UPLOAD MEDIA</span>
+              <span class="sub-text">Share Your Moments</span>
+            </div>
+            <div class="action-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M21 15V19A2 2 0 0 1 19 21H5A2 2 0 0 1 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <polyline points="7,10 12,15 17,10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </div>
+          </div>
+          <div class="sport-elements">
+            <div class="camera-icon">📸</div>
+            <div class="video-icon">🎥</div>
+          </div>
+        </div>
+      </div>
+      
       <ion-list>
         @if (competitions.length === 0) {
           <ion-item>

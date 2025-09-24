@@ -9,4 +9,8 @@ export const routes: Routes = [
     path: 'create-competition',
     loadComponent: () => import('./create-competition/create-competition.page').then(m => m.CreateCompetitionPage)
   },
+  {
+    path: 'media-upload',
+    loadComponent: () => import('./media-upload/media-upload.page').then(m => m.MediaUploadPage)
+  },
 ];
