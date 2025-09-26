@@ -31,9 +31,10 @@
         </svg>
       </div>
       <h1 class="hero-title">Share Your Moments</h1>
-      <p class="hero-subtitle">Upload pictures and videos from your competitions</p>
+      <p class="hero-subtitle" *ngIf="!selectedCompetition">Upload pictures and videos from your competitions</p>
+      <p class="hero-subtitle" *ngIf="selectedCompetition">Upload media for: {{ selectedCompetition.name }}</p>
     </div>
   </div>
 
-  <app-media-upload></app-media-upload>
+  <app-media-upload [selectedCompetition]="selectedCompetition"></app-media-upload>
 </ion-content>

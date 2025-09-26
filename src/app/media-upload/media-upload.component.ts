@@ -1,5 +1,6 @@
 import { Component, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Input } from '@angular/core';
 import { trigger, state, style, transition, animate } from '@angular/animations';
 import { IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
@@ -41,6 +42,8 @@ interface MediaFile {
 export class MediaUploadComponent {
   @ViewChild('pictureInput') pictureInput!: ElementRef<HTMLInputElement>;
   @ViewChild('videoInput') videoInput!: ElementRef<HTMLInputElement>;
+
+  @Input() selectedCompetition: any = null;
 
   pictureFiles: MediaFile[] = [];
   videoFiles: MediaFile[] = [];
@@ -234,7 +237,10 @@ export class MediaUploadComponent {
       const uploadPromises = allFiles.map(mediaFile => this.uploadFile(mediaFile));
       await Promise.all(uploadPromises);
       
-      this.showSuccess('All files uploaded successfully!');
+      const successMessage = this.selectedCompetition 
+        ? `All files uploaded successfully to ${this.selectedCompetition.name}!`
+        : 'All files uploaded successfully!';
+      this.showSuccess(successMessage);
       
       // Clear files after successful upload
       setTimeout(() => {

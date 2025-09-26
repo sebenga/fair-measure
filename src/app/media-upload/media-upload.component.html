@@ -1,4 +1,20 @@
 <div class="media-upload-container">
+  <!-- Competition Info Banner -->
+  <div class="competition-banner" *ngIf="selectedCompetition">
+    <div class="banner-content">
+      <div class="competition-avatar">
+        <img [src]="selectedCompetition.image || 'https://via.placeholder.com/60?text=C'" [alt]="selectedCompetition.name" />
+      </div>
+      <div class="competition-info">
+        <h3 class="competition-name">{{ selectedCompetition.name }}</h3>
+        <p class="competition-desc">{{ selectedCompetition.description || 'Upload media for this competition' }}</p>
+      </div>
+      <div class="competition-badge">
+        <span class="badge-text">Competition Media</span>
+      </div>
+    </div>
+  </div>
+
   <!-- Picture Upload Section -->
   <div class="upload-section picture-section">
     <div class="section-header">

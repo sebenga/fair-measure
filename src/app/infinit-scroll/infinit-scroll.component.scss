@@ -555,6 +555,15 @@ ion-list {
   left: 100%;
 }
 
+.fb-actions ion-button[color="secondary"] {
+  --color: #ff8800;
+  --color-hover: #ff6b35;
+}
+
+.fb-actions ion-button[color="secondary"]:hover {
+  --background: rgba(255, 136, 0, 0.1);
+}
+
 .fb-actions ion-button ion-icon {
   font-size: 16px;
   margin-right: 8px;

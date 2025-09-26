@@ -18,5 +18,17 @@ import { MediaUploadComponent } from './media-upload.component';
   ]
 })
 export class MediaUploadPage {
+  selectedCompetition: any = null;
+
   constructor() {}
+
+  ngOnInit() {
+    // Check if a specific competition was selected
+    const storedCompetition = localStorage.getItem('selectedCompetition');
+    if (storedCompetition) {
+      this.selectedCompetition = JSON.parse(storedCompetition);
+      // Clear the stored competition
+      localStorage.removeItem('selectedCompetition');
+    }
+  }
 }

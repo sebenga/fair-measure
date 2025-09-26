@@ -15,7 +15,7 @@ import {
   IonIcon,
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
-import { addOutline } from 'ionicons/icons';
+import { addOutline, cameraOutline } from 'ionicons/icons';
 import { UserProfileComponent } from '../user-profile/user-profile.component';
 import { RightbarComponent } from '../rightbar/rightbar.component';
 // ...existing code...
@@ -34,7 +34,14 @@ export class InfinitScrollComponent implements OnInit {
   maxCompetitions: number = 100; // Set this to your desired maximum
 
   constructor(private apiService: ApiService) {
-    addIcons({ addOutline });
+    addIcons({ addOutline, cameraOutline });
+  }
+
+  openMediaUpload(competition: any) {
+    // Store the selected competition in localStorage for the media upload page
+    localStorage.setItem('selectedCompetition', JSON.stringify(competition));
+    // Navigate to media upload page
+    window.location.href = '/media-upload';
   }
 
   ngOnInit(): void {
