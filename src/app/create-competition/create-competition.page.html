@@ -105,6 +105,52 @@
           </div>
         </div>
 
+        <!-- Logo Upload Section -->
+        <div class="field-group">
+          <div class="logo-upload-section">
+            <h4 class="upload-section-title">
+              <ion-icon name="image-outline"></ion-icon>
+              Upload Competition Logo
+            </h4>
+            
+            <div class="logo-upload-container" *ngIf="!logoPreview">
+              <div class="logo-upload-area"
+                   (click)="logoFileInput.click()"
+                   (drop)="onLogoDrop($event)"
+                   (dragover)="onLogoDragOver($event)"
+                   (dragleave)="onLogoDragLeave($event)">
+                <div class="upload-content">
+                  <div class="upload-icon">
+                    <ion-icon name="cloud-upload-outline"></ion-icon>
+                  </div>
+                  <h5 class="upload-title">Drop logo here or click to browse</h5>
+                  <p class="upload-subtitle">Supports JPG, PNG, GIF up to 5MB</p>
+                </div>
+              </div>
+              <input #logoFileInput 
+                     type="file" 
+                     accept="image/*" 
+                     (change)="onLogoFileSelect($event)"
+                     style="display: none;">
+            </div>
+
+            <!-- Logo Preview -->
+            <div class="logo-preview-container" *ngIf="logoPreview">
+              <div class="logo-preview">
+                <img [src]="logoPreview" alt="Competition Logo Preview" />
+                <div class="preview-overlay">
+                  <button type="button" class="remove-logo-btn" (click)="removeLogo()">
+                    <ion-icon name="trash-outline"></ion-icon>
+                  </button>
+                </div>
+              </div>
+              <div class="logo-info">
+                <span class="logo-filename">{{ logoFile?.name }}</span>
+                <span class="logo-filesize">{{ logoFile ? (logoFile.size / 1024 / 1024).toFixed(2) + ' MB' : '' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
         <div class="checkbox-group">
           <div class="sporty-checkbox-container">
             <ion-checkbox 

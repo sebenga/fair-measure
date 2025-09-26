@@ -3,6 +3,8 @@ import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { trigger, state, style, transition, animate } from '@angular/animations';
+import { addIcons } from 'ionicons';
+import { cloudUploadOutline, imageOutline, trashOutline } from 'ionicons/icons';
 // Removed invalid imports from 'ionicons/icons'.
 import { ApiService } from '../api.service';
 import {
@@ -101,6 +103,9 @@ interface Competition {
 })
 export class CreateCompetitionPage implements OnInit {
   activeSection: string = 'basic';
+  logoFile: File | null = null;
+  logoPreview: string = '';
+  isUploadingLogo = false;
   competition: Competition = {
     name: '',
     author: '',
@@ -128,7 +133,7 @@ export class CreateCompetitionPage implements OnInit {
     private apiService: ApiService,
     private router: Router
   ) {
-    // Removed invalid ToastController and addIcons usage
+    addIcons({ cloudUploadOutline, imageOutline, trashOutline });
   }
 
   ngOnInit() {
@@ -176,12 +181,102 @@ export class CreateCompetitionPage implements OnInit {
     this.competition.participants.splice(index, 1);
   }
 
+  // Logo upload functionality
+  onLogoFileSelect(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    
+    if (file) {
+      this.processLogoFile(file);
+    }
+    
+    // Reset input value to allow selecting the same file again
+    input.value = '';
+  }
+
+  onLogoDrop(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const files = Array.from(event.dataTransfer?.files || []);
+    const imageFile = files.find(file => file.type.startsWith('image/'));
+    
+    if (imageFile) {
+      this.processLogoFile(imageFile);
+    }
+  }
+
+  onLogoDragOver(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  onLogoDragLeave(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  private processLogoFile(file: File) {
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file (JPG, PNG, GIF, etc.)');
+      return;
+    }
+
+    // Validate file size (5MB limit)
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      alert('Image file is too large. Please select an image smaller than 5MB.');
+      return;
+    }
+
+    this.logoFile = file;
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      this.logoPreview = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  removeLogo() {
+    this.logoFile = null;
+    this.logoPreview = '';
+    this.competition.logo_location = '';
+  }
+
+  private async uploadLogo(): Promise<string> {
+    if (!this.logoFile) return '';
+
+    this.isUploadingLogo = true;
+    
+    try {
+      // Simulate logo upload - replace with actual upload logic
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // In a real implementation, you would upload to your server/cloud storage
+      // and return the URL. For now, we'll use the preview URL
+      return this.logoPreview;
+      
+    } catch (error) {
+      console.error('Logo upload failed:', error);
+      throw new Error('Failed to upload logo');
+    } finally {
+      this.isUploadingLogo = false;
+    }
+  }
   async onSubmit() {
     if (this.isSubmitting) return;
 
     this.isSubmitting = true;
 
     try {
+      // Upload logo if a file was selected
+      if (this.logoFile) {
+        this.competition.logo_location = await this.uploadLogo();
+      }
+
       // Set the creation date
       this.competition.date_created = new Date().toISOString();
 
