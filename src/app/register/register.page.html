@@ -1,0 +1,36 @@
+<ion-content class="auth-content">
+  <div class="auth-container">
+    <h1>Register</h1>
+    <form>
+      <ion-item>
+        <ion-label position="floating">Name</ion-label>
+        <ion-input type="text" required></ion-input>
+      </ion-item>
+      <ion-item>
+        <ion-label position="floating">Email</ion-label>
+        <ion-input type="email" required></ion-input>
+      </ion-item>
+      <ion-item>
+        <ion-label position="floating">Password</ion-label>
+        <ion-input type="password" required></ion-input>
+      </ion-item>
+      <ion-button expand="block" color="primary" type="submit">Register</ion-button>
+    </form>
+    <div class="auth-divider">or</div>
+    <ion-button expand="block" color="light" class="google-btn">
+      <ion-icon name="logo-google" slot="start"></ion-icon>
+      Register with Google
+    </ion-button>
+    <ion-button expand="block" color="light" class="linkedin-btn">
+      <ion-icon name="logo-linkedin" slot="start"></ion-icon>
+      Register with LinkedIn
+    </ion-button>
+    <ion-button expand="block" color="light" class="facebook-btn">
+      <ion-icon name="logo-facebook" slot="start"></ion-icon>
+      Register with Facebook
+    </ion-button>
+    <div class="auth-switch">
+      Already have an account? <a routerLink="/login">Login</a>
+    </div>
+  </div>
+</ion-content>

@@ -93,9 +93,7 @@ interface Competition {
     IonBackButton,
     IonTitle,
     IonContent,
-    IonItem,
-    IonLabel,
-    IonButton,
+  // Removed unused Ionic imports
     IonSelect,
     IonSelectOption,
     IonIcon
