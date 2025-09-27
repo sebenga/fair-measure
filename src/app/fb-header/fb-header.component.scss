@@ -86,6 +86,9 @@
   .fb-search {
     max-width: 400px;
   }
+  .header-actions {
+    display: flex;
+  }
 }
 @media (max-width: 699px) {
   .fb-header-content {
@@ -96,5 +99,55 @@
   .fb-tabs {
     justify-content: space-between;
     margin-left: 16px;
+  }
+  .header-actions {
+    display: none;
+  }
+}
+
+/* Header Auth Buttons */
+.header-actions {
+  display: none;
+  gap: 8px;
+  margin-left: 16px;
+}
+
+.auth-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+  text-decoration: none;
+}
+
+.login-btn {
+  background: transparent;
+  color: #1877f2;
+  border: 2px solid #1877f2;
+}
+
+.login-btn:hover {
+  background: #1877f2;
+  color: white;
+}
+
+.register-btn {
+  background: linear-gradient(135deg, #ff8800, #ffaa00);
+  color: white;
+  border: 2px solid transparent;
+}
+
+.register-btn:hover {
+  background: linear-gradient(135deg, #ff6b35, #ff8800);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 136, 0, 0.3);
+}
+
+@media (min-width: 900px) {
+  .header-actions {
+    display: flex;
   }
 }

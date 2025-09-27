@@ -1,0 +1,212 @@
+/* Import base auth styles */
+@import '../login/login.page.scss';
+
+/* Registration-specific styles */
+.name-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.half-width {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.half-width .auth-input {
+  padding: 16px 16px 16px 45px;
+}
+
+.half-width .input-icon {
+  left: 14px;
+}
+
+/* Terms Agreement */
+.terms-agreement {
+  margin-bottom: 32px;
+}
+
+.checkbox-container {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.terms-checkbox {
+  --size: 20px;
+  --checkbox-background-checked: #ff8800;
+  --border-color-checked: #ff8800;
+  --checkmark-color: white;
+  margin: 0;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.terms-label {
+  color: #65676b;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.terms-link {
+  color: #ff8800;
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.terms-link:hover {
+  color: #ff6b35;
+  text-decoration: underline;
+}
+
+/* Enhanced form validation styles */
+.auth-input.ng-invalid.ng-touched {
+  border-color: #dc3545;
+  box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+}
+
+.auth-input.ng-valid.ng-touched {
+  border-color: #28a745;
+  box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.1);
+}
+
+/* Password strength indicator */
+.password-strength {
+  margin-top: 8px;
+  display: flex;
+  gap: 4px;
+}
+
+.strength-bar {
+  flex: 1;
+  height: 4px;
+  background: #e4e6ea;
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.strength-bar.weak { background: #dc3545; }
+.strength-bar.medium { background: #ffc107; }
+.strength-bar.strong { background: #28a745; }
+
+/* Responsive adjustments for registration */
+@media (max-width: 768px) {
+  .name-row {
+    flex-direction: column;
+    gap: 0;
+  }
+  
+  .half-width {
+    margin-bottom: 24px;
+  }
+  
+  .terms-label {
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .checkbox-container {
+    gap: 10px;
+  }
+  
+  .terms-checkbox {
+    --size: 18px;
+  }
+  
+  .half-width .auth-input {
+    padding: 14px 14px 14px 40px;
+  }
+  
+  .half-width .input-icon {
+    left: 12px;
+  }
+}
+
+/* Enhanced loading states */
+.loading .primary-btn {
+  background: linear-gradient(135deg, #ff8800 0%, #ffaa00 100%);
+}
+
+/* Focus states for accessibility */
+.terms-checkbox:focus {
+  outline: 2px solid #ff8800;
+  outline-offset: 2px;
+}
+
+.terms-link:focus {
+  outline: 2px solid #ff8800;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Animation for form validation */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.auth-input.ng-invalid.ng-touched {
+  animation: shake 0.5s ease-in-out;
+}
+
+/* Success state for completed fields */
+.auth-input.ng-valid.ng-touched + .input-icon {
+  color: #28a745;
+}
+
+/* Enhanced social button styles for registration */
+.social-btn {
+  position: relative;
+}
+
+.social-btn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, transparent 0%, rgba(255, 136, 0, 0.05) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.social-btn:hover::after {
+  opacity: 1;
+}
+
+/* Enhanced checkbox styling */
+.terms-checkbox::part(container) {
+  border-radius: 4px;
+  border-width: 2px;
+  transition: all 0.3s ease;
+}
+
+.terms-checkbox::part(container):hover {
+  border-color: #ff8800;
+  transform: scale(1.05);
+}
+
+/* Form completion progress indicator */
+.form-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: #e4e6ea;
+  border-radius: 0 0 20px 20px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff8800, #ffaa00);
+  transition: width 0.3s ease;
+  border-radius: 0 0 20px 20px;
+}
