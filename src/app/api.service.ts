@@ -21,6 +21,19 @@ export class ApiService {
     };
   }
 
+    // Authentication
+    login(data: { email: string; password: string }): Observable<any> {
+      return this.http.post(`${this.baseUrl}/login/`, data).pipe(
+        catchError(this.handleError('login'))
+      );
+    }
+
+    register(data: { name: string; email: string; password: string }): Observable<any> {
+      return this.http.post(`${this.baseUrl}/register/`, data).pipe(
+        catchError(this.handleError('register'))
+      );
+    }
+
   private generateMockCompetitions() {
     const mockCompetitions = [];
     for (let i = 1; i <= 20; i++) {

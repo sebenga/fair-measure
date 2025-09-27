@@ -93,9 +93,7 @@ interface Competition {
     IonBackButton,
     IonTitle,
     IonContent,
-    IonItem,
-    IonLabel,
-    IonButton,
+  // IonItem, IonLabel, IonButton removed (add back if used in template)
     IonSelect,
     IonSelectOption,
     IonIcon

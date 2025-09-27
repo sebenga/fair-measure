@@ -1,4 +1,5 @@
 import { Component } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { IonHeader, IonToolbar, IonButtons, IonBackButton, IonTitle, IonContent } from '@ionic/angular/standalone';
 import { MediaUploadComponent } from './media-upload.component';
 
@@ -7,15 +8,16 @@ import { MediaUploadComponent } from './media-upload.component';
   templateUrl: './media-upload.page.html',
   styleUrls: ['./media-upload.page.scss'],
   standalone: true,
-  imports: [
-    IonHeader,
-    IonToolbar,
-    IonButtons,
-    IonBackButton,
-    IonTitle,
-    IonContent,
-    MediaUploadComponent
-  ]
+    imports: [
+      CommonModule,
+      IonHeader,
+      IonToolbar,
+      IonButtons,
+      IonBackButton,
+      IonTitle,
+      IonContent,
+      MediaUploadComponent
+    ]
 })
 export class MediaUploadPage {
   selectedCompetition: any = null;
