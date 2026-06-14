@@ -1,12 +1,14 @@
 import { Component, OnInit } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { trigger, state, style, transition, animate } from '@angular/animations';
 import { addIcons } from 'ionicons';
-import { cloudUploadOutline, imageOutline, trashOutline } from 'ionicons/icons';
+import { cloudUploadOutline, imageOutline, trashOutline, addOutline, checkmarkOutline, closeOutline } from 'ionicons/icons';
 // Removed invalid imports from 'ionicons/icons'.
-import { ApiService } from '../api.service';
+import { firstValueFrom } from 'rxjs';
+import { ApiService, CompetitionPayload } from '../api.service';
+import { AuthService } from '../services/auth.service';
 import {
   IonHeader,
   IonToolbar,
@@ -14,12 +16,12 @@ import {
   IonBackButton,
   IonTitle,
   IonContent,
-  IonItem,
-  IonLabel,
-  IonButton,
+  IonInput,
   IonSelect,
   IonSelectOption,
-  IonIcon
+  IonIcon,
+  IonCheckbox,
+  IonTextarea,
 } from '@ionic/angular/standalone';
 
 interface Rule {
@@ -87,17 +89,20 @@ interface Competition {
   imports: [
     CommonModule,
     FormsModule,
+    RouterModule,
     IonHeader,
     IonToolbar,
     IonButtons,
     IonBackButton,
     IonTitle,
     IonContent,
-  // IonItem, IonLabel, IonButton removed (add back if used in template)
+    IonInput,
     IonSelect,
     IonSelectOption,
-    IonIcon
-  ]
+    IonIcon,
+    IonCheckbox,
+    IonTextarea,
+  ],
 })
 export class CreateCompetitionPage implements OnInit {
   activeSection: string = 'basic';
@@ -129,9 +134,10 @@ export class CreateCompetitionPage implements OnInit {
 
   constructor(
     private apiService: ApiService,
+    private auth: AuthService,
     private router: Router
   ) {
-    addIcons({ cloudUploadOutline, imageOutline, trashOutline });
+    addIcons({imageOutline,cloudUploadOutline,trashOutline,addOutline,checkmarkOutline,closeOutline});
   }
 
   ngOnInit() {
@@ -267,45 +273,72 @@ export class CreateCompetitionPage implements OnInit {
   async onSubmit() {
     if (this.isSubmitting) return;
 
+    const user = this.auth.getCurrentUser();
+    if (!user) {
+      alert('Please log in to create a competition.');
+      await this.router.navigate(['/auth/login']);
+      return;
+    }
+
+    if (!this.competition.name.trim()) {
+      alert('Please enter a competition name.');
+      return;
+    }
+
+    if (!this.competition.type.trim()) {
+      alert('Please select a competition type.');
+      return;
+    }
+
     this.isSubmitting = true;
 
     try {
-      // Upload logo if a file was selected
       if (this.logoFile) {
         this.competition.logo_location = await this.uploadLogo();
       }
 
-      // Set the creation date
-      this.competition.date_created = new Date().toISOString();
+      const userName = user.name || user.email || 'Unknown User';
+      const ownerId = this.auth.getOwnerId();
 
-      // Filter out empty rules and scoring categories
-      this.competition.rules = this.competition.rules.filter(
-        rule => rule.name.trim() !== '' || rule.description.trim() !== ''
-      );
-      
-      this.competition.scoring_categories = this.competition.scoring_categories.filter(
-        category => category.name.trim() !== ''
-      );
+      const participantNames = this.competition.participants
+        .map((p) => p.name.trim())
+        .filter((name) => name !== '');
 
-      // Filter out empty participants
-      this.competition.participants = this.competition.participants.filter(
-        participant => participant.name.trim() !== ''
-      );
+      if (!participantNames.includes(userName)) {
+        participantNames.unshift(userName);
+      }
 
-      // Create the competition
-      const response = await this.apiService.createCompetition(this.competition).toPromise();
-      
-  // Show success message (replace with alert or other UI as needed)
-  alert('Competition created successfully!');
+      const payload: CompetitionPayload = {
+        id: crypto.randomUUID(),
+        name: this.competition.name.trim(),
+        author: userName,
+        owner_id: ownerId,
+        date_created: new Date().toISOString(),
+        logo_location: this.competition.logo_location || '',
+        is_private: this.competition.is_private,
+        type: this.competition.type,
+        rules: this.competition.rules.filter(
+          (rule) => rule.name.trim() !== '' || rule.description.trim() !== ''
+        ),
+        scoring_categories: this.competition.scoring_categories.filter(
+          (category) => category.name.trim() !== ''
+        ),
+        point_accumulation: { ...this.competition.point_accumulation },
+        participants: participantNames,
+        fixtures: [],
+        league_table: [],
+        posts: [],
+        photos: [],
+        videos: [],
+      };
 
-      // Navigate back to the main page
-      this.router.navigate(['/tabs/tab1']);
-      
+      await firstValueFrom(this.apiService.createCompetition(payload));
+
+      alert('Competition created successfully!');
+      await this.router.navigate(['/home']);
     } catch (error) {
       console.error('Error creating competition:', error);
-      
-  // Show error message (replace with alert or other UI as needed)
-  alert('Failed to create competition. Please try again.');
+      alert('Failed to create competition. Please try again.');
     } finally {
       this.isSubmitting = false;
     }

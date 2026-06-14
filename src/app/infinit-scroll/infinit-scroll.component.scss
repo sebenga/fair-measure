@@ -1,3 +1,8 @@
+.feed-scroll {
+  display: block;
+  width: 100%;
+}
+
 /* Facebook-like Layout Styles */
 .fb-layout {
   display: flex;
@@ -70,8 +75,11 @@
 
 /* Create Competition Section */
 .create-competition-section {
+  position: relative;
+  z-index: 20;
   margin-bottom: 20px;
   padding: 0 8px;
+  pointer-events: auto;
 }
 
 /* Media Upload Section */
@@ -86,7 +94,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
   height: 64px;
+  padding: 0;
+  border: none;
+  font: inherit;
+  text-align: inherit;
+  appearance: none;
+  -webkit-appearance: none;
   background: linear-gradient(135deg, #1877f2 0%, #42a5f5 50%, #64b5f6 100%);
   border-radius: 16px;
   cursor: pointer;
@@ -160,13 +175,25 @@
 /* Sporty Create Button */
 .sporty-create-btn {
   position: relative;
+  z-index: 21;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
   height: 64px;
+  padding: 0;
+  border: none;
+  font: inherit;
+  text-align: inherit;
+  text-decoration: none;
+  color: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
   background: linear-gradient(135deg, #ff6b35 0%, #ff8800 50%, #ffaa00 100%);
   border-radius: 16px;
-  cursor: pointer;
   overflow: hidden;
   box-shadow: 
     0 8px 32px rgba(255, 107, 53, 0.4),
@@ -175,6 +202,11 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border: 2px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
+}
+
+.sporty-create-btn:focus-visible {
+  outline: 3px solid #1877f2;
+  outline-offset: 2px;
 }
 
 .sporty-create-btn:hover {
@@ -200,6 +232,7 @@
   bottom: 0;
   overflow: hidden;
   border-radius: 16px;
+  pointer-events: none;
 }
 
 .energy-pulse {
@@ -229,6 +262,7 @@
   width: 100%;
   padding: 0 20px;
   z-index: 2;
+  pointer-events: none;
 }
 
 .logo-section {
@@ -319,6 +353,7 @@
   display: flex;
   gap: 4px;
   z-index: 1;
+  pointer-events: none;
 }
 
 .trophy-icon,
@@ -658,6 +693,13 @@ ion-item {
     z-index: 10;
   }
 
+  .fb-center {
+    position: relative;
+    z-index: 11;
+    margin-left: 280px;
+    max-width: calc(100% - 280px);
+  }
+
   .fb-right {
     flex: 0 0 280px;
     position: fixed;
@@ -684,8 +726,11 @@ ion-item {
   .fb-left {
     display: none;
   }
-  
-  /* Removed duplicate .fb-center selector in media query */
+
+  .fb-center {
+    margin-left: 0;
+    max-width: 100%;
+  }
   
   .fb-card {
     margin-bottom: 8px;

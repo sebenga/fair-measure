@@ -1,24 +1,61 @@
 import { Routes } from '@angular/router';
+import { authGuard, guestGuard } from './guards/auth.guard';
+import { TabsPage } from './tabs/tabs.page';
 
 export const routes: Routes = [
   {
     path: '',
-    loadChildren: () => import('./tabs/tabs.routes').then((m) => m.routes),
+    redirectTo: 'auth/login',
+    pathMatch: 'full',
   },
   {
     path: 'auth/login',
-    loadComponent: () => import('./auth/login/login.page').then(m => m.LoginPage)
+    loadComponent: () => import('./auth/login/login.page').then((m) => m.LoginPage),
   },
   {
     path: 'auth/register',
-    loadComponent: () => import('./auth/register/register.page').then(m => m.RegisterPage)
+    loadComponent: () => import('./auth/register/register.page').then((m) => m.RegisterPage),
+    canActivate: [guestGuard],
+  },
+  {
+    path: 'home',
+    component: TabsPage,
+    canActivate: [authGuard],
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./tab1/tab1.page').then((m) => m.Tab1Page),
+      },
+      {
+        path: 'tab2',
+        loadComponent: () => import('./tab2/tab2.page').then((m) => m.Tab2Page),
+      },
+      {
+        path: 'tab3',
+        loadComponent: () => import('./tab3/tab3.page').then((m) => m.Tab3Page),
+      },
+    ],
   },
   {
     path: 'create-competition',
-    loadComponent: () => import('./create-competition/create-competition.page').then(m => m.CreateCompetitionPage)
+    loadComponent: () =>
+      import('./create-competition/create-competition.page').then((m) => m.CreateCompetitionPage),
+    canActivate: [authGuard],
   },
   {
     path: 'media-upload',
-    loadComponent: () => import('./media-upload/media-upload.page').then(m => m.MediaUploadPage)
+    loadComponent: () =>
+      import('./media-upload/media-upload.page').then((m) => m.MediaUploadPage),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'login',
+    redirectTo: 'auth/login',
+    pathMatch: 'full',
+  },
+  {
+    path: 'register',
+    redirectTo: 'auth/register',
+    pathMatch: 'full',
   },
 ];

@@ -1,7 +1,39 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, of } from 'rxjs';
+import { Observable, throwError } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
+
+export interface CompetitionPayload {
+  id?: string;
+  name: string;
+  author: string;
+  owner_id: string;
+  date_created: string;
+  logo_location: string;
+  is_private: boolean;
+  type: string;
+  rules: { name: string; description: string }[];
+  scoring_categories: { name: string; description: string; points: number }[];
+  point_accumulation: { win: number; lose: number; draw: number };
+  participants: string[];
+  fixtures: string[];
+  league_table: string[];
+  posts: string[];
+  photos: string[];
+  videos: string[];
+  default_photo_repositories?: string[];
+  default_video_repositories?: string[];
+}
+
+export interface CompetitionCard {
+  id: string;
+  name: string;
+  description: string;
+  image: string;
+  author?: string;
+  type?: string;
+  is_private?: boolean;
+}
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -9,129 +41,39 @@ export class ApiService {
 
   constructor(private http: HttpClient) {}
 
-  private handleError<T>(operation = 'operation', result?: T) {
-    return (error: any): Observable<T> => {
-      if (error instanceof SyntaxError) {
-        console.error(`${operation} failed: Invalid JSON response`, error);
-      } else {
-        console.error(`${operation} failed:`, error);
-      }
-      // Return empty result to let the app continue functioning
-      return of(result as T);
-    };
-  }
-
-    // Authentication
-    login(data: { email: string; password: string }): Observable<any> {
-      return this.http.post(`${this.baseUrl}/login/`, data).pipe(
-        catchError(this.handleError('login'))
-      );
-    }
-
-    register(data: { name: string; email: string; password: string }): Observable<any> {
-      return this.http.post(`${this.baseUrl}/register/`, data).pipe(
-        catchError(this.handleError('register'))
-      );
-    }
-
-  private generateMockCompetitions() {
-    const mockCompetitions = [];
-    for (let i = 1; i <= 20; i++) {
-      mockCompetitions.push({
-        id: i,
-        name: `Sample Competition ${i}`,
-        description: `This is a sample competition description for competition ${i}. Join now to compete with others!`,
-        image: `https://picsum.photos/80/80?random=${i}`
-      });
-    }
-    return mockCompetitions;
-  }
-  // Competitions
-  getCompetitions(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/competitions/`).pipe(
-      catchError(this.handleError('getCompetitions', this.generateMockCompetitions()))
+  getCompetitions(): Observable<CompetitionCard[]> {
+    return this.http.get<CompetitionPayload[]>(`${this.baseUrl}/competitions/`).pipe(
+      map((list) => (Array.isArray(list) ? list : []).map((c) => this.toCard(c))),
+      catchError((err) => {
+        console.error('getCompetitions failed:', err);
+        return throwError(() => err);
+      })
     );
   }
-  getCompetition(id: number): Observable<any> {
-    return this.http.get(`${this.baseUrl}/competitions/${id}`);
-  }
-  createCompetition(data: any): Observable<any> {
-    return this.http.post(`${this.baseUrl}/competitions/`, data);
-  }
-  updateCompetition(id: number, data: any): Observable<any> {
-    return this.http.put(`${this.baseUrl}/competitions/${id}`, data);
-  }
-  deleteCompetition(id: number): Observable<any> {
-    return this.http.delete(`${this.baseUrl}/competitions/${id}`);
+
+  createCompetition(data: CompetitionPayload): Observable<CompetitionPayload> {
+    return this.http.post<CompetitionPayload>(`${this.baseUrl}/competitions/`, data).pipe(
+      catchError((err) => {
+        console.error('createCompetition failed:', err);
+        return throwError(() => err);
+      })
+    );
   }
 
-  // Fixtures
-  getFixtures(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/fixtures/`);
-  }
-  getFixture(id: number): Observable<any> {
-    return this.http.get(`${this.baseUrl}/fixtures/${id}`);
-  }
-  createFixture(data: any): Observable<any> {
-    return this.http.post(`${this.baseUrl}/fixtures/`, data);
-  }
-  updateFixture(id: number, data: any): Observable<any> {
-    return this.http.put(`${this.baseUrl}/fixtures/${id}`, data);
-  }
-  deleteFixture(id: number): Observable<any> {
-    return this.http.delete(`${this.baseUrl}/fixtures/${id}`);
+  getCompetition(id: string): Observable<CompetitionPayload> {
+    return this.http.get<CompetitionPayload>(`${this.baseUrl}/competitions/${id}`);
   }
 
-  // League Table
-  getLeagueTable(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/league_table/`);
+  private toCard(c: CompetitionPayload): CompetitionCard {
+    const firstRule = c.rules?.[0];
+    return {
+      id: c.id || '',
+      name: c.name,
+      description: firstRule?.description || `${c.type || 'Competition'} · by ${c.author || 'Unknown'}`,
+      image: c.logo_location || 'https://via.placeholder.com/80?text=Competition',
+      author: c.author,
+      type: c.type,
+      is_private: c.is_private,
+    };
   }
-  getLeagueTableEntry(id: number): Observable<any> {
-    return this.http.get(`${this.baseUrl}/league_table/${id}`);
-  }
-  createLeagueTable(data: any): Observable<any> {
-    return this.http.post(`${this.baseUrl}/league_table/`, data);
-  }
-  updateLeagueTable(id: number, data: any): Observable<any> {
-    return this.http.put(`${this.baseUrl}/league_table/${id}`, data);
-  }
-  deleteLeagueTable(id: number): Observable<any> {
-    return this.http.delete(`${this.baseUrl}/league_table/${id}`);
-  }
-
-  // Teams
-  getTeams(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/teams/`);
-  }
-  getTeam(id: number): Observable<any> {
-    return this.http.get(`${this.baseUrl}/teams/${id}`);
-  }
-  createTeam(data: any): Observable<any> {
-    return this.http.post(`${this.baseUrl}/teams/`, data);
-  }
-  updateTeam(id: number, data: any): Observable<any> {
-    return this.http.put(`${this.baseUrl}/teams/${id}`, data);
-  }
-  deleteTeam(id: number): Observable<any> {
-    return this.http.delete(`${this.baseUrl}/teams/${id}`);
-  }
-
-  // Posts
-  getPosts(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/posts/`);
-  }
-  getPost(id: number): Observable<any> {
-    return this.http.get(`${this.baseUrl}/posts/${id}`);
-  }
-  createPost(data: any): Observable<any> {
-    return this.http.post(`${this.baseUrl}/posts/`, data);
-  }
-  updatePost(id: number, data: any): Observable<any> {
-    return this.http.put(`${this.baseUrl}/posts/${id}`, data);
-  }
-  deletePost(id: number): Observable<any> {
-    return this.http.delete(`${this.baseUrl}/posts/${id}`);
-  }
-
-  // Add similar methods for scoring_events, scoring_categories, rules, media, point_accumulation, replies as needed
 }

@@ -101,7 +101,9 @@
     margin-left: 16px;
   }
   .header-actions {
-    display: none;
+    display: flex;
+    justify-content: flex-end;
+    margin-left: 0;
   }
 }
 
@@ -146,7 +148,7 @@
   box-shadow: 0 4px 12px rgba(255, 136, 0, 0.3);
 }
 
-@media (min-width: 900px) {
+@media (min-width: 700px) {
   .header-actions {
     display: flex;
   }

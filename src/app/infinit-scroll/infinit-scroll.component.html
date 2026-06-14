@@ -1,12 +1,16 @@
 
-<ion-content>
+<div class="feed-scroll">
   <div class="fb-layout">
     <div class="fb-left">
       <app-user-profile></app-user-profile>
     </div>
     <div class="fb-center">
       <div class="create-competition-section">
-        <div class="sporty-create-btn" routerLink="/create-competition">
+        <button
+          type="button"
+          class="sporty-create-btn"
+          (click)="goToCreateCompetition()"
+        >
           <div class="btn-background">
             <div class="energy-pulse"></div>
             <div class="energy-pulse pulse-2"></div>
@@ -14,13 +18,10 @@
           <div class="btn-content">
             <div class="logo-section">
               <svg width="32" height="24" viewBox="0 0 48 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="btn-logo">
-                <!-- Eye shapes -->
                 <ellipse cx="16" cy="16" rx="7" ry="9" fill="#fff" stroke="#fff" stroke-width="2" />
                 <ellipse cx="32" cy="16" rx="7" ry="9" fill="#fff" stroke="#fff" stroke-width="2" />
-                <!-- Pupils -->
                 <circle cx="16" cy="16" r="3" fill="#ff8800" />
                 <circle cx="32" cy="16" r="3" fill="#ff8800" />
-                <!-- Monitoring arc -->
                 <path d="M8 10 Q24 2 40 10" stroke="#fff" stroke-width="2" fill="none" />
               </svg>
             </div>
@@ -38,41 +39,10 @@
             <div class="trophy-icon">🏆</div>
             <div class="fire-icon">🔥</div>
           </div>
-        </div>
+        </button>
       </div>
       
-      <div class="media-upload-section">
-        <div class="sporty-media-btn" routerLink="/media-upload">
-          <div class="btn-background">
-            <div class="media-pulse"></div>
-            <div class="media-pulse pulse-2"></div>
-          </div>
-          <div class="btn-content">
-            <div class="logo-section">
-              <svg width="32" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="btn-logo">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" stroke="currentColor" stroke-width="2" fill="none"/>
-                <circle cx="8.5" cy="8.5" r="1.5" stroke="currentColor" stroke-width="2" fill="currentColor"/>
-                <polyline points="21,15 16,10 5,21" stroke="currentColor" stroke-width="2" fill="none"/>
-              </svg>
-            </div>
-            <div class="text-section">
-              <span class="main-text">UPLOAD MEDIA</span>
-              <span class="sub-text">Share Your Moments</span>
-            </div>
-            <div class="action-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <path d="M21 15V19A2 2 0 0 1 19 21H5A2 2 0 0 1 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <polyline points="7,10 12,15 17,10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              </svg>
-            </div>
-          </div>
-          <div class="sport-elements">
-            <div class="camera-icon">📸</div>
-            <div class="video-icon">🎥</div>
-          </div>
-        </div>
-      </div>
+
       
       <ion-list>
         @if (competitions.length === 0) {
@@ -87,7 +57,7 @@
                   <img [src]="competition.image || 'https://via.placeholder.com/80?text=Competition'" alt="avatar" />
                 </ion-avatar>
                 <ion-label class="fb-title">
-                  <span class="fb-name">{{ competition.name || competition.title || 'Competition ' + (index + 1) }}</span>
+                  <span class="fb-name">{{ competition.name || 'Competition ' + (index + 1) }}</span>
                   <span class="fb-date">Just now</span>
                 </ion-label>
               </ion-item>
@@ -114,4 +84,4 @@
       <app-rightbar></app-rightbar>
     </div>
   </div>
-</ion-content>
+</div>

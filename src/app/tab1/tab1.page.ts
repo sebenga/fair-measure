@@ -1,5 +1,5 @@
-import { Component, OnInit } from '@angular/core';
-import { ApiService } from '../api.service';
+import { Component, ViewChild } from '@angular/core';
+import { ViewWillEnter } from '@ionic/angular';
 import { IonContent } from '@ionic/angular/standalone';
 import { InfinitScrollComponent } from '../infinit-scroll/infinit-scroll.component';
 import { FbHeaderComponent } from '../fb-header/fb-header.component';
@@ -10,11 +10,10 @@ import { FbHeaderComponent } from '../fb-header/fb-header.component';
   styleUrls: ['tab1.page.scss'],
   imports: [IonContent, InfinitScrollComponent, FbHeaderComponent],
 })
-export class Tab1Page implements OnInit {
-  constructor(private apiService: ApiService) {}
+export class Tab1Page implements ViewWillEnter {
+  @ViewChild(InfinitScrollComponent) feed?: InfinitScrollComponent;
 
-  async ngOnInit() {
-    // Removed automatic sample creation to prevent API errors
-    console.log('Tab1 page initialized');
+  ionViewWillEnter(): void {
+    this.feed?.refreshCompetitions();
   }
 }

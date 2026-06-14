@@ -1,10 +1,10 @@
 import { Component, OnInit } from '@angular/core';
-import { ApiService } from '../api.service';
-import { RouterModule } from '@angular/router';
+import { Router } from '@angular/router';
+import { ApiService, CompetitionCard } from '../api.service';
+import { AuthService } from '../services/auth.service';
+import { CREATE_COMPETITION_URL } from '../constants/routes';
 import {
-  InfiniteScrollCustomEvent,
   IonAvatar,
-  IonContent,
   IonInfiniteScroll,
   IonInfiniteScrollContent,
   IonItem,
@@ -18,60 +18,82 @@ import { addIcons } from 'ionicons';
 import { addOutline, cameraOutline } from 'ionicons/icons';
 import { UserProfileComponent } from '../user-profile/user-profile.component';
 import { RightbarComponent } from '../rightbar/rightbar.component';
-// ...existing code...
 
 @Component({
   selector: 'app-infinit-scroll',
   templateUrl: './infinit-scroll.component.html',
   styleUrls: ['./infinit-scroll.component.scss'],
-  imports: [RouterModule, IonAvatar, IonContent, IonInfiniteScroll, IonInfiniteScrollContent, IonItem, IonLabel, IonList, IonCard, IonButton, IonIcon, UserProfileComponent, RightbarComponent],
+  standalone: true,
+  imports: [
+    IonAvatar,
+    IonInfiniteScroll,
+    IonInfiniteScrollContent,
+    IonItem,
+    IonLabel,
+    IonList,
+    IonCard,
+    IonButton,
+    IonIcon,
+    UserProfileComponent,
+    RightbarComponent,
+  ],
 })
-
 export class InfinitScrollComponent implements OnInit {
-  competitions: any[] = [];
-  page: number = 1;
-  pageSize: number = 20;
-  maxCompetitions: number = 100; // Set this to your desired maximum
+  competitions: CompetitionCard[] = [];
+  loading = false;
+  maxCompetitions = 100;
 
-  constructor(private apiService: ApiService) {
+  constructor(
+    private apiService: ApiService,
+    private router: Router,
+    private auth: AuthService
+  ) {
     addIcons({ addOutline, cameraOutline });
   }
 
-  openMediaUpload(competition: any) {
-    // Store the selected competition in localStorage for the media upload page
-    localStorage.setItem('selectedCompetition', JSON.stringify(competition));
-    // Navigate to media upload page
-    window.location.href = '/media-upload';
-  }
-
   ngOnInit(): void {
-    this.loadCompetitions();
+    this.refreshCompetitions();
   }
 
-  private loadCompetitions() {
-    this.apiService.getCompetitions().subscribe((data: any) => {
-      // If API supports pagination, adjust accordingly
-      this.competitions = this.competitions.concat(data);
+  refreshCompetitions(): void {
+    this.loading = true;
+    this.apiService.getCompetitions().subscribe({
+      next: (data) => {
+        this.competitions = data;
+        this.loading = false;
+      },
+      error: () => {
+        this.competitions = [];
+        this.loading = false;
+      },
     });
   }
 
-  onIonInfinite(event: any) {
-    // Add loading class for animation
-    event.target.classList.add('loading');
-    
-    // Simulate loading more competitions
-    setTimeout(() => {
-      // Add more competitions to your array here
-      // this.loadMoreCompetitions();
-      
-      // Remove loading class
-      event.target.classList.remove('loading');
-      event.target.complete();
-      
-      // Disable infinite scroll if no more data
-      if (this.competitions.length >= this.maxCompetitions) {
-        event.target.disabled = true;
-      }
-    }, 1000);
+  goToCreateCompetition(): void {
+    if (!this.auth.isLoggedIn()) {
+      void this.router.navigate(['/auth/login']);
+      return;
+    }
+
+    void this.router.navigate([CREATE_COMPETITION_URL]);
+  }
+
+  openMediaUploadPage(event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    void this.router.navigate(['/media-upload']);
+  }
+
+  openMediaUpload(competition: CompetitionCard): void {
+    localStorage.setItem('selectedCompetition', JSON.stringify(competition));
+    this.router.navigate(['/media-upload']);
+  }
+
+  onIonInfinite(event: Event): void {
+    const target = event.target as HTMLIonInfiniteScrollElement;
+    target.complete();
+    if (this.competitions.length >= this.maxCompetitions) {
+      target.disabled = true;
+    }
   }
 }
