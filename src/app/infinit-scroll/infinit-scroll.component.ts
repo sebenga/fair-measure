@@ -15,9 +15,10 @@ import {
   IonIcon,
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
-import { addOutline, cameraOutline } from 'ionicons/icons';
+import { addOutline, cameraOutline, thumbsUpOutline, chatbubbleOutline, shareOutline } from 'ionicons/icons';
 import { UserProfileComponent } from '../user-profile/user-profile.component';
 import { RightbarComponent } from '../rightbar/rightbar.component';
+import { InlineAuthComponent } from '../inline-auth/inline-auth.component';
 
 @Component({
   selector: 'app-infinit-scroll',
@@ -36,6 +37,7 @@ import { RightbarComponent } from '../rightbar/rightbar.component';
     IonIcon,
     UserProfileComponent,
     RightbarComponent,
+    InlineAuthComponent,
   ],
 })
 export class InfinitScrollComponent implements OnInit {
@@ -43,12 +45,16 @@ export class InfinitScrollComponent implements OnInit {
   loading = false;
   maxCompetitions = 100;
 
+  get isLoggedIn(): boolean {
+    return this.auth.isLoggedIn();
+  }
+
   constructor(
     private apiService: ApiService,
     private router: Router,
     private auth: AuthService
   ) {
-    addIcons({ addOutline, cameraOutline });
+    addIcons({ addOutline, cameraOutline, thumbsUpOutline, chatbubbleOutline, shareOutline });
   }
 
   ngOnInit(): void {

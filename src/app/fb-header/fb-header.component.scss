@@ -107,45 +107,21 @@
   }
 }
 
-/* Header Auth Buttons */
-.header-actions {
-  display: none;
-  gap: 8px;
-  margin-left: 16px;
-}
-
-.auth-btn {
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  border: none;
-  text-decoration: none;
-}
-
-.login-btn {
-  background: transparent;
-  color: #1877f2;
-  border: 2px solid #1877f2;
-}
-
-.login-btn:hover {
-  background: #1877f2;
-  color: white;
-}
-
-.register-btn {
-  background: linear-gradient(135deg, #ff8800, #ffaa00);
-  color: white;
-  border: 2px solid transparent;
-}
-
 .register-btn:hover {
   background: linear-gradient(135deg, #ff6b35, #ff8800);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(255, 136, 0, 0.3);
+}
+
+.logout-btn {
+  background: transparent;
+  color: #65676b;
+  border: 2px solid #e4e6ea;
+}
+
+.logout-btn:hover {
+  background: #f8f9fa;
+  border-color: #65676b;
 }
 
 @media (min-width: 700px) {

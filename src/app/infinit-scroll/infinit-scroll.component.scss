@@ -770,3 +770,92 @@ ion-item {
   outline: 2px solid #1877f2;
   outline-offset: 2px;
 }
+
+/* Guest Welcome Banner */
+.guest-welcome {
+  max-width: 100%;
+}
+
+.welcome-hero {
+  position: relative;
+  background: linear-gradient(135deg, #ff6b35 0%, #ff8800 50%, #ffaa00 100%);
+  padding: 60px 20px;
+  text-align: center;
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.hero-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.hero-bg .bg-wave {
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+  animation: guestWave 4s ease-in-out infinite;
+}
+
+.hero-bg .wave-2 {
+  animation-delay: 2s;
+}
+
+@keyframes guestWave {
+  0%, 100% { transform: scale(0.8) rotate(0deg); opacity: 0.3; }
+  50% { transform: scale(1.2) rotate(180deg); opacity: 0.6; }
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+  color: white;
+}
+
+.hero-logo {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+  margin-bottom: 20px;
+  animation: heroFloat 3s ease-in-out infinite;
+}
+
+@keyframes heroFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+.hero-content h1 {
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin: 0 0 12px 0;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.hero-content p {
+  font-size: 1.2rem;
+  margin: 0;
+  opacity: 0.95;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+@media (max-width: 768px) {
+  .welcome-hero {
+    padding: 40px 16px;
+  }
+
+  .hero-content h1 {
+    font-size: 1.8rem;
+  }
+
+  .hero-content p {
+    font-size: 1rem;
+  }
+
+  .hero-logo {
+    width: 48px;
+    height: 36px;
+  }
+}

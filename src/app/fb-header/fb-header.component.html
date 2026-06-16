@@ -50,13 +50,10 @@
       </div>
       <ion-searchbar class="fb-search" placeholder="Search  "></ion-searchbar>
       <div class="header-actions">
-        @if (!isLoggedIn()) {
-        <button type="button" class="auth-btn login-btn" (click)="goToLogin()">
-          <span>Login</span>
-        </button>
-        <button type="button" class="auth-btn register-btn" (click)="goToRegister()">
-          <span>Sign Up</span>
-        </button>
+        @if (isLoggedIn()) {
+          <button type="button" class="auth-btn logout-btn" (click)="logout()">
+            <span>Logout</span>
+          </button>
         }
       </div>
     </div>

@@ -5,7 +5,7 @@ import { TabsPage } from './tabs/tabs.page';
 export const routes: Routes = [
   {
     path: '',
-    redirectTo: 'auth/login',
+    redirectTo: 'home',
     pathMatch: 'full',
   },
   {
@@ -20,7 +20,6 @@ export const routes: Routes = [
   {
     path: 'home',
     component: TabsPage,
-    canActivate: [authGuard],
     children: [
       {
         path: '',
@@ -29,10 +28,12 @@ export const routes: Routes = [
       {
         path: 'tab2',
         loadComponent: () => import('./tab2/tab2.page').then((m) => m.Tab2Page),
+        canActivate: [authGuard],
       },
       {
         path: 'tab3',
         loadComponent: () => import('./tab3/tab3.page').then((m) => m.Tab3Page),
+        canActivate: [authGuard],
       },
     ],
   },
@@ -50,12 +51,12 @@ export const routes: Routes = [
   },
   {
     path: 'login',
-    redirectTo: 'auth/login',
+    redirectTo: 'home',
     pathMatch: 'full',
   },
   {
     path: 'register',
-    redirectTo: 'auth/register',
+    redirectTo: 'home',
     pathMatch: 'full',
   },
 ];
