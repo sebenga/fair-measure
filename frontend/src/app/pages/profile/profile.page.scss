@@ -1,0 +1,51 @@
+.identity {
+  text-align: center;
+  padding: 12px 20px 4px;
+
+  ion-avatar {
+    width: 84px;
+    height: 84px;
+    margin: 0 auto 12px;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .initials {
+      display: grid;
+      place-items: center;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      color: #fff;
+      font-size: 1.6rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--ion-color-primary), var(--ion-color-secondary));
+    }
+  }
+
+  h2 {
+    margin: 0 0 2px;
+    font-size: 1.25rem;
+    font-weight: 700;
+  }
+
+  p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--ion-color-medium);
+  }
+}
+
+.save {
+  margin: 8px 16px 0;
+}
+
+.footnote {
+  display: block;
+  text-align: center;
+  margin: 4px 20px 48px;
+  font-size: 0.76rem;
+}

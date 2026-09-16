@@ -1,7 +1,0 @@
-{
-  "name": "fair-measure",
-  "integrations": {
-    "capacitor": {}
-  },
-  "type": "angular-standalone"
-}

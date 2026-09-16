@@ -1,0 +1,43 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["*/migrations/*", ".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # import sorting
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "DJ",   # Django-specific
+    "S",    # bandit
+    "RUF",
+]
+ignore = [
+    # Django declares configuration as class-level lists and dicts everywhere
+    # (Meta.fields, ModelAdmin.list_display, DRF serializer options). Treating
+    # those as mutable-default bugs would mean annotating hundreds of lines.
+    "RUF012",
+    "S101",   # asserts are how pytest works
+    "B008",   # DRF and Django rely on calls in argument defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+# A data table. One preset entry per line reads better than wrapped dicts.
+"apps/competitions/presets.py" = ["E501"]
+# Test fixtures use predictable credentials on purpose.
+"tests/*" = ["S105", "S106", "S311"]
+# The seeder's randomness is for readable demo data, not security.
+"apps/core/management/commands/seed_demo.py" = ["S311"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config"]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "first-party",
+    "local-folder",
+]

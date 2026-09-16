@@ -1,0 +1,61 @@
+.auth-shell {
+  max-width: 420px;
+  margin: 0 auto;
+  padding-top: 8vh;
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 28px;
+
+  .mark {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 16px;
+    border-radius: 18px;
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    font-size: 1.4rem;
+    letter-spacing: 0.02em;
+    color: #fff;
+    background: linear-gradient(135deg, var(--ion-color-primary), var(--ion-color-secondary));
+    box-shadow: var(--fm-shadow);
+  }
+
+  h1 {
+    margin: 0 0 6px;
+    font-size: 1.6rem;
+    font-weight: 700;
+  }
+
+  p {
+    margin: 0;
+    color: var(--ion-color-medium);
+    font-size: 0.95rem;
+  }
+}
+
+form ion-button {
+  margin: 16px;
+}
+
+.error {
+  margin: 8px 16px 0;
+  font-size: 0.85rem;
+}
+
+.switch {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
+  margin-top: 24px;
+  font-size: 0.9rem;
+
+  a {
+    color: var(--ion-color-primary);
+    font-weight: 600;
+    text-decoration: none;
+  }
+}
