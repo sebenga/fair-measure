@@ -85,9 +85,8 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
           <ion-icon name="trophy-outline" aria-hidden="true" />
           <h3>No competitions yet</h3>
           <p>
-            A league can hold several competitions — a sport, KPIs with your own
-            scoring, a cleaning rota, or something you invent. Create one, then
-            add more from here.
+            A league can hold several competitions — an official sport, or one
+            with scoring you define. Create one, then add more from here.
           </p>
           <ion-button type="button" routerLink="/tabs/competitions/new" routerDirection="forward">
             Create a competition
@@ -193,7 +192,7 @@ export class CompetitionListPage {
   }
 
   openCompetition(id: string): void {
-    void this.router.navigate(['/competitions', id]);
+    void this.router.navigate(['/tabs/competitions', id]);
   }
 
   async confirmDelete(competition: Competition): Promise<void> {

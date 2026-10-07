@@ -7,9 +7,10 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.permissions import IsAuthenticatedOrReadOnly
+from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.competitions.models import Competition, Stage
 from apps.competitions.views import visible_competitions
@@ -30,9 +31,10 @@ from .serializers import (
     FixtureStatusSerializer,
     FixtureWriteSerializer,
     GenerateFixturesSerializer,
+    ScoreAssistSerializer,
     ScoreEventSerializer,
 )
-from .services import ScheduleOptions, generate_knockout, generate_round_robin
+from .services import ScheduleOptions, award_criterion, generate_knockout, generate_round_robin, record_result
 
 
 def _fixture_payload(fixture: Fixture) -> dict:
@@ -362,3 +364,83 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
         return Response(
             ScoreEventSerializer(created, many=True).data, status=status.HTTP_201_CREATED
         )
+
+
+class ScoreAssistView(APIView):
+    """Lets a scorer award criteria or record a win, draw, or loss."""
+
+    permission_classes = [IsAuthenticated]
+
+    def _competition(self, request: Request, competition_pk: str) -> Competition:
+        competition = get_object_or_404(visible_competitions(request.user), pk=competition_pk)
+        if not has_at_least(competition, request.user, Role.SCORER):
+            raise PermissionDenied("Only a scorer, admin, or owner can record scores.")
+        return competition
+
+    @extend_schema(tags=["Scoring"], summary="Recent scoring entries for administrators")
+    def get(self, request: Request, competition_pk: str) -> Response:
+        competition = self._competition(request, competition_pk)
+        events = (
+            ScoreEvent.objects.filter(fixture__competition=competition)
+            .select_related("scoring_category", "side__participant")
+            .order_by("-created_at")[:40]
+        )
+        return Response(
+            [
+                {
+                    "id": str(event.id),
+                    "participant_id": str(event.side.participant_id),
+                    "participant_name": event.side.participant.name,
+                    "criterion": event.scoring_category.name,
+                    "description": event.scoring_category.description,
+                    "quantity": str(event.quantity),
+                    "awarded": str(event.points),
+                    "note": event.note,
+                    "created_at": event.created_at,
+                }
+                for event in events
+            ]
+        )
+
+    @extend_schema(
+        tags=["Scoring"],
+        summary="Award a scoring criterion or record a win, draw, or loss",
+        request=ScoreAssistSerializer,
+        responses={201: dict},
+    )
+    def post(self, request: Request, competition_pk: str) -> Response:
+        competition = self._competition(request, competition_pk)
+        serializer = ScoreAssistSerializer(
+            data=request.data, context={"competition": competition}
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            if data["kind"] == "criterion":
+                event = award_criterion(
+                    competition=competition,
+                    participant=data["participant"],
+                    category=data["scoring_category"],
+                    quantity=data["quantity"],
+                    note=data["note"].strip(),
+                    user=request.user,
+                )
+                return Response(
+                    {
+                        "id": str(event.id),
+                        "awarded": str(event.points),
+                        "note": event.note,
+                    },
+                    status=status.HTTP_201_CREATED,
+                )
+            fixture = record_result(
+                competition=competition,
+                home=data["home"],
+                away=data["away"],
+                outcome=data["outcome"],
+                note=data.get("note", "").strip(),
+                user=request.user,
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+        return Response({"id": str(fixture.id), "label": fixture.label}, status=status.HTTP_201_CREATED)

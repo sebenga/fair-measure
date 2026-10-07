@@ -30,7 +30,7 @@ from .models import (
     ScoringCategory,
     Stage,
 )
-from .presets import PRESETS, apply_preset
+from .presets import PRESETS, SCORING_LOCKED_MESSAGE, apply_preset, scoring_is_locked
 from .serializers import (
     ApplyPresetSerializer,
     CompetitionDetailSerializer,
@@ -131,6 +131,7 @@ class CompetitionViewSet(viewsets.ModelViewSet):
                     "kind": preset.get("kind", "sport"),
                     "format": preset["format"],
                     "table_mode": preset.get("table_mode", "head_to_head"),
+                    "scoring_locked": bool(preset.get("scoring_locked", key != "custom")),
                     "scoring_categories": [
                         {
                             "name": item["name"],
@@ -158,6 +159,8 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         competition = self.get_object()
         serializer = ApplyPresetSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        if scoring_is_locked(competition):
+            raise ValidationError(SCORING_LOCKED_MESSAGE)
 
         with transaction.atomic():
             if serializer.validated_data["replace_existing"]:
@@ -296,8 +299,21 @@ class ScoringCategoryViewSet(CompetitionScopedViewSet):
     serializer_class = ScoringCategorySerializer
     basename = "scoring_category"
 
+    def _assert_scoring_editable(self) -> None:
+        if scoring_is_locked(self.get_competition()):
+            raise ValidationError(SCORING_LOCKED_MESSAGE)
+
+    def perform_create(self, serializer) -> None:
+        self._assert_scoring_editable()
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer) -> None:
+        self._assert_scoring_editable()
+        super().perform_update(serializer)
+
     def perform_destroy(self, instance: ScoringCategory) -> None:
         self._assert_can_write()
+        self._assert_scoring_editable()
         if instance.score_events.exists():
             raise ValidationError(
                 "This category has recorded events. Set its points to 0 instead of "
@@ -479,6 +495,8 @@ class PointsPolicyView(generics.RetrieveUpdateAPIView):
         competition = self.get_competition()
         if not has_at_least(competition, self.request.user, Role.ADMIN):
             raise PermissionDenied("Only competition admins can change the points policy.")
+        if scoring_is_locked(competition):
+            raise ValidationError(SCORING_LOCKED_MESSAGE)
         serializer.save()
 
         # Every row of the league table is derived from this policy.

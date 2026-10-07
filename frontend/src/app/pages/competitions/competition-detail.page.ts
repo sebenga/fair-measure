@@ -60,6 +60,11 @@ type Tab = 'feed' | 'fixtures' | 'standings';
           @if (realtime.connected()) {
             <span class="fm-live" title="Live updates on">Live</span>
           }
+          @if (canScore()) {
+            <ion-button (click)="openScore()">
+              <ion-icon slot="icon-only" name="create-outline" aria-label="Record scores" />
+            </ion-button>
+          }
           @if (canManage()) {
             <ion-button (click)="openSetup()">
               <ion-icon slot="icon-only" name="options-outline" aria-label="Setup" />
@@ -81,9 +86,11 @@ type Tab = 'feed' | 'fixtures' | 'standings';
           <ion-segment-button value="fixtures">
             <ion-label>Fixtures</ion-label>
           </ion-segment-button>
-          <ion-segment-button value="standings">
-            <ion-label>Table</ion-label>
-          </ion-segment-button>
+          @if (competition()?.format !== 'knockout') {
+            <ion-segment-button value="standings">
+              <ion-label>Table</ion-label>
+            </ion-segment-button>
+          }
         </ion-segment>
       </ion-toolbar>
     </ion-header>
@@ -192,6 +199,11 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
     }
   }
 
+  canScore(): boolean {
+    const role = this.competition()?.my_role;
+    return role === 'owner' || role === 'admin' || role === 'scorer';
+  }
+
   canManage(): boolean {
     const role = this.competition()?.my_role;
     return role === 'owner' || role === 'admin';
@@ -201,8 +213,12 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
     return this.competition()?.my_role === 'owner';
   }
 
+  openScore(): void {
+    void this.router.navigate(['/tabs/competitions', this.competitionId, 'score']);
+  }
+
   openSetup(): void {
-    void this.router.navigate(['/competitions', this.competitionId, 'setup']);
+    void this.router.navigate(['/tabs/competitions', this.competitionId, 'setup']);
   }
 
   async confirmDelete(): Promise<void> {

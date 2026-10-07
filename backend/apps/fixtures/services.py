@@ -168,3 +168,91 @@ def generate_knockout(
         created.append(fixture)
 
     return created
+
+
+def award_criterion(*, competition, participant, category, quantity, note, user):
+    """Log one scoring criterion against one participant and refresh the table."""
+
+    from django.utils import timezone
+
+    from apps.standings.services import refresh_standings
+
+    from .models import FixtureSide, ScoreEvent
+
+    fixture = Fixture.objects.create(
+        competition=competition,
+        status=Fixture.Status.COMPLETED,
+        label=category.name,
+        completed_at=timezone.now(),
+        created_by=user,
+        notes=note,
+    )
+    side = FixtureSide.objects.create(
+        fixture=fixture, participant=participant, position=0, is_home=True
+    )
+    event = ScoreEvent.objects.create(
+        fixture=fixture,
+        side=side,
+        scoring_category=category,
+        quantity=quantity,
+        note=note,
+        recorded_by=user,
+    )
+    fixture.recalculate_scores()
+    refresh_standings(competition)
+    return event
+
+
+def record_result(*, competition, home, away, outcome, note, user):
+    """Record a completed fixture decided by win, draw, or loss."""
+
+    from django.utils import timezone
+
+    from apps.standings.services import refresh_standings
+
+    from .models import FixtureSide, ScoreEvent
+
+    category = (
+        competition.scoring_categories.filter(affects_score=True)
+        .order_by("display_order", "name")
+        .first()
+    )
+    if category is None:
+        raise ValueError("Define a scoring criterion that counts toward the score first.")
+
+    fixture = Fixture.objects.create(
+        competition=competition,
+        status=Fixture.Status.COMPLETED,
+        label=f"{home.name} v {away.name}",
+        completed_at=timezone.now(),
+        created_by=user,
+        notes=note,
+    )
+    home_side = FixtureSide.objects.create(
+        fixture=fixture, participant=home, position=0, is_home=True
+    )
+    away_side = FixtureSide.objects.create(
+        fixture=fixture, participant=away, position=1, is_home=False
+    )
+
+    if outcome == "draw":
+        winners = [home_side, away_side]
+    elif outcome == "home":
+        winners = [home_side]
+    elif outcome == "away":
+        winners = [away_side]
+    else:
+        raise ValueError("Outcome must be home, away, or draw.")
+
+    for side in winners:
+        ScoreEvent.objects.create(
+            fixture=fixture,
+            side=side,
+            scoring_category=category,
+            quantity=1,
+            note=note,
+            recorded_by=user,
+        )
+    fixture.recalculate_scores()
+    refresh_standings(competition)
+    return fixture

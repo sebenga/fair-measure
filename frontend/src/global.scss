@@ -109,6 +109,13 @@
   margin: 4px 16px 0;
 }
 
+ion-tab-bar {
+  display: flex !important;
+  visibility: visible !important;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
 ion-tabs ion-router-outlet {
   pointer-events: auto !important;
 }

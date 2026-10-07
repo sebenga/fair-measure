@@ -62,26 +62,140 @@ def test_creating_a_competition_with_a_preset_seeds_scoring(api):
     codes = {item["code"] for item in detail.data["scoring_categories"]}
 
     assert codes == {"try", "conversion", "penalty", "drop-goal"}
-    assert detail.data["points_policy"]["win_points"] == "4.00"
+    by_code = {item["code"]: item for item in detail.data["scoring_categories"]}
+    assert by_code["try"]["points"] == "5.00"
+    assert by_code["conversion"]["points"] == "2.00"
+    assert by_code["penalty"]["points"] == "3.00"
+    assert by_code["drop-goal"]["points"] == "3.00"
+    assert detail.data["points_policy"]["win_points"] == "3.00"
+    assert detail.data["points_policy"]["draw_points"] == "1.00"
+    assert detail.data["points_policy"]["loss_points"] == "0.00"
+    assert detail.data["points_policy"]["bonus_loss_points"] == "0.00"
+    assert detail.data["settings_json"]["scoring_locked"] is True
     assert detail.data["my_role"] == Role.OWNER
 
 
-def test_kpi_preset_seeds_described_scoring(api):
-    response = api.post(
+def test_locked_preset_scoring_cannot_be_changed(api):
+    created = api.post(
         "/api/v1/competitions",
-        {"name": "Q3 sales", "preset": "kpi"},
+        {"name": "Sunday League", "preset": "soccer"},
         format="json",
     )
-    assert response.status_code == 201
+    assert created.status_code == 201
+    competition_id = created.data["id"]
 
-    detail = api.get(f"/api/v1/competitions/{response.data['id']}")
-    by_code = {item["code"]: item for item in detail.data["scoring_categories"]}
+    detail = api.get(f"/api/v1/competitions/{competition_id}")
+    policy = detail.data["points_policy"]
+    assert policy["win_points"] == "3.00"
+    assert policy["draw_points"] == "1.00"
+    assert policy["loss_points"] == "0.00"
+    goal = next(item for item in detail.data["scoring_categories"] if item["code"] == "goal")
 
-    assert detail.data["sport"] == "KPIs"
-    assert by_code["target-met"]["points"] == "3.00"
-    assert "agreed number" in by_code["target-met"]["description"]
-    assert by_code["miss"]["affects_score"] is False
-    assert by_code["stretch"]["description"]
+    edited = api.patch(
+        f"/api/v1/competitions/{competition_id}/scoring-categories/{goal['id']}",
+        {"points": "9"},
+        format="json",
+    )
+    assert edited.status_code == 400
+
+    added = api.post(
+        f"/api/v1/competitions/{competition_id}/scoring-categories",
+        {"name": "Bonus", "code": "bonus", "points": "1"},
+        format="json",
+    )
+    assert added.status_code == 400
+
+    removed = api.delete(
+        f"/api/v1/competitions/{competition_id}/scoring-categories/{goal['id']}"
+    )
+    assert removed.status_code == 400
+
+    policy_edit = api.patch(
+        f"/api/v1/competitions/{competition_id}/points-policy",
+        {"win_points": "10"},
+        format="json",
+    )
+    assert policy_edit.status_code == 400
+
+    unlocked = api.patch(
+        f"/api/v1/competitions/{competition_id}",
+        {"settings_json": {"scoring_locked": False, "preset": "custom"}},
+        format="json",
+    )
+    assert unlocked.status_code == 200
+    assert unlocked.data["settings_json"]["scoring_locked"] is True
+
+    still_locked = api.patch(
+        f"/api/v1/competitions/{competition_id}/points-policy",
+        {"win_points": "10"},
+        format="json",
+    )
+    assert still_locked.status_code == 400
+
+    overridden = api.post(
+        "/api/v1/competitions",
+        {
+            "name": "Rewritten soccer",
+            "preset": "soccer",
+            "scoring_categories": [{"name": "Goal", "points": "5"}],
+        },
+        format="json",
+    )
+    assert overridden.status_code == 400
+
+    reapplied = api.post(
+        f"/api/v1/competitions/{competition_id}/apply-preset",
+        {"preset": "rugby", "replace_existing": True},
+        format="json",
+    )
+    assert reapplied.status_code == 400
+
+
+def test_scrabble_league_and_darts_knockout_presets(api):
+    scrabble = api.post(
+        "/api/v1/competitions",
+        {"name": "Club Scrabble", "preset": "scrabble"},
+        format="json",
+    )
+    assert scrabble.status_code == 201
+    scrabble_detail = api.get(f"/api/v1/competitions/{scrabble.data['id']}")
+    assert scrabble_detail.data["format"] == "league"
+    assert scrabble_detail.data["settings_json"]["table_mode"] == "head_to_head"
+    assert scrabble_detail.data["points_policy"]["win_points"] == "3.00"
+    assert scrabble_detail.data["points_policy"]["draw_points"] == "1.00"
+    assert scrabble_detail.data["points_policy"]["loss_points"] == "0.00"
+    score = scrabble_detail.data["scoring_categories"][0]
+    assert score["code"] == "game-score"
+    assert score["points"] == "1.00"
+    assert "bingo" in score["description"]
+
+    darts = api.post(
+        "/api/v1/competitions",
+        {"name": "501 Cup", "preset": "darts"},
+        format="json",
+    )
+    assert darts.status_code == 201
+    darts_detail = api.get(f"/api/v1/competitions/{darts.data['id']}")
+    assert darts_detail.data["format"] == "knockout"
+    assert darts_detail.data["settings_json"]["scoring_locked"] is True
+    assert darts_detail.data["scoring_categories"][0]["code"] == "leg"
+    assert darts_detail.data["scoring_categories"][0]["points"] == "1.00"
+
+
+def test_golf_stroke_play_accumulates_without_results(api):
+    created = api.post(
+        "/api/v1/competitions",
+        {"name": "Monthly medal", "preset": "golf"},
+        format="json",
+    )
+    assert created.status_code == 201
+    detail = api.get(f"/api/v1/competitions/{created.data['id']}")
+    assert detail.data["settings_json"]["table_mode"] == "points"
+    assert detail.data["settings_json"]["scoring_basis"] == "criteria"
+    assert detail.data["points_policy"]["win_points"] == "0.00"
+    stroke = next(item for item in detail.data["scoring_categories"] if item["code"] == "stroke")
+    assert stroke["points"] == "-1.00"
+    assert "fewest strokes" in stroke["description"]
 
 
 def test_create_accepts_custom_scoring_with_descriptions(api):
@@ -89,7 +203,7 @@ def test_create_accepts_custom_scoring_with_descriptions(api):
         "/api/v1/competitions",
         {
             "name": "Flat rota",
-            "preset": "cleaning",
+            "preset": "custom",
             "scoring_categories": [
                 {
                     "name": "Bathroom",
@@ -145,45 +259,126 @@ def test_presets_include_kind_and_category_descriptions(anon_api):
     assert response.status_code == 200
 
     by_key = {item["key"]: item for item in response.data}
-    assert by_key["kpi"]["kind"] == "work"
-    assert by_key["cleaning"]["kind"] == "home"
+    assert "kpi" not in by_key
+    assert "cleaning" not in by_key
     assert by_key["custom"]["kind"] == "custom"
     assert by_key["custom"]["scoring_categories"] == []
-    assert by_key["kpi"]["table_mode"] == "points"
     assert by_key["custom"]["table_mode"] == "points"
     assert by_key["soccer"]["table_mode"] == "head_to_head"
-
-    target = next(
-        item for item in by_key["kpi"]["scoring_categories"] if item["code"] == "target-met"
-    )
-    assert target["description"]
-
-
-def test_kpi_preset_uses_points_accumulation_table(api):
-    response = api.post(
-        "/api/v1/competitions",
-        {"name": "Q3 sales", "preset": "kpi"},
-        format="json",
-    )
-    assert response.status_code == 201
-
-    detail = api.get(f"/api/v1/competitions/{response.data['id']}")
-    assert detail.data["settings_json"]["table_mode"] == "points"
-    assert detail.data["points_policy"]["win_points"] == "0.00"
-    assert detail.data["points_policy"]["tiebreakers"] == ["score_for", "name"]
+    assert by_key["soccer"]["scoring_locked"] is True
+    assert by_key["custom"]["scoring_locked"] is False
+    assert by_key["golf"]["table_mode"] == "points"
+    assert by_key["scrabble"]["table_mode"] == "head_to_head"
+    assert by_key["darts"]["format"] == "knockout"
+    assert by_key["scrabble"]["scoring_locked"] is True
+    assert by_key["darts"]["scoring_locked"] is True
 
 
 def test_custom_preset_uses_points_accumulation_table(api):
     response = api.post(
         "/api/v1/competitions",
-        {"name": "Office board", "preset": "custom"},
+        {
+            "name": "Office board",
+            "preset": "custom",
+            "scoring_categories": [
+                {
+                    "name": "Task done",
+                    "description": "A listed job was finished.",
+                    "points": "1",
+                }
+            ],
+        },
         format="json",
     )
     assert response.status_code == 201
 
     detail = api.get(f"/api/v1/competitions/{response.data['id']}")
     assert detail.data["settings_json"]["table_mode"] == "points"
+    assert detail.data["settings_json"]["scoring_basis"] == "criteria"
     assert detail.data["points_policy"]["win_points"] == "0.00"
+    assert detail.data["scoring_categories"][0]["name"] == "Task done"
+
+
+def test_custom_competition_requires_scoring_criteria(api):
+    response = api.post(
+        "/api/v1/competitions",
+        {"name": "Office board", "preset": "custom"},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "scoring criterion" in str(response.data).lower()
+
+
+def test_custom_can_score_from_fixture_results(api):
+    response = api.post(
+        "/api/v1/competitions",
+        {
+            "name": "Office derby",
+            "preset": "custom",
+            "scoring_basis": "results",
+            "scoring_categories": [
+                {"name": "Goal", "description": "A goal in a match.", "points": "1"}
+            ],
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    detail = api.get(f"/api/v1/competitions/{response.data['id']}")
+    assert detail.data["settings_json"]["scoring_basis"] == "results"
+    assert detail.data["settings_json"]["table_mode"] == "head_to_head"
+
+
+def test_score_assist_accumulates_criteria_with_a_note(api, user):
+    from decimal import Decimal
+
+    from apps.competitions.models import Participant
+
+    created = api.post(
+        "/api/v1/competitions",
+        {
+            "name": "Office board",
+            "preset": "custom",
+            "scoring_basis": "criteria",
+            "scoring_categories": [
+                {
+                    "name": "Sales closed",
+                    "description": "Deals closed in the period.",
+                    "points": "2",
+                }
+            ],
+        },
+        format="json",
+    )
+    assert created.status_code == 201
+    competition_id = created.data["id"]
+    detail = api.get(f"/api/v1/competitions/{competition_id}")
+    category_id = detail.data["scoring_categories"][0]["id"]
+    participant = Participant.objects.create(
+        competition_id=competition_id, name="Ada"
+    )
+
+    awarded = api.post(
+        f"/api/v1/competitions/{competition_id}/score-assist",
+        {
+            "kind": "criterion",
+            "participant": str(participant.id),
+            "scoring_category": category_id,
+            "quantity": "3",
+            "note": "Three enterprise deals.",
+        },
+        format="json",
+    )
+    assert awarded.status_code == 201
+    assert Decimal(awarded.data["awarded"]) == Decimal("6")
+
+    table = api.get(f"/api/v1/competitions/{competition_id}/standings")
+    assert table.data["scoring_basis"] == "criteria"
+    row = next(item for item in table.data["rows"] if item["participant"]["name"] == "Ada")
+    assert Decimal(row["points"]) == Decimal("6")
+    breakdown = table.data["breakdown"][str(participant.id)]
+    assert breakdown[0]["name"] == "Sales closed"
+    assert breakdown[0]["description"] == "Deals closed in the period."
+    assert breakdown[0]["entries"][0]["note"] == "Three enterprise deals."
 
 
 def test_a_fully_custom_competition_needs_no_preset(api):

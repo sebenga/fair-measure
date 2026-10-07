@@ -15,7 +15,7 @@ from decimal import Decimal
 from django.db import transaction
 
 from apps.competitions.models import Competition, PointsPolicy, Stage
-from apps.fixtures.models import Fixture, FixtureSide
+from apps.fixtures.models import Fixture, FixtureSide, ScoreEvent
 
 from .models import StandingRow
 
@@ -103,10 +103,80 @@ def _apply_head_to_head(rows: list[Row], tiebreakers: list[str]) -> list[Row]:
     return result
 
 
+def scoring_basis(competition: Competition) -> str:
+    """results = win/draw/loss from fixtures; criteria = sum of scoring criteria."""
+
+    settings = competition.settings_json or {}
+    basis = settings.get("scoring_basis")
+    if basis in {"results", "criteria"}:
+        return basis
+    if settings.get("table_mode") == "points":
+        return "criteria"
+    return "results"
+
+
+def is_criteria_league(competition: Competition) -> bool:
+    return scoring_basis(competition) == "criteria"
+
+
+def criteria_breakdown(competition: Competition) -> dict[str, list[dict]]:
+    """Per participant, the criteria that make up their accumulated points.
+
+    Each criterion includes its description and the entries that explain how
+    those points were logged.
+    """
+
+    events = (
+        ScoreEvent.objects.filter(
+            fixture__competition=competition,
+            fixture__status__in=[Fixture.Status.COMPLETED, Fixture.Status.FORFEIT],
+            scoring_category__affects_score=True,
+        )
+        .select_related("scoring_category", "side__participant")
+        .order_by("created_at")
+    )
+
+    grouped: dict[str, dict[str, dict]] = defaultdict(dict)
+    for event in events:
+        participant_id = str(event.side.participant_id)
+        category = event.scoring_category
+        category_id = str(category.id)
+        bucket = grouped[participant_id].get(category_id)
+        if bucket is None:
+            bucket = {
+                "id": category_id,
+                "name": category.name,
+                "description": category.description,
+                "points_each": str(category.points),
+                "total": ZERO,
+                "entries": [],
+            }
+            grouped[participant_id][category_id] = bucket
+        awarded = event.points
+        bucket["total"] += awarded
+        bucket["entries"].append(
+            {
+                "quantity": str(event.quantity),
+                "awarded": str(awarded),
+                "note": event.note,
+                "created_at": event.created_at.isoformat(),
+            }
+        )
+
+    return {
+        participant_id: [
+            {**bucket, "total": str(bucket["total"])}
+            for bucket in categories.values()
+        ]
+        for participant_id, categories in grouped.items()
+    }
+
+
 def compute_standings(competition: Competition, stage: Stage | None = None) -> list[Row]:
     """Aggregate every counted fixture into an ordered table."""
 
     policy, _ = PointsPolicy.objects.get_or_create(competition=competition)
+    criteria_league = is_criteria_league(competition)
 
     rows: dict[str, Row] = {}
     participants = competition.participants.all()
@@ -132,6 +202,21 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
 
     for fixture in fixtures:
         sides = list(fixture.sides.all())
+        if not sides:
+            continue
+
+        # Criteria leagues add each side's score, including a one-person entry.
+        if criteria_league:
+            for side in sides:
+                participant_id = str(side.participant_id)
+                row = rows.get(participant_id)
+                if row is None:
+                    continue
+                row.played += 1
+                row.score_for += side.score
+                row.points += side.score
+            continue
+
         if len(sides) < 2:
             continue
 

@@ -17,7 +17,14 @@ from .models import (
     ScoringCategory,
     Stage,
 )
-from .presets import PRESETS, apply_preset
+from .presets import PRESETS, SCORING_LOCKED_MESSAGE, apply_preset, scoring_is_locked
+
+
+def _preset_locks_scoring(preset_key: str | None) -> bool:
+    if not preset_key or preset_key == "custom":
+        return False
+    preset = PRESETS.get(preset_key)
+    return bool(preset and preset.get("scoring_locked", True))
 
 
 def _unique_category_code(competition, base: str) -> str:
@@ -188,6 +195,7 @@ class CompetitionListSerializer(serializers.ModelSerializer):
     owner = UserSummarySerializer(read_only=True)
     participant_count = serializers.IntegerField(read_only=True)
     my_role = serializers.SerializerMethodField()
+    scoring_basis = serializers.SerializerMethodField()
 
     class Meta:
         model = Competition
@@ -207,12 +215,22 @@ class CompetitionListSerializer(serializers.ModelSerializer):
             "owner",
             "participant_count",
             "my_role",
+            "scoring_basis",
             "created_at",
         ]
 
     def get_my_role(self, obj: Competition) -> str | None:
         request = self.context.get("request")
         return role_in(obj, request.user) if request else None
+
+    def get_scoring_basis(self, obj: Competition) -> str:
+        settings = obj.settings_json or {}
+        basis = settings.get("scoring_basis")
+        if basis in {"results", "criteria"}:
+            return basis
+        if settings.get("table_mode") == "points":
+            return "criteria"
+        return "results"
 
 
 class CompetitionDetailSerializer(CompetitionListSerializer):
@@ -244,14 +262,23 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         write_only=True,
         help_text=(
             "Optional. Seeds scoring categories, a points policy and rules. "
-            "Sports, KPIs and household rotas all use this. Everything remains editable."
+            "Official presets lock that scoring. Only Custom stays editable."
         ),
     )
     scoring_categories = ScoringCategoryWriteSerializer(
         many=True,
         required=False,
         write_only=True,
-        help_text="If provided, these replace any scoring rows the preset would have created.",
+        help_text=(
+            "Used by Custom competitions. Official presets reject this field "
+            "and keep their own scoring."
+        ),
+    )
+    scoring_basis = serializers.ChoiceField(
+        choices=["results", "criteria"],
+        required=False,
+        write_only=True,
+        help_text="results scores fixtures as win/draw/loss. criteria sums the scoring criteria.",
     )
 
     class Meta:
@@ -274,6 +301,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
             "settings_json",
             "preset",
             "scoring_categories",
+            "scoring_basis",
         ]
         read_only_fields = ["id", "slug"]
 
@@ -291,12 +319,39 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         ends_on = attrs.get("ends_on", getattr(self.instance, "ends_on", None))
         if starts_on and ends_on and ends_on < starts_on:
             raise serializers.ValidationError({"ends_on": "End date is before the start date."})
+        if self.instance is None and attrs.get("preset") == "custom":
+            categories = attrs.get("scoring_categories") or []
+            if not any(str(item.get("name", "")).strip() for item in categories):
+                raise serializers.ValidationError(
+                    {
+                        "scoring_categories": (
+                            "Define at least one scoring criterion before creating a custom competition."
+                        )
+                    }
+                )
+        if self.instance is None and _preset_locks_scoring(attrs.get("preset")):
+            if attrs.get("scoring_categories"):
+                raise serializers.ValidationError({"scoring_categories": SCORING_LOCKED_MESSAGE})
+            if attrs.get("scoring_basis"):
+                raise serializers.ValidationError({"scoring_basis": SCORING_LOCKED_MESSAGE})
         return attrs
+
+    def update(self, instance: Competition, validated_data: dict) -> Competition:
+        if scoring_is_locked(instance) and "settings_json" in validated_data:
+            current = dict(instance.settings_json or {})
+            incoming = dict(validated_data.get("settings_json") or {})
+            for key in ("preset", "scoring_locked", "table_mode", "scoring_basis"):
+                if key in current:
+                    incoming[key] = current[key]
+            incoming["scoring_locked"] = True
+            validated_data["settings_json"] = incoming
+        return super().update(instance, validated_data)
 
     @transaction.atomic
     def create(self, validated_data: dict) -> Competition:
         preset_key = validated_data.pop("preset", None)
         custom_categories = validated_data.pop("scoring_categories", None)
+        scoring_basis = validated_data.pop("scoring_basis", None)
         user = self.context["request"].user
 
         if preset_key and not validated_data.get("sport"):
@@ -312,7 +367,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         else:
             PointsPolicy.objects.create(competition=competition)
 
-        if custom_categories is not None:
+        if custom_categories is not None and preset_key in (None, "custom"):
             competition.scoring_categories.all().delete()
             used: set[str] = set()
             rows = []
@@ -336,6 +391,13 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
                     )
                 )
             ScoringCategory.objects.bulk_create(rows)
+
+        if scoring_basis and preset_key in (None, "custom"):
+            settings = dict(competition.settings_json or {})
+            settings["scoring_basis"] = scoring_basis
+            settings["table_mode"] = "points" if scoring_basis == "criteria" else "head_to_head"
+            competition.settings_json = settings
+            competition.save(update_fields=["settings_json", "updated_at"])
 
         return competition
 

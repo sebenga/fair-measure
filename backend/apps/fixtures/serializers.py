@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import time
+from decimal import Decimal
 
 from django.db import transaction
 from rest_framework import serializers
 
-from apps.competitions.models import Participant, Stage
+from apps.competitions.models import Participant, ScoringCategory, Stage
 
 from .models import Fixture, FixtureSide, ScoreEvent
 
@@ -236,3 +237,62 @@ class BulkScoreEventSerializer(serializers.Serializer):
 
 class FixtureStatusSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=Fixture.Status.choices)
+
+
+class ScoreAssistSerializer(serializers.Serializer):
+    """An admin records either a criterion award or a win/draw/loss result."""
+
+    kind = serializers.ChoiceField(choices=["criterion", "result"])
+    participant = serializers.PrimaryKeyRelatedField(
+        queryset=Participant.objects.all(), required=False
+    )
+    scoring_category = serializers.PrimaryKeyRelatedField(
+        queryset=ScoringCategory.objects.all(), required=False
+    )
+    quantity = serializers.DecimalField(
+        max_digits=8, decimal_places=2, required=False, default=Decimal("1")
+    )
+    home = serializers.PrimaryKeyRelatedField(
+        queryset=Participant.objects.all(), required=False
+    )
+    away = serializers.PrimaryKeyRelatedField(
+        queryset=Participant.objects.all(), required=False
+    )
+    outcome = serializers.ChoiceField(
+        choices=["home", "away", "draw"], required=False
+    )
+    note = serializers.CharField(max_length=280, allow_blank=True, required=False, default="")
+
+    def validate(self, attrs: dict) -> dict:
+        competition = self.context["competition"]
+        kind = attrs["kind"]
+        if kind == "criterion":
+            participant = attrs.get("participant")
+            category = attrs.get("scoring_category")
+            if participant is None or category is None:
+                raise serializers.ValidationError(
+                    "Choose a participant and a scoring criterion."
+                )
+            if not attrs.get("note", "").strip():
+                raise serializers.ValidationError(
+                    {"note": "Describe how these points were accumulated."}
+                )
+            if participant.competition_id != competition.id:
+                raise serializers.ValidationError("That participant is not in this competition.")
+            if category.competition_id != competition.id:
+                raise serializers.ValidationError("That scoring criterion belongs to another competition.")
+            if attrs["quantity"] == 0:
+                raise serializers.ValidationError({"quantity": "Enter what was achieved."})
+        else:
+            home = attrs.get("home")
+            away = attrs.get("away")
+            if home is None or away is None or not attrs.get("outcome"):
+                raise serializers.ValidationError("Choose both sides and a result.")
+            if home.id == away.id:
+                raise serializers.ValidationError("A participant cannot play against itself.")
+            for participant in (home, away):
+                if participant.competition_id != competition.id:
+                    raise serializers.ValidationError(
+                        f"'{participant.name}' is not in this competition."
+                    )
+        return attrs

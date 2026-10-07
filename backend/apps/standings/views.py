@@ -12,7 +12,7 @@ from apps.competitions.views import visible_competitions
 
 from .models import StandingRow
 from .serializers import StandingRowSerializer
-from .services import refresh_standings
+from .services import criteria_breakdown, refresh_standings, scoring_basis
 
 
 class StandingsView(APIView):
@@ -55,10 +55,13 @@ class StandingsView(APIView):
                 competition=competition, stage=stage
             ).select_related("participant")
 
+        basis = scoring_basis(competition)
         return Response(
             {
                 "competition_id": str(competition.id),
                 "stage_id": str(stage.id) if stage else None,
+                "scoring_basis": basis,
+                "breakdown": criteria_breakdown(competition) if basis == "criteria" else {},
                 "rows": StandingRowSerializer(rows, many=True).data,
             }
         )

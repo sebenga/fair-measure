@@ -363,7 +363,7 @@ export class CompetitionFixturesComponent implements OnInit {
 
   openFixture(fixture: Fixture): void {
     void this.router.navigate([
-      '/competitions',
+      '/tabs/competitions',
       this.competition().id,
       'fixtures',
       fixture.id,
@@ -371,6 +371,6 @@ export class CompetitionFixturesComponent implements OnInit {
   }
 
   openSetup(): void {
-    void this.router.navigate(['/competitions', this.competition().id, 'setup']);
+    void this.router.navigate(['/tabs/competitions', this.competition().id, 'setup']);
   }
 }

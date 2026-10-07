@@ -21,6 +21,7 @@ import type {
   ReactionResult,
   Rule,
   ScoreEvent,
+  ScoreAssistEntry,
   ScoringCategory,
   StandingsResponse,
   UploadTarget,
@@ -215,6 +216,17 @@ export class ApiService {
 
   deleteEvent(fixtureId: string, eventId: string): Observable<void> {
     return this.http.delete<void>(`${this.base}/fixtures/${fixtureId}/events/${eventId}`);
+  }
+
+  listScoreAssist(competitionId: string): Observable<ScoreAssistEntry[]> {
+    return this.http.get<ScoreAssistEntry[]>(`${this.base}/competitions/${competitionId}/score-assist`);
+  }
+
+  recordScoreAssist(competitionId: string, body: Record<string, unknown>) {
+    return this.http.post<{ id: string; awarded?: string; label?: string }>(
+      `${this.base}/competitions/${competitionId}/score-assist`,
+      body,
+    );
   }
 
   // --- Standings ------------------------------------------------------------

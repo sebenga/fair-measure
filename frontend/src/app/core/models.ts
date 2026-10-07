@@ -141,6 +141,8 @@ export interface Competition {
   owner: UserSummary;
   participant_count: number;
   my_role: Role | null;
+  scoring_basis?: 'results' | 'criteria';
+  settings_json?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -223,7 +225,35 @@ export interface StandingRow {
 export interface StandingsResponse {
   competition_id: string;
   stage_id: string | null;
+  scoring_basis?: 'results' | 'criteria';
+  breakdown?: Record<string, CriterionBreakdown[]>;
   rows: StandingRow[];
+}
+
+export interface CriterionBreakdown {
+  id: string;
+  name: string;
+  description: string;
+  points_each: string;
+  total: string;
+  entries: Array<{
+    quantity: string;
+    awarded: string;
+    note: string;
+    created_at: string;
+  }>;
+}
+
+export interface ScoreAssistEntry {
+  id: string;
+  participant_id: string;
+  participant_name: string;
+  criterion: string;
+  description: string;
+  quantity: string;
+  awarded: string;
+  note: string;
+  created_at: string;
 }
 
 export interface MediaAsset {
@@ -303,6 +333,7 @@ export interface Preset {
   kind?: PresetKind;
   format: CompetitionFormat;
   table_mode?: TableMode;
+  scoring_locked?: boolean;
   scoring_categories: Array<{
     name: string;
     code: string;
@@ -318,6 +349,9 @@ export function isPointsTable(competition: {
   settings_json?: Record<string, unknown>;
   points_policy?: Pick<PointsPolicy, 'win_points' | 'draw_points' | 'loss_points'>;
 }): boolean {
+  const basis = competition.settings_json?.['scoring_basis'];
+  if (basis === 'criteria') return true;
+  if (basis === 'results') return false;
   const mode = competition.settings_json?.['table_mode'];
   if (mode === 'points') return true;
   if (mode === 'head_to_head') return false;
@@ -328,6 +362,12 @@ export function isPointsTable(competition: {
     Number(policy.draw_points) === 0 &&
     Number(policy.loss_points) === 0
   );
+}
+
+export function isScoringLocked(competition: {
+  settings_json?: Record<string, unknown>;
+}): boolean {
+  return competition.settings_json?.['scoring_locked'] === true;
 }
 
 export function isPointsPreset(preset: Pick<Preset, 'kind' | 'table_mode' | 'key'> | null): boolean {

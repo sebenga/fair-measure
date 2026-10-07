@@ -224,6 +224,15 @@ export class CompetitionCardComponent {
   }
 
   formatLabel(): string {
+    const competition = this.competition();
+    const basis =
+      competition.scoring_basis ??
+      (competition.settings_json?.['scoring_basis'] as string | undefined) ??
+      (competition.settings_json?.['table_mode'] === 'points' ? 'criteria' : undefined);
+    if (basis === 'criteria') return 'Points accumulation';
+    if (basis === 'results' && (competition.format === 'league' || competition.format === 'freeform')) {
+      return 'Versus league';
+    }
     const labels: Record<string, string> = {
       league: 'League',
       knockout: 'Knockout',
@@ -231,6 +240,6 @@ export class CompetitionCardComponent {
       ladder: 'Ladder',
       freeform: 'Freeform',
     };
-    return labels[this.competition().format] ?? this.competition().format;
+    return labels[competition.format] ?? competition.format;
   }
 }

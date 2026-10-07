@@ -96,8 +96,6 @@ function localTimezone(): string {
 
 function presetKind(preset: Preset): PresetKind {
   if (preset.kind) return preset.kind;
-  if (preset.key === 'kpi') return 'work';
-  if (preset.key === 'cleaning') return 'home';
   if (preset.key === 'custom') return 'custom';
   return 'sport';
 }
@@ -162,13 +160,10 @@ function presetKind(preset: Preset): PresetKind {
           @case (1) {
             <h3 class="fm-section-title">What are you running?</h3>
             <p class="hint">
-              A league is a container for competitions. Each one can be a sport,
-              a KPI board, a cleaning rota, or a contest you invent. Pick a
-              starting point, then edit the scoring types and what each one means.
+              Pick an official sport, or Custom if you want to define the scoring yourself.
             </p>
 
             @if (everydayPresets().length) {
-              <p class="group-label">Work &amp; home</p>
               <div class="presets">
                 @for (preset of everydayPresets(); track preset.key) {
                   <button
@@ -217,12 +212,18 @@ function presetKind(preset: Preset): PresetKind {
               </ion-list>
             }
 
-            <h3 class="fm-section-title">{{ pointsTable() ? 'KPIs' : 'Scoring' }}</h3>
+            <h3 class="fm-section-title">{{ pointsTable() ? 'Scoring criteria' : 'Scoring' }}</h3>
             <p class="hint">
-              @if (pointsTable()) {
-                Each row is a KPI. The table accumulates what people achieve on it,
-                not a fixed award. Leave “per unit” at 1 to add the number they
-                enter. Raise it when one unit of achievement is worth more.
+              @if (scoringLocked()) {
+                Official scoring is fixed. These categories and point values
+                cannot be changed after the competition is created.
+              } @else if (isCustom()) {
+                Define the scoring criteria first. Each one needs a name, what the
+                points mean, and how many points one unit is worth. You choose
+                next whether the table uses match results or the sum of these criteria.
+              } @else if (pointsTable()) {
+                Each row is a scoring criterion. The table accumulates what people
+                achieve on it. Leave “per unit” at 1 to add the number they enter.
               } @else {
                 Each row is a scoring type: a name, what it means, and how many
                 points it is worth. Turn off “counts toward the score” to record
@@ -230,15 +231,33 @@ function presetKind(preset: Preset): PresetKind {
               }
             </p>
 
+            @if (scoringLocked()) {
+              <div class="scoring-list">
+                @for (row of scoringDrafts(); track row.key) {
+                  <div class="score-row fm-card">
+                    <strong>{{ row.name }}</strong>
+                    <p>
+                      {{ row.points }} {{ pointsTable() ? 'per unit' : 'pts' }}
+                      @if (!row.affects_score) {
+                        · recorded only
+                      }
+                    </p>
+                    @if (row.description) {
+                      <p>{{ row.description }}</p>
+                    }
+                  </div>
+                }
+              </div>
+            } @else {
             <div class="scoring-list">
               @for (row of scoringDrafts(); track row.key) {
                 <div class="score-row fm-card">
                   <div class="score-head">
                     <ion-input
-                      [label]="pointsTable() ? 'KPI' : 'Name'"
+                      [label]="pointsTable() || isCustom() ? 'Criterion' : 'Name'"
                       labelPlacement="stacked"
                       [value]="row.name"
-                      [placeholder]="pointsTable() ? 'e.g. Sales closed' : 'e.g. Target met'"
+                      [placeholder]="pointsTable() || isCustom() ? 'e.g. Sales closed' : 'e.g. Try'"
                       maxlength="120"
                       (ionInput)="patchDraft(row.key, { name: stringValue($event) })"
                     />
@@ -267,12 +286,12 @@ function presetKind(preset: Preset): PresetKind {
                     </ion-button>
                   </div>
                   <ion-textarea
-                    [label]="pointsTable() ? 'What you achieve' : 'What this means'"
+                    [label]="pointsTable() || isCustom() ? 'Description of these points' : 'What this means'"
                     labelPlacement="stacked"
                     [value]="row.description"
                     [placeholder]="
-                      pointsTable()
-                        ? 'e.g. Deals closed this period. The number logged is added to the table.'
+                      pointsTable() || isCustom()
+                        ? 'Shown when someone expands this criterion on the table.'
                         : 'Describe when this score is awarded.'
                     "
                     autoGrow="true"
@@ -294,9 +313,10 @@ function presetKind(preset: Preset): PresetKind {
             <div class="add-score">
               <ion-button fill="outline" type="button" (click)="addDraft()">
                 <ion-icon slot="start" name="add-outline" />
-                {{ pointsTable() ? 'Add KPI' : 'Add scoring type' }}
+                {{ pointsTable() || isCustom() ? 'Add scoring criterion' : 'Add scoring type' }}
               </ion-button>
             </div>
+            }
           }
 
           @case (2) {
@@ -327,28 +347,70 @@ function presetKind(preset: Preset): PresetKind {
               </ion-item>
             </ion-list>
 
-            <h3 class="fm-section-title">Format</h3>
+            <h3 class="fm-section-title">{{ scoringLocked() ? 'Competition structure' : showLeagueStructure() ? 'League structure' : 'Format' }}</h3>
             <p class="hint">{{ formatHint() }}</p>
 
-            <div class="formats">
-              @for (option of availableFormats(); track option.value) {
+            @if (scoringLocked()) {
+              <p class="hint">{{ lockedStructureHint() }}</p>
+            } @else if (showLeagueStructure()) {
+              <div class="formats">
                 <button
                   type="button"
                   class="format"
-                  [class.selected]="form.controls.format.value === option.value"
-                  (click)="form.controls.format.setValue(option.value)"
+                  [class.selected]="scoringBasis() === 'results'"
+                  (click)="setScoringBasis('results')"
                 >
-                  <ion-icon [name]="option.icon" aria-hidden="true" />
+                  <ion-icon name="git-compare-outline" aria-hidden="true" />
                   <div>
-                    <strong>{{ option.label }}</strong>
-                    <p>{{ option.blurb }}</p>
+                    <strong>Versus league</strong>
+                    <p>
+                      Head-to-head fixtures. Points come from win, draw, or loss.
+                    </p>
                   </div>
-                  @if (form.controls.format.value === option.value) {
+                  @if (scoringBasis() === 'results') {
                     <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
                   }
                 </button>
-              }
-            </div>
+                <button
+                  type="button"
+                  class="format"
+                  [class.selected]="scoringBasis() === 'criteria'"
+                  (click)="setScoringBasis('criteria')"
+                >
+                  <ion-icon name="podium-outline" aria-hidden="true" />
+                  <div>
+                    <strong>Points accumulation</strong>
+                    <p>
+                      Ranked by the sum of scoring criteria. Expand a row to see
+                      how each total was earned and what those points mean.
+                    </p>
+                  </div>
+                  @if (scoringBasis() === 'criteria') {
+                    <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                  }
+                </button>
+              </div>
+            } @else {
+              <div class="formats">
+                @for (option of formats; track option.value) {
+                  <button
+                    type="button"
+                    class="format"
+                    [class.selected]="form.controls.format.value === option.value"
+                    (click)="form.controls.format.setValue(option.value)"
+                  >
+                    <ion-icon [name]="option.icon" aria-hidden="true" />
+                    <div>
+                      <strong>{{ option.label }}</strong>
+                      <p>{{ option.blurb }}</p>
+                    </div>
+                    @if (form.controls.format.value === option.value) {
+                      <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                    }
+                  </button>
+                }
+              </div>
+            }
           }
 
           @case (3) {
@@ -450,11 +512,20 @@ function presetKind(preset: Preset): PresetKind {
                 </div>
                 <div>
                   <dt>Scoring</dt>
-                  <dd>{{ namedDrafts().length }} type{{ namedDrafts().length === 1 ? '' : 's' }}</dd>
+                  <dd>
+                    {{ namedDrafts().length }} criteria,
+                    {{ scoringBasis() === 'criteria' ? 'summed' : 'win / draw / loss' }}
+                  </dd>
                 </div>
                 <div>
                   <dt>Format</dt>
-                  <dd>{{ formatShort(form.controls.format.value) }}</dd>
+                  <dd>
+                    @if (showLeagueStructure()) {
+                      {{ scoringBasis() === 'criteria' ? 'Points accumulation' : 'Versus league' }}
+                    } @else {
+                      {{ formatShort(form.controls.format.value) }}
+                    }
+                  </dd>
                 </div>
                 <div>
                   <dt>Visibility</dt>
@@ -542,21 +613,6 @@ export class CompetitionCreatePage implements OnInit {
     },
   ];
 
-  readonly pointsFormats: FormatOption[] = [
-    {
-      value: 'league',
-      label: 'League',
-      blurb: 'Everyone is ranked on one table by points they accumulate. No head-to-head matches.',
-      icon: 'podium-outline',
-    },
-    {
-      value: 'freeform',
-      label: 'Freeform',
-      blurb: 'Same points table, but you add scoring entries whenever you want.',
-      icon: 'sparkles-outline',
-    },
-  ];
-
   readonly presets = signal<Preset[]>([]);
   readonly selectedPreset = signal<string>('custom');
   readonly scoringDrafts = signal<ScoringDraft[]>([this.blankDraft()]);
@@ -565,7 +621,10 @@ export class CompetitionCreatePage implements OnInit {
   readonly error = signal<string | null>(null);
 
   readonly everydayPresets = computed(() =>
-    this.presets().filter((preset) => presetKind(preset) !== 'sport'),
+    this.presets().filter(
+      (preset) =>
+        presetKind(preset) !== 'sport' && preset.key !== 'kpi' && preset.key !== 'cleaning',
+    ),
   );
 
   readonly sportPresets = computed(() =>
@@ -577,15 +636,26 @@ export class CompetitionCreatePage implements OnInit {
     return this.presets().find((preset) => preset.key === key) ?? null;
   });
 
-  readonly pointsTable = computed(() => isPointsPreset(this.activePreset()));
+  readonly scoringBasis = signal<'results' | 'criteria'>('criteria');
 
-  readonly availableFormats = computed(() =>
-    this.pointsTable() ? this.pointsFormats : this.formats,
-  );
+  readonly pointsTable = computed(() => this.scoringBasis() === 'criteria');
 
   readonly namedDrafts = computed(() =>
     this.scoringDrafts().filter((row) => row.name.trim()),
   );
+
+  readonly isCustom = computed(() => {
+    const preset = this.activePreset();
+    return this.selectedPreset() === 'custom' || (preset ? presetKind(preset) === 'custom' : true);
+  });
+
+  readonly scoringLocked = computed(() => {
+    const preset = this.activePreset();
+    return !!preset && preset.key !== 'custom' && preset.scoring_locked !== false;
+  });
+
+  /** Custom competitions choose Versus or points accumulation. Official presets do not. */
+  readonly showLeagueStructure = computed(() => this.isCustom());
 
   readonly timezones = this.buildTimezones();
 
@@ -626,14 +696,40 @@ export class CompetitionCreatePage implements OnInit {
       this.form.patchValue({ sport: '' });
       this.replaceScoring([]);
     }
-    this.ensureCompatibleFormat();
+    this.scoringBasis.set(isPointsPreset(preset ?? { key }) ? 'criteria' : 'results');
+    if (this.showLeagueStructure()) {
+      this.form.controls.format.setValue(this.scoringBasis() === 'criteria' ? 'freeform' : 'league');
+    } else {
+      this.ensureCompatibleFormat();
+    }
+  }
+
+  setScoringBasis(basis: 'results' | 'criteria'): void {
+    this.scoringBasis.set(basis);
+    // Versus needs a scheduleable league; accumulation is logged as entries.
+    this.form.controls.format.setValue(basis === 'criteria' ? 'freeform' : 'league');
   }
 
   formatHint(): string {
-    if (this.pointsTable()) {
-      return 'This is a points board, not a VS competition. The table ranks people by the scores they log.';
+    if (this.scoringLocked()) {
+      return 'This follows the official structure for the preset. It cannot be changed.';
+    }
+    if (this.showLeagueStructure()) {
+      return 'Choose how the table is built. Sports brackets are not used here.';
     }
     return 'This decides how fixtures are generated. You can still add one-off matches later.';
+  }
+
+  lockedStructureHint(): string {
+    const preset = this.activePreset();
+    if (!preset) return '';
+    if (preset.table_mode === 'points') {
+      return 'Entrants do not play each other. The table ranks by points accumulated from the scoring rules above, highest first.';
+    }
+    if (preset.format === 'knockout') {
+      return 'Knockout. The winner of each fixture advances until a champion is decided. There is no league table.';
+    }
+    return 'League. A win is worth 3 points, a draw 1, and a loss 0. The table ranks by points, then the sport’s tie-breakers.';
   }
 
   showTypeLabel(): boolean {
@@ -653,9 +749,9 @@ export class CompetitionCreatePage implements OnInit {
   kindCaption(preset: Preset): string {
     switch (presetKind(preset)) {
       case 'work':
-        return 'Custom scoring';
+        return 'Official scoring';
       case 'home':
-        return 'Household rota';
+        return 'Official scoring';
       case 'custom':
         return 'Define scoring yourself';
       default:
@@ -665,8 +761,6 @@ export class CompetitionCreatePage implements OnInit {
 
   presetIcon(preset: Preset): string {
     const byKey: Record<string, string> = {
-      kpi: 'stats-chart-outline',
-      cleaning: 'water-outline',
       custom: 'construct-outline',
       soccer: 'football-outline',
       rugby: 'american-football-outline',
@@ -674,6 +768,8 @@ export class CompetitionCreatePage implements OnInit {
       tennis: 'tennisball-outline',
       squash: 'tennisball-outline',
       golf: 'golf-outline',
+      scrabble: 'text-outline',
+      darts: 'locate-outline',
     };
     if (byKey[preset.key]) return byKey[preset.key];
     switch (presetKind(preset)) {
@@ -689,15 +785,17 @@ export class CompetitionCreatePage implements OnInit {
   }
 
   formatShort(format: string): string {
-    return (
-      this.availableFormats().find((option) => option.value === format)?.label ??
-      this.formats.find((option) => option.value === format)?.label ??
-      format
-    );
+    return this.formats.find((option) => option.value === format)?.label ?? format;
   }
 
   private ensureCompatibleFormat(): void {
-    const allowed = new Set(this.availableFormats().map((option) => option.value));
+    if (this.showLeagueStructure()) {
+      this.form.controls.format.setValue(
+        this.scoringBasis() === 'criteria' ? 'freeform' : 'league',
+      );
+      return;
+    }
+    const allowed = new Set(this.formats.map((option) => option.value));
     if (!allowed.has(this.form.controls.format.value)) {
       this.form.controls.format.setValue('league');
     }
@@ -747,10 +845,15 @@ export class CompetitionCreatePage implements OnInit {
   }
 
   next(): void {
+    if (this.step() === 1 && this.isCustom() && this.namedDrafts().length === 0) {
+      this.error.set('Define at least one scoring criterion before continuing.');
+      return;
+    }
     if (this.step() === 2 && this.form.controls.name.invalid) {
       this.form.controls.name.markAsTouched();
       return;
     }
+    this.error.set(null);
     if (this.step() < 3) {
       this.step.set((this.step() + 1) as Step);
     }
@@ -794,6 +897,7 @@ export class CompetitionCreatePage implements OnInit {
 
     const raw = this.form.getRawValue();
     const preset = this.selectedPreset();
+    const locked = this.scoringLocked();
     const scoring_categories = this.namedDrafts().map((row) => ({
       name: row.name.trim(),
       description: row.description.trim(),
@@ -808,18 +912,18 @@ export class CompetitionCreatePage implements OnInit {
         description: raw.description.trim(),
         sport: raw.sport.trim(),
         format: raw.format,
+        ...(locked ? {} : { scoring_basis: this.scoringBasis(), scoring_categories }),
         is_private: raw.is_private,
         starts_on: raw.starts_on || null,
         ends_on: raw.ends_on || null,
         timezone: raw.timezone,
         match_weekdays: raw.match_weekdays,
         preset,
-        scoring_categories,
       })
       .subscribe({
         next: (competition) => {
           this.saving.set(false);
-          void this.navCtrl.navigateForward(`/competitions/${competition.id}/setup`, {
+          void this.navCtrl.navigateForward(`/tabs/competitions/${competition.id}/setup`, {
             replaceUrl: true,
           });
         },

@@ -148,6 +148,6 @@ export class DiscoverPage implements OnInit {
   }
 
   open(competition: Competition): void {
-    void this.router.navigate(['/competitions', competition.id]);
+    void this.router.navigate(['/tabs/competitions', competition.id]);
   }
 }

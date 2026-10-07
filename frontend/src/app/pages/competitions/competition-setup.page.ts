@@ -35,7 +35,7 @@ import type {
   PointsPolicy,
   ScoringCategory,
 } from '../../core/models';
-import { isPointsTable } from '../../core/models';
+import { isPointsTable, isScoringLocked } from '../../core/models';
 
 type Section = 'entrants' | 'scoring' | 'schedule';
 
@@ -147,9 +147,12 @@ type Section = 'entrants' | 'scoring' | 'schedule';
           }
 
           @case ('scoring') {
-            <h3 class="fm-section-title">{{ pointsTable() ? 'KPIs' : 'Scoring types' }}</h3>
+            <h3 class="fm-section-title">{{ pointsTable() ? 'How points are earned' : 'Scoring types' }}</h3>
             <p class="hint">
-              @if (pointsTable()) {
+              @if (scoringLocked()) {
+                This competition uses an official preset. Scoring categories and
+                league points are fixed.
+              } @else if (pointsTable()) {
                 Each KPI is something people can achieve. Logging a result adds
                 what they achieved, multiplied by the per-unit value. Leave that
                 at 1 to accumulate the number itself.
@@ -161,6 +164,7 @@ type Section = 'entrants' | 'scoring' | 'schedule';
               }
             </p>
 
+            @if (!scoringLocked()) {
             <form class="add-category" (submit)="addCategory($event)">
               <ion-input
                 [(ngModel)]="newCategoryName"
@@ -210,6 +214,7 @@ type Section = 'entrants' | 'scoring' | 'schedule';
                 </ion-button>
               </div>
             </form>
+            }
 
             <ion-list inset="true">
               @for (category of categories(); track category.id) {
@@ -230,6 +235,7 @@ type Section = 'entrants' | 'scoring' | 'schedule';
                       }
                     </p>
                   </ion-label>
+                  @if (!scoringLocked()) {
                   <ion-button
                     slot="end"
                     fill="clear"
@@ -239,6 +245,7 @@ type Section = 'entrants' | 'scoring' | 'schedule';
                   >
                     <ion-icon slot="icon-only" name="trash-outline" aria-label="Remove" />
                   </ion-button>
+                  }
                 </ion-item>
               } @empty {
                 <ion-item lines="none">
@@ -265,6 +272,7 @@ type Section = 'entrants' | 'scoring' | 'schedule';
                     type="number"
                     inputmode="decimal"
                     [value]="trim(pol.win_points)"
+                    [readonly]="scoringLocked()"
                     (ionBlur)="patchPolicy({ win_points: $any($event.target).value })"
                   />
                 </ion-item>
@@ -276,6 +284,7 @@ type Section = 'entrants' | 'scoring' | 'schedule';
                     inputmode="decimal"
                     [value]="trim(pol.draw_points)"
                     [disabled]="!pol.allow_draws"
+                    [readonly]="scoringLocked()"
                     (ionBlur)="patchPolicy({ draw_points: $any($event.target).value })"
                   />
                 </ion-item>
@@ -286,6 +295,7 @@ type Section = 'entrants' | 'scoring' | 'schedule';
                     type="number"
                     inputmode="decimal"
                     [value]="trim(pol.loss_points)"
+                    [readonly]="scoringLocked()"
                     (ionBlur)="patchPolicy({ loss_points: $any($event.target).value })"
                   />
                 </ion-item>
@@ -294,6 +304,7 @@ type Section = 'entrants' | 'scoring' | 'schedule';
                     labelPlacement="end"
                     justify="start"
                     [checked]="pol.allow_draws"
+                    [disabled]="scoringLocked()"
                     (ionChange)="patchPolicy({ allow_draws: $any($event).detail.checked })"
                   >
                     Draws are possible
@@ -488,6 +499,11 @@ export class CompetitionSetupPage implements OnInit {
     return competition ? isPointsTable(competition) : false;
   });
 
+  readonly scoringLocked = computed(() => {
+    const competition = this.competition();
+    return competition ? isScoringLocked(competition) : false;
+  });
+
   readonly weekdays = [
     { value: 0, label: 'Mon' },
     { value: 1, label: 'Tue' },
@@ -550,11 +566,11 @@ export class CompetitionSetupPage implements OnInit {
   }
 
   backHref(): string {
-    return `/competitions/${this.competitionId}`;
+    return `/tabs/competitions/${this.competitionId}`;
   }
 
   goToFixtures(): void {
-    void this.router.navigate(['/competitions', this.competitionId], {
+    void this.router.navigate(['/tabs/competitions', this.competitionId], {
       queryParams: { tab: 'fixtures' },
     });
   }
@@ -644,6 +660,7 @@ export class CompetitionSetupPage implements OnInit {
   }
 
   patchPolicy(patch: Partial<PointsPolicy>): void {
+    if (this.scoringLocked()) return;
     this.api.updatePointsPolicy(this.competitionId, patch).subscribe({
       next: (policy) => this.policy.set(policy),
       error: async (err: unknown) => {
@@ -683,7 +700,7 @@ export class CompetitionSetupPage implements OnInit {
         next: async (fixtures) => {
           this.busy.set(false);
           await this.toast(`Created ${fixtures.length} fixtures.`, 'success');
-          void this.router.navigate(['/competitions', this.competitionId], {
+          void this.router.navigate(['/tabs/competitions', this.competitionId], {
             queryParams: { tab: 'fixtures' },
           });
         },

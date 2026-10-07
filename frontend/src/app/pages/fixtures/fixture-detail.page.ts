@@ -274,7 +274,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   }
 
   backHref(): string {
-    return `/competitions/${this.competitionId}?tab=fixtures`;
+    return `/tabs/competitions/${this.competitionId}?tab=fixtures`;
   }
 
   record(side: FixtureSide, category: ScoringCategory): void {
