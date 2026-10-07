@@ -377,6 +377,13 @@ class ScoreAssistView(APIView):
             raise PermissionDenied("Only a scorer, admin, or owner can record scores.")
         return competition
 
+    def _publish_table(self, competition: Competition) -> None:
+        publish_event(
+            "standings.updated",
+            {"competition_id": str(competition.id)},
+            [competition_room(competition.id)],
+        )
+
     @extend_schema(tags=["Scoring"], summary="Recent scoring entries for administrators")
     def get(self, request: Request, competition_pk: str) -> Response:
         competition = self._competition(request, competition_pk)
@@ -425,6 +432,7 @@ class ScoreAssistView(APIView):
                     note=data["note"].strip(),
                     user=request.user,
                 )
+                self._publish_table(competition)
                 return Response(
                     {
                         "id": str(event.id),
@@ -443,4 +451,5 @@ class ScoreAssistView(APIView):
             )
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
+        self._publish_table(competition)
         return Response({"id": str(fixture.id), "label": fixture.label}, status=status.HTTP_201_CREATED)

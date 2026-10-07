@@ -205,8 +205,9 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
         if not sides:
             continue
 
-        # Criteria leagues add each side's score, including a one-person entry.
-        if criteria_league:
+        # Criteria leagues add each side's score. A one-person entry is how
+        # an awarded criterion is stored, so its score always reaches the table.
+        if criteria_league or len(sides) == 1:
             for side in sides:
                 participant_id = str(side.participant_id)
                 row = rows.get(participant_id)

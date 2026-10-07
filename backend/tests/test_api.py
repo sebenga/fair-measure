@@ -242,6 +242,43 @@ def test_owner_can_delete_a_competition(api):
     assert api.get(f"/api/v1/competitions/{competition_id}").status_code == 404
 
 
+def test_owner_can_delete_a_league_that_already_has_points(api):
+    from apps.competitions.models import Participant
+
+    created = api.post(
+        "/api/v1/competitions",
+        {
+            "name": "Points to remove",
+            "preset": "custom",
+            "scoring_categories": [
+                {"name": "Task", "description": "A finished task.", "points": "1"}
+            ],
+        },
+        format="json",
+    )
+    assert created.status_code == 201
+    competition_id = created.data["id"]
+    detail = api.get(f"/api/v1/competitions/{competition_id}")
+    category_id = detail.data["scoring_categories"][0]["id"]
+    participant = Participant.objects.create(competition_id=competition_id, name="Ada")
+    awarded = api.post(
+        f"/api/v1/competitions/{competition_id}/score-assist",
+        {
+            "kind": "criterion",
+            "participant": str(participant.id),
+            "scoring_category": category_id,
+            "quantity": "1",
+            "note": "Finished the task.",
+        },
+        format="json",
+    )
+    assert awarded.status_code == 201
+
+    deleted = api.delete(f"/api/v1/competitions/{competition_id}")
+    assert deleted.status_code == 204
+    assert api.get(f"/api/v1/competitions/{competition_id}").status_code == 404
+
+
 def test_non_owner_cannot_delete_a_competition(competition, other_user):
     from rest_framework.test import APIClient
 
@@ -309,13 +346,15 @@ def test_custom_competition_requires_scoring_criteria(api):
     assert "scoring criterion" in str(response.data).lower()
 
 
-def test_custom_can_score_from_fixture_results(api):
+def test_custom_has_no_fixture_schedule(api):
     response = api.post(
         "/api/v1/competitions",
         {
             "name": "Office derby",
             "preset": "custom",
             "scoring_basis": "results",
+            "format": "league",
+            "match_weekdays": [0, 2],
             "scoring_categories": [
                 {"name": "Goal", "description": "A goal in a match.", "points": "1"}
             ],
@@ -324,8 +363,10 @@ def test_custom_can_score_from_fixture_results(api):
     )
     assert response.status_code == 201
     detail = api.get(f"/api/v1/competitions/{response.data['id']}")
-    assert detail.data["settings_json"]["scoring_basis"] == "results"
-    assert detail.data["settings_json"]["table_mode"] == "head_to_head"
+    assert detail.data["settings_json"]["scoring_basis"] == "criteria"
+    assert detail.data["settings_json"]["table_mode"] == "points"
+    assert detail.data["format"] == "freeform"
+    assert detail.data["match_weekdays"] == []
 
 
 def test_score_assist_accumulates_criteria_with_a_note(api, user):

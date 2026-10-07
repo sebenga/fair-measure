@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   IonBackButton,
   IonButton,
@@ -53,7 +53,7 @@ import { isPointsTable } from '../../core/models';
         <ion-buttons slot="start">
           <ion-back-button [defaultHref]="backHref()" />
         </ion-buttons>
-        <ion-title>Score</ion-title>
+        <ion-title>{{ criteriaLeague() ? 'Add points' : 'Score' }}</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -74,6 +74,8 @@ import { isPointsTable } from '../../core/models';
 
         @if (comp.scoring_categories.length === 0) {
           <ion-note class="footnote">Define scoring criteria in setup before recording scores.</ion-note>
+        } @else if (criteriaLeague() && comp.participants.length === 0) {
+          <ion-note class="footnote">Add entrants in setup, then award their points here.</ion-note>
         } @else if (criteriaLeague()) {
           <ion-list inset="true">
             <ion-item>
@@ -220,6 +222,7 @@ import { isPointsTable } from '../../core/models';
 export class CompetitionScorePage implements OnInit {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly toasts = inject(ToastController);
 
   private competitionId = '';
@@ -314,13 +317,20 @@ export class CompetitionScorePage implements OnInit {
       next: async () => {
         this.busy.set(false);
         this.note = '';
-        this.loadEntries();
+        const criteria = this.criteriaLeague();
         const toast = await this.toasts.create({
-          message: 'Score recorded.',
+          message: criteria ? 'Points added to the table.' : 'Score recorded.',
           duration: 1800,
           position: 'bottom',
         });
         await toast.present();
+        if (criteria) {
+          void this.router.navigate(['/tabs/competitions', this.competitionId], {
+            queryParams: { tab: 'standings' },
+          });
+          return;
+        }
+        this.loadEntries();
       },
       error: (err: unknown) => {
         this.busy.set(false);

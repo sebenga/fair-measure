@@ -321,7 +321,13 @@ function presetKind(preset: Preset): PresetKind {
 
           @case (2) {
             <h3 class="fm-section-title">The basics</h3>
-            <p class="hint">Give it a name people will recognise on the fixture list.</p>
+            <p class="hint">
+              @if (isCustom()) {
+                Give it a name people will recognise on the table.
+              } @else {
+                Give it a name people will recognise on the fixture list.
+              }
+            </p>
 
             <ion-list inset="true">
               <ion-item>
@@ -347,49 +353,16 @@ function presetKind(preset: Preset): PresetKind {
               </ion-item>
             </ion-list>
 
-            <h3 class="fm-section-title">{{ scoringLocked() ? 'Competition structure' : showLeagueStructure() ? 'League structure' : 'Format' }}</h3>
+            <h3 class="fm-section-title">{{ isCustom() ? 'How points are added' : scoringLocked() ? 'Competition structure' : 'Format' }}</h3>
             <p class="hint">{{ formatHint() }}</p>
 
-            @if (scoringLocked()) {
+            @if (isCustom()) {
+              <p class="hint">
+                An admin adds points against the criteria you defined. Entrants do not
+                play each other, and there is no fixture schedule.
+              </p>
+            } @else if (scoringLocked()) {
               <p class="hint">{{ lockedStructureHint() }}</p>
-            } @else if (showLeagueStructure()) {
-              <div class="formats">
-                <button
-                  type="button"
-                  class="format"
-                  [class.selected]="scoringBasis() === 'results'"
-                  (click)="setScoringBasis('results')"
-                >
-                  <ion-icon name="git-compare-outline" aria-hidden="true" />
-                  <div>
-                    <strong>Versus league</strong>
-                    <p>
-                      Head-to-head fixtures. Points come from win, draw, or loss.
-                    </p>
-                  </div>
-                  @if (scoringBasis() === 'results') {
-                    <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
-                  }
-                </button>
-                <button
-                  type="button"
-                  class="format"
-                  [class.selected]="scoringBasis() === 'criteria'"
-                  (click)="setScoringBasis('criteria')"
-                >
-                  <ion-icon name="podium-outline" aria-hidden="true" />
-                  <div>
-                    <strong>Points accumulation</strong>
-                    <p>
-                      Ranked by the sum of scoring criteria. Expand a row to see
-                      how each total was earned and what those points mean.
-                    </p>
-                  </div>
-                  @if (scoringBasis() === 'criteria') {
-                    <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
-                  }
-                </button>
-              </div>
             } @else {
               <div class="formats">
                 @for (option of formats; track option.value) {
@@ -417,8 +390,7 @@ function presetKind(preset: Preset): PresetKind {
             <h3 class="fm-section-title">When it runs</h3>
             <p class="hint">
               @if (pointsTable()) {
-                Dates are optional. Scoring days are a reminder for when people usually log
-                points — there is no head-to-head schedule to generate.
+                Dates are optional. There is no fixture list and no match schedule.
               } @else {
                 Dates and match days are optional. Leave them blank if you are still deciding.
               }
@@ -459,8 +431,9 @@ function presetKind(preset: Preset): PresetKind {
               <p class="fm-form-error" role="alert">The end date is before the start date.</p>
             }
 
+            @if (!isCustom() && !pointsTable()) {
             <div class="weekdays">
-              <p class="label">{{ pointsTable() ? 'Usual scoring days' : 'Usual match days' }}</p>
+              <p class="label">Usual match days</p>
               <div class="days">
                 @for (day of weekdays; track day.value) {
                   <button
@@ -474,6 +447,7 @@ function presetKind(preset: Preset): PresetKind {
                 }
               </div>
             </div>
+            }
 
             <h3 class="fm-section-title">Who can see it</h3>
             <div class="visibility">
@@ -520,8 +494,8 @@ function presetKind(preset: Preset): PresetKind {
                 <div>
                   <dt>Format</dt>
                   <dd>
-                    @if (showLeagueStructure()) {
-                      {{ scoringBasis() === 'criteria' ? 'Points accumulation' : 'Versus league' }}
+                    @if (isCustom() || scoringBasis() === 'criteria') {
+                      Points accumulation
                     } @else {
                       {{ formatShort(form.controls.format.value) }}
                     }
@@ -654,9 +628,6 @@ export class CompetitionCreatePage implements OnInit {
     return !!preset && preset.key !== 'custom' && preset.scoring_locked !== false;
   });
 
-  /** Custom competitions choose Versus or points accumulation. Official presets do not. */
-  readonly showLeagueStructure = computed(() => this.isCustom());
-
   readonly timezones = this.buildTimezones();
 
   readonly form = this.fb.nonNullable.group(
@@ -697,25 +668,21 @@ export class CompetitionCreatePage implements OnInit {
       this.replaceScoring([]);
     }
     this.scoringBasis.set(isPointsPreset(preset ?? { key }) ? 'criteria' : 'results');
-    if (this.showLeagueStructure()) {
-      this.form.controls.format.setValue(this.scoringBasis() === 'criteria' ? 'freeform' : 'league');
+    if (this.isCustom()) {
+      this.scoringBasis.set('criteria');
+      this.form.controls.format.setValue('freeform');
+      this.form.controls.match_weekdays.setValue([]);
     } else {
       this.ensureCompatibleFormat();
     }
   }
 
-  setScoringBasis(basis: 'results' | 'criteria'): void {
-    this.scoringBasis.set(basis);
-    // Versus needs a scheduleable league; accumulation is logged as entries.
-    this.form.controls.format.setValue(basis === 'criteria' ? 'freeform' : 'league');
-  }
-
   formatHint(): string {
+    if (this.isCustom()) {
+      return 'Custom competitions collect points. They do not use a match schedule.';
+    }
     if (this.scoringLocked()) {
       return 'This follows the official structure for the preset. It cannot be changed.';
-    }
-    if (this.showLeagueStructure()) {
-      return 'Choose how the table is built. Sports brackets are not used here.';
     }
     return 'This decides how fixtures are generated. You can still add one-off matches later.';
   }
@@ -789,12 +756,6 @@ export class CompetitionCreatePage implements OnInit {
   }
 
   private ensureCompatibleFormat(): void {
-    if (this.showLeagueStructure()) {
-      this.form.controls.format.setValue(
-        this.scoringBasis() === 'criteria' ? 'freeform' : 'league',
-      );
-      return;
-    }
     const allowed = new Set(this.formats.map((option) => option.value));
     if (!allowed.has(this.form.controls.format.value)) {
       this.form.controls.format.setValue('league');
@@ -917,7 +878,7 @@ export class CompetitionCreatePage implements OnInit {
         starts_on: raw.starts_on || null,
         ends_on: raw.ends_on || null,
         timezone: raw.timezone,
-        match_weekdays: raw.match_weekdays,
+        match_weekdays: this.scoringBasis() === 'criteria' ? [] : raw.match_weekdays,
         preset,
       })
       .subscribe({

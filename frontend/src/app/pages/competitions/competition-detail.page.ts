@@ -1,4 +1,13 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  OnDestroy,
+  OnInit,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
@@ -21,6 +30,7 @@ import {
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail } from '../../core/models';
+import { isPointsTable } from '../../core/models';
 import { RealtimeService, competitionRoom } from '../../core/realtime.service';
 import { CompetitionFeedComponent } from './tabs/competition-feed.component';
 import { CompetitionFixturesComponent } from './tabs/competition-fixtures.component';
@@ -61,9 +71,13 @@ type Tab = 'feed' | 'fixtures' | 'standings';
             <span class="fm-live" title="Live updates on">Live</span>
           }
           @if (canScore()) {
-            <ion-button (click)="openScore()">
-              <ion-icon slot="icon-only" name="create-outline" aria-label="Record scores" />
-            </ion-button>
+            @if (pointsLeague()) {
+              <ion-button (click)="openScore()">Add points</ion-button>
+            } @else {
+              <ion-button (click)="openScore()">
+                <ion-icon slot="icon-only" name="create-outline" aria-label="Record scores" />
+              </ion-button>
+            }
           }
           @if (canManage()) {
             <ion-button (click)="openSetup()">
@@ -79,15 +93,17 @@ type Tab = 'feed' | 'fixtures' | 'standings';
       </ion-toolbar>
 
       <ion-toolbar>
-        <ion-segment [value]="tab()" (ionChange)="selectTab($any($event).detail.value)">
-          <ion-segment-button value="feed">
+        <ion-segment [value]="tab()">
+          <ion-segment-button value="feed" (click)="selectTab('feed')">
             <ion-label>Feed</ion-label>
           </ion-segment-button>
-          <ion-segment-button value="fixtures">
-            <ion-label>Fixtures</ion-label>
-          </ion-segment-button>
+          @if (!pointsLeague()) {
+            <ion-segment-button value="fixtures" (click)="selectTab('fixtures')">
+              <ion-label>Fixtures</ion-label>
+            </ion-segment-button>
+          }
           @if (competition()?.format !== 'knockout') {
-            <ion-segment-button value="standings">
+            <ion-segment-button value="standings" (click)="selectTab('standings')">
               <ion-label>Table</ion-label>
             </ion-segment-button>
           }
@@ -111,9 +127,16 @@ type Tab = 'feed' | 'fixtures' | 'standings';
             <fm-competition-feed [competition]="comp" />
           }
           @case ('fixtures') {
-            <fm-competition-fixtures [competition]="comp" />
+            @if (!pointsLeague()) {
+              <fm-competition-fixtures [competition]="comp" />
+            }
           }
           @case ('standings') {
+            @if (pointsLeague() && canScore()) {
+              <div class="add-points">
+                <ion-button expand="block" (click)="openScore()">Add points</ion-button>
+              </div>
+            }
             <fm-competition-standings [competition]="comp" />
           }
         }
@@ -127,6 +150,10 @@ type Tab = 'feed' | 'fixtures' | 'standings';
         place-items: center;
         padding: 64px 0;
       }
+
+      .add-points {
+        margin: 12px 16px 0;
+      }
     `,
   ],
 })
@@ -136,9 +163,12 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly alerts = inject(AlertController);
   private readonly toasts = inject(ToastController);
+  private readonly destroyRef = inject(DestroyRef);
   readonly realtime = inject(RealtimeService);
 
   private competitionId = '';
+
+  private readonly standings = viewChild(CompetitionStandingsComponent);
 
   readonly competition = signal<CompetitionDetail | null>(null);
   readonly loading = signal(true);
@@ -147,23 +177,33 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.competitionId = this.route.snapshot.paramMap.get('id') ?? '';
-
     const requestedTab = this.route.snapshot.queryParamMap.get('tab');
-    if (requestedTab === 'fixtures' || requestedTab === 'standings') {
+    if (requestedTab === 'feed' || requestedTab === 'fixtures' || requestedTab === 'standings') {
       this.tab.set(requestedTab);
     }
 
     this.load();
     this.realtime.subscribe(competitionRoom(this.competitionId));
 
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      const tab = params.get('tab');
+      if (tab === 'feed' || tab === 'fixtures' || tab === 'standings') {
+        this.tab.set(tab);
+      }
+    });
+
     this.realtime
       .on<{ competition_id: string }>('competition.updated')
-      .pipe(takeUntilDestroyed())
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((payload) => {
         if (payload.competition_id === this.competitionId) {
           this.load(false);
         }
       });
+  }
+
+  ionViewWillEnter(): void {
+    this.standings()?.load(false);
   }
 
   ngOnDestroy(): void {
@@ -179,6 +219,9 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
     this.api.getCompetition(this.competitionId).subscribe({
       next: (competition) => {
         this.competition.set(competition);
+        if (isPointsTable(competition) && this.tab() === 'fixtures') {
+          this.selectTab('standings');
+        }
         this.loading.set(false);
       },
       error: (err: unknown) => {
@@ -188,15 +231,16 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
     });
   }
 
+  pointsLeague(): boolean {
+    const competition = this.competition();
+    return competition ? isPointsTable(competition) : false;
+  }
+
   selectTab(value: string | undefined): void {
-    if (value === 'feed' || value === 'fixtures' || value === 'standings') {
-      this.tab.set(value);
-      void this.router.navigate([], {
-        relativeTo: this.route,
-        queryParams: { tab: value },
-        replaceUrl: true,
-      });
-    }
+    if (value === 'fixtures' && this.pointsLeague()) return;
+    if (value !== 'feed' && value !== 'fixtures' && value !== 'standings') return;
+    if (value === this.tab()) return;
+    this.tab.set(value);
   }
 
   canScore(): boolean {

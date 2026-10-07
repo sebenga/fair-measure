@@ -127,8 +127,12 @@ export class DiscoverPage implements OnInit {
     this.load();
   }
 
-  load(): void {
-    this.loading.set(true);
+  ionViewWillEnter(): void {
+    this.load(this.results().length === 0);
+  }
+
+  load(showSpinner = true): void {
+    if (showSpinner) this.loading.set(true);
     this.error.set(null);
 
     this.api.listCompetitions({ search: this.query(), page_size: 30 }).subscribe({

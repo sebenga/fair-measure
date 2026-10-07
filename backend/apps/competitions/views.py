@@ -113,7 +113,13 @@ class CompetitionViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance: Competition) -> None:
         if instance.owner_id != self.request.user.id:
             raise PermissionDenied("Only the owner can delete a competition.")
-        super().perform_destroy(instance)
+        # A logged point protects its scoring category so that criterion cannot
+        # be removed on its own. Deleting the league removes that history too.
+        from apps.fixtures.models import ScoreEvent
+
+        with transaction.atomic():
+            ScoreEvent.objects.filter(scoring_category__competition=instance).delete()
+            instance.delete()
 
     @extend_schema(
         tags=["Competitions"],

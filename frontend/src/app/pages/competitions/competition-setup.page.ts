@@ -78,9 +78,11 @@ type Section = 'entrants' | 'scoring' | 'schedule';
         <ion-segment [value]="section()" (ionChange)="setSection($any($event).detail.value)">
           <ion-segment-button value="entrants"><ion-label>Entrants</ion-label></ion-segment-button>
           <ion-segment-button value="scoring"><ion-label>Scoring</ion-label></ion-segment-button>
-          <ion-segment-button value="schedule">
-            <ion-label>{{ pointsTable() ? 'Entries' : 'Schedule' }}</ion-label>
-          </ion-segment-button>
+          @if (!pointsTable()) {
+            <ion-segment-button value="schedule">
+              <ion-label>Schedule</ion-label>
+            </ion-segment-button>
+          }
         </ion-segment>
       </ion-toolbar>
     </ion-header>
@@ -320,25 +322,7 @@ type Section = 'entrants' | 'scoring' | 'schedule';
           }
 
           @case ('schedule') {
-            @if (pointsTable()) {
-              <h3 class="fm-section-title">Scoring entries</h3>
-              <p class="hint">
-                This league is not head-to-head. Log what someone achieved on each
-                KPI. The table adds that result, times the per-unit value.
-              </p>
-
-              <div class="fm-empty">
-                <ion-icon name="podium-outline" aria-hidden="true" />
-                <h3>No VS schedule to generate</h3>
-                <p>
-                  Add entrants, then open Fixtures and log what someone achieved
-                  on a KPI. Completing the entry updates the table.
-                </p>
-                <ion-button fill="outline" (click)="goToFixtures()">
-                  Go to fixtures
-                </ion-button>
-              </div>
-            } @else {
+            @if (!pointsTable()) {
               <h3 class="fm-section-title">Generate fixtures</h3>
               <p class="hint">
                 This creates the whole schedule at once. Completed fixtures are never
@@ -544,6 +528,9 @@ export class CompetitionSetupPage implements OnInit {
         this.participants.set(competition.participants);
         this.categories.set(competition.scoring_categories);
         this.policy.set(competition.points_policy);
+        if (isPointsTable(competition) && this.section() === 'schedule') {
+          this.section.set('entrants');
+        }
         if (competition.match_weekdays.length) {
           this.selectedWeekdays.set(competition.match_weekdays);
         }
@@ -560,6 +547,7 @@ export class CompetitionSetupPage implements OnInit {
   }
 
   setSection(value: string | undefined): void {
+    if (value === 'schedule' && this.pointsTable()) return;
     if (value === 'entrants' || value === 'scoring' || value === 'schedule') {
       this.section.set(value);
     }
@@ -567,12 +555,6 @@ export class CompetitionSetupPage implements OnInit {
 
   backHref(): string {
     return `/tabs/competitions/${this.competitionId}`;
-  }
-
-  goToFixtures(): void {
-    void this.router.navigate(['/tabs/competitions', this.competitionId], {
-      queryParams: { tab: 'fixtures' },
-    });
   }
 
   // --- Entrants -------------------------------------------------------------

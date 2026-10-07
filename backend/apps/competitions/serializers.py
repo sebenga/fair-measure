@@ -354,6 +354,11 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         scoring_basis = validated_data.pop("scoring_basis", None)
         user = self.context["request"].user
 
+        if preset_key == "custom":
+            scoring_basis = "criteria"
+            validated_data["match_weekdays"] = []
+            validated_data["format"] = "freeform"
+
         if preset_key and not validated_data.get("sport"):
             validated_data["sport"] = PRESETS[preset_key]["sport"]
         if preset_key and not validated_data.get("format"):

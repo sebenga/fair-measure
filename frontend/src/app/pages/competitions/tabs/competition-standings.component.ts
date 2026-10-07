@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   OnInit,
   computed,
   inject,
@@ -344,6 +345,7 @@ import { RealtimeService } from '../../../core/realtime.service';
 export class CompetitionStandingsComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly realtime = inject(RealtimeService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly competition = input.required<CompetitionDetail>();
 
@@ -365,7 +367,7 @@ export class CompetitionStandingsComponent implements OnInit {
     // fixture by a moment. Debounce so a burst of events causes one refetch.
     this.realtime
       .onAny(['standings.updated', 'standings.stale'])
-      .pipe(debounceTime(400), takeUntilDestroyed())
+      .pipe(debounceTime(400), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.load(false));
   }
 
@@ -374,7 +376,7 @@ export class CompetitionStandingsComponent implements OnInit {
     this.error.set(null);
 
     this.api
-      .getStandings(this.competition().id, { stage: this.stageId() })
+      .getStandings(this.competition().id, { stage: this.stageId(), refresh: true })
       .subscribe({
         next: (response) => {
           this.rows.set(response.rows);
