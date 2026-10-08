@@ -151,37 +151,6 @@ def test_locked_preset_scoring_cannot_be_changed(api):
     assert reapplied.status_code == 400
 
 
-def test_scrabble_league_and_darts_knockout_presets(api):
-    scrabble = api.post(
-        "/api/v1/competitions",
-        {"name": "Club Scrabble", "preset": "scrabble"},
-        format="json",
-    )
-    assert scrabble.status_code == 201
-    scrabble_detail = api.get(f"/api/v1/competitions/{scrabble.data['id']}")
-    assert scrabble_detail.data["format"] == "league"
-    assert scrabble_detail.data["settings_json"]["table_mode"] == "head_to_head"
-    assert scrabble_detail.data["points_policy"]["win_points"] == "3.00"
-    assert scrabble_detail.data["points_policy"]["draw_points"] == "1.00"
-    assert scrabble_detail.data["points_policy"]["loss_points"] == "0.00"
-    score = scrabble_detail.data["scoring_categories"][0]
-    assert score["code"] == "game-score"
-    assert score["points"] == "1.00"
-    assert "bingo" in score["description"]
-
-    darts = api.post(
-        "/api/v1/competitions",
-        {"name": "501 Cup", "preset": "darts"},
-        format="json",
-    )
-    assert darts.status_code == 201
-    darts_detail = api.get(f"/api/v1/competitions/{darts.data['id']}")
-    assert darts_detail.data["format"] == "knockout"
-    assert darts_detail.data["settings_json"]["scoring_locked"] is True
-    assert darts_detail.data["scoring_categories"][0]["code"] == "leg"
-    assert darts_detail.data["scoring_categories"][0]["points"] == "1.00"
-
-
 def test_golf_stroke_play_accumulates_without_results(api):
     created = api.post(
         "/api/v1/competitions",
@@ -279,6 +248,91 @@ def test_owner_can_delete_a_league_that_already_has_points(api):
     assert api.get(f"/api/v1/competitions/{competition_id}").status_code == 404
 
 
+def test_a_team_is_created_from_multiple_profiles(api, user, other_user):
+    from apps.accounts.models import User
+
+    second = User.objects.create_user(
+        email="second@example.com", password="s3cret-password", display_name="Second"
+    )
+    created = api.post("/api/v1/competitions", {"name": "Sunday league"}, format="json")
+    assert created.status_code == 201
+    competition_id = created.data["id"]
+    participants_url = f"/api/v1/competitions/{competition_id}/participants"
+
+    too_small = api.post(
+        participants_url,
+        {"name": "Short", "kind": "team", "member_ids": [str(other_user.id)]},
+        format="json",
+    )
+    assert too_small.status_code == 400
+
+    team = api.post(
+        participants_url,
+        {
+            "name": "Northside",
+            "kind": "team",
+            "member_ids": [str(other_user.id), str(second.id)],
+        },
+        format="json",
+    )
+    assert team.status_code == 201
+    assert team.data["kind"] == "team"
+    assert sorted(member["name"] for member in team.data["roster"]) == ["Member", "Second"]
+
+    player = api.post(participants_url, {"name": "Solo", "kind": "individual"}, format="json")
+    assert player.status_code == 400
+
+    with_owner = api.post(
+        participants_url,
+        {
+            "name": "Owners",
+            "kind": "team",
+            "member_ids": [str(user.id), str(other_user.id)],
+        },
+        format="json",
+    )
+    assert with_owner.status_code == 201
+    assert "Owner" in [member["name"] for member in with_owner.data["roster"]]
+
+    second_team = api.post(
+        participants_url,
+        {
+            "name": "Owners again",
+            "kind": "team",
+            "member_ids": [str(user.id), str(second.id)],
+        },
+        format="json",
+    )
+    assert second_team.status_code == 400
+
+    admin = User.objects.create_user(
+        email="coach@example.com", password="s3cret-password", display_name="Coach"
+    )
+    Membership.objects.create(competition_id=competition_id, user=admin, role=Role.ADMIN)
+    placed_by_owner = api.post(
+        f"/api/v1/competitions/{competition_id}/participants/{team.data['id']}/roster",
+        {"user": str(admin.id), "name": "Coach"},
+        format="json",
+    )
+    assert placed_by_owner.status_code == 400
+
+    from rest_framework.test import APIClient
+
+    coach = APIClient()
+    coach.force_authenticate(user=admin)
+    joined = coach.post(
+        participants_url,
+        {
+            "name": "Coaches",
+            "kind": "team",
+            "member_ids": [str(admin.id), str(second.id)],
+        },
+        format="json",
+    )
+    assert joined.status_code == 201
+    assert "Coach" in [member["name"] for member in joined.data["roster"]]
+
+
 def test_non_owner_cannot_delete_a_competition(competition, other_user):
     from rest_framework.test import APIClient
 
@@ -298,6 +352,8 @@ def test_presets_include_kind_and_category_descriptions(anon_api):
     by_key = {item["key"]: item for item in response.data}
     assert "kpi" not in by_key
     assert "cleaning" not in by_key
+    assert "scrabble" not in by_key
+    assert "darts" not in by_key
     assert by_key["custom"]["kind"] == "custom"
     assert by_key["custom"]["scoring_categories"] == []
     assert by_key["custom"]["table_mode"] == "points"
@@ -305,10 +361,6 @@ def test_presets_include_kind_and_category_descriptions(anon_api):
     assert by_key["soccer"]["scoring_locked"] is True
     assert by_key["custom"]["scoring_locked"] is False
     assert by_key["golf"]["table_mode"] == "points"
-    assert by_key["scrabble"]["table_mode"] == "head_to_head"
-    assert by_key["darts"]["format"] == "knockout"
-    assert by_key["scrabble"]["scoring_locked"] is True
-    assert by_key["darts"]["scoring_locked"] is True
 
 
 def test_custom_preset_uses_points_accumulation_table(api):

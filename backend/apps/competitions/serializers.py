@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils.text import slugify
 from rest_framework import serializers
 
 from apps.accounts.serializers import UserSummarySerializer
 from apps.core.permissions import Role, role_in
+
+User = get_user_model()
 
 from .models import (
     Competition,
@@ -133,9 +136,59 @@ class StageSerializer(serializers.ModelSerializer):
 
 
 class RosterMemberSerializer(serializers.ModelSerializer):
+    user_display_name = serializers.SerializerMethodField()
+
     class Meta:
         model = RosterMember
-        fields = ["id", "name", "number", "position", "user", "is_active"]
+        fields = ["id", "name", "number", "position", "user", "user_display_name", "is_active"]
+        read_only_fields = ["user_display_name"]
+
+    def get_user_display_name(self, obj: RosterMember) -> str:
+        if obj.user_id is None:
+            return ""
+        return obj.user.get_full_name()
+
+
+def add_profile_to_team(participant: Participant, user, actor, field: str = "member_ids") -> RosterMember:
+    """Put a profile on a team.
+
+    Members can be added by an admin. An owner or admin can add only their own
+    profile, and only to one team in the league.
+    """
+    membership = Membership.objects.filter(competition=participant.competition, user=user).first()
+    if membership is None:
+        invited_by = actor if getattr(actor, "is_authenticated", False) else None
+        Membership.objects.create(
+            competition=participant.competition,
+            user=user,
+            role=Role.MEMBER,
+            invited_by=invited_by,
+        )
+    elif membership.role in (Role.OWNER, Role.ADMIN):
+        if getattr(actor, "id", None) != user.id:
+            raise serializers.ValidationError(
+                {field: "An admin can only add themselves to a team."}
+            )
+        already = (
+            RosterMember.objects.filter(participant__competition=participant.competition, user=user)
+            .exclude(participant=participant)
+            .exists()
+        )
+        if already:
+            raise serializers.ValidationError(
+                {field: "An admin can only be on one team in a league."}
+            )
+    elif membership.role != Role.MEMBER:
+        raise serializers.ValidationError({field: f"{user.get_full_name()} can't join a team."})
+
+    existing = participant.roster.filter(user=user).first()
+    if existing is not None:
+        if field == "user":
+            raise serializers.ValidationError({field: "That member is already on this team."})
+        return existing
+    return RosterMember.objects.create(
+        participant=participant, user=user, name=user.get_full_name()
+    )
 
 
 class ParticipantSerializer(serializers.ModelSerializer):
@@ -143,11 +196,15 @@ class ParticipantSerializer(serializers.ModelSerializer):
     stage_ids = serializers.PrimaryKeyRelatedField(
         source="stages", many=True, queryset=Stage.objects.all(), required=False
     )
+    member_ids = serializers.ListField(
+        child=serializers.UUIDField(), write_only=True, required=False
+    )
 
     class Meta:
         model = Participant
         fields = [
             "id",
+            "kind",
             "name",
             "short_name",
             "description",
@@ -158,6 +215,7 @@ class ParticipantSerializer(serializers.ModelSerializer):
             "metadata",
             "stage_ids",
             "roster",
+            "member_ids",
         ]
 
     def validate_stage_ids(self, stages: list[Stage]) -> list[Stage]:
@@ -166,16 +224,64 @@ class ParticipantSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Stages must belong to the same competition.")
         return stages
 
+    def validate(self, attrs: dict) -> dict:
+        if self.instance is None:
+            if attrs.get("kind") == Participant.Kind.INDIVIDUAL:
+                raise serializers.ValidationError({"kind": "Add a team instead of a player."})
+            attrs["kind"] = Participant.Kind.TEAM
+        kind = attrs.get("kind")
+        if kind is None and self.instance is not None:
+            kind = self.instance.kind
+        creating_team = self.instance is None and kind == Participant.Kind.TEAM
+        converting = (
+            self.instance is not None
+            and kind == Participant.Kind.TEAM
+            and self.instance.kind != Participant.Kind.TEAM
+        )
+        if creating_team or converting:
+            member_ids = list(dict.fromkeys(attrs.get("member_ids") or []))
+            if len(member_ids) < 2:
+                raise serializers.ValidationError(
+                    {"member_ids": "A team is created from at least two profiles."}
+                )
+            attrs["member_ids"] = member_ids
+        return attrs
+
+    def create(self, validated_data: dict) -> Participant:
+        member_ids = validated_data.pop("member_ids", [])
+        with transaction.atomic():
+            participant = super().create(validated_data)
+            if participant.kind == Participant.Kind.TEAM:
+                self._attach_profiles(participant, member_ids)
+        return participant
+
+    def update(self, instance: Participant, validated_data: dict) -> Participant:
+        member_ids = validated_data.pop("member_ids", [])
+        with transaction.atomic():
+            participant = super().update(instance, validated_data)
+            if member_ids and participant.kind == Participant.Kind.TEAM:
+                self._attach_profiles(participant, member_ids)
+        return participant
+
+    def _attach_profiles(self, participant: Participant, member_ids: list) -> None:
+        users = list(User.objects.filter(id__in=member_ids))
+        if len(users) != len(set(member_ids)):
+            raise serializers.ValidationError({"member_ids": "Choose profiles that exist."})
+        actor = getattr(self.context.get("request"), "user", None)
+        for user in users:
+            add_profile_to_team(participant, user, actor)
+
 
 class MembershipSerializer(serializers.ModelSerializer):
     user = UserSummarySerializer(read_only=True)
     user_id = serializers.UUIDField(write_only=True, required=False)
     email = serializers.EmailField(write_only=True, required=False)
+    member_email = serializers.EmailField(source="user.email", read_only=True)
 
     class Meta:
         model = Membership
-        fields = ["id", "user", "user_id", "email", "role", "created_at"]
-        read_only_fields = ["id", "created_at"]
+        fields = ["id", "user", "user_id", "email", "member_email", "role", "created_at"]
+        read_only_fields = ["id", "member_email", "created_at"]
 
     def validate(self, attrs: dict) -> dict:
         if not attrs.get("user_id") and not attrs.get("email"):

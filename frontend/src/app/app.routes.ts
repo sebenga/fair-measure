@@ -45,6 +45,11 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'competitions/:id/teams/:participantId',
+        loadComponent: () =>
+          import('./pages/competitions/team-profile.page').then((m) => m.TeamProfilePage),
+      },
+      {
         path: 'competitions/:competitionId/fixtures/:fixtureId',
         loadComponent: () =>
           import('./pages/fixtures/fixture-detail.page').then((m) => m.FixtureDetailPage),
@@ -80,6 +85,10 @@ export const routes: Routes = [
   { path: 'competitions/new', redirectTo: 'tabs/competitions/new', pathMatch: 'full' },
   { path: 'competitions/:id/setup', redirectTo: 'tabs/competitions/:id/setup' },
   { path: 'competitions/:id/score', redirectTo: 'tabs/competitions/:id/score' },
+  {
+    path: 'competitions/:id/teams/:participantId',
+    redirectTo: 'tabs/competitions/:id/teams/:participantId',
+  },
   {
     path: 'competitions/:competitionId/fixtures/:fixtureId',
     redirectTo: 'tabs/competitions/:competitionId/fixtures/:fixtureId',

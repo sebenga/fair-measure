@@ -14,6 +14,7 @@ from .serializers import (
     ChangePasswordSerializer,
     FairMeasureTokenObtainPairSerializer,
     GoogleAuthSerializer,
+    ProfileSerializer,
     RegisterSerializer,
     UserSerializer,
 )
@@ -114,3 +115,10 @@ class ChangePasswordView(generics.GenericAPIView):
         request.user.set_password(serializer.validated_data["new_password"])
         request.user.save(update_fields=["password"])
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema(tags=["Auth"], summary="List profiles that can form a team")
+class ProfileListView(generics.ListAPIView):
+    serializer_class = ProfileSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = User.objects.filter(is_active=True).order_by("display_name", "email")

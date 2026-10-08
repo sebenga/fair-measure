@@ -198,60 +198,6 @@ PRESETS: dict[str, Preset] = {
             },
         ],
     },
-    "scrabble": {
-        "label": "Scrabble",
-        "sport": "scrabble",
-        "kind": "sport",
-        "format": "league",
-        "table_mode": HEAD_TO_HEAD,
-        "scoring_locked": True,
-        "scoring_categories": [
-            {
-                "name": "Game score",
-                "code": "game-score",
-                "points": Decimal("1"),
-                "description": "Points scored from tiles and board bonuses in the game, including a 50-point bingo. The higher score wins the game.",
-            },
-        ],
-        "points_policy": league_policy(),
-        "rules": [
-            {
-                "name": "How a game is scored",
-                "description": "Each word scores the face value of its tiles, multiplied by any double or triple letter or word squares. Using all seven tiles scores an extra 50.",
-            },
-            {
-                "name": "League points",
-                "description": "3 points for a win, 1 for a draw, 0 for a loss. Equal game scores are a draw.",
-            },
-        ],
-    },
-    "darts": {
-        "label": "Darts",
-        "sport": "darts",
-        "kind": "sport",
-        "format": "knockout",
-        "table_mode": HEAD_TO_HEAD,
-        "scoring_locked": True,
-        "scoring_categories": [
-            {
-                "name": "Leg",
-                "code": "leg",
-                "points": Decimal("1"),
-                "description": "A leg of 501 won by reaching exactly zero and checking out on a double.",
-            },
-        ],
-        "points_policy": dict(KNOCKOUT_POLICY),
-        "rules": [
-            {
-                "name": "Match format",
-                "description": "501, straight in, double out. The match winner is the first to win the agreed number of legs.",
-            },
-            {
-                "name": "How the competition is decided",
-                "description": "The winner of each match advances. There is no league table.",
-            },
-        ],
-    },
     "custom": {
         "label": "Custom",
         "sport": "",

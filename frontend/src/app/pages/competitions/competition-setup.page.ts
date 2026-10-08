@@ -26,13 +26,18 @@ import {
   ToastController,
 } from '@ionic/angular/standalone';
 
+import { forkJoin } from 'rxjs';
+
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type {
   CompetitionDetail,
   GenerateFixturesRequest,
+  Membership,
   Participant,
   PointsPolicy,
+  ProfileSummary,
   ScoringCategory,
 } from '../../core/models';
 import { isPointsTable, isScoringLocked } from '../../core/models';
@@ -96,19 +101,40 @@ type Section = 'entrants' | 'scoring' | 'schedule';
             <h3 class="fm-section-title">Entrants ({{ participants().length }})</h3>
 
             <form class="add-row" (submit)="addParticipant($event)">
-              <ion-input
-                [(ngModel)]="newParticipantName"
-                name="participant"
-                placeholder="Team or player name"
-                maxlength="200"
-              />
-              <ion-button
-                type="submit"
-                size="small"
-                [disabled]="!newParticipantName.trim() || busy()"
-              >
-                Add
-              </ion-button>
+              <p class="hint">
+                Pick at least two profiles. You can add yourself to one team in this league.
+              </p>
+              <ion-list class="profiles" lines="none">
+                @for (profile of profiles(); track profile.id) {
+                  <ion-item>
+                    <ion-checkbox
+                      slot="start"
+                      [checked]="selectedProfileIds().includes(profile.id)"
+                      [disabled]="profileBlocked(profile.id) || busy()"
+                      (ionChange)="toggleProfile(profile.id, $event)"
+                    />
+                    <ion-label>
+                      <h2>{{ profile.display_name || profile.email }}</h2>
+                      <p>{{ profileNote(profile) }}</p>
+                    </ion-label>
+                  </ion-item>
+                }
+              </ion-list>
+              <div class="add-name">
+                <ion-input
+                  [(ngModel)]="newParticipantName"
+                  name="participant"
+                  placeholder="Team name"
+                  maxlength="200"
+                />
+                <ion-button
+                  type="submit"
+                  size="small"
+                  [disabled]="!canAddParticipant() || busy()"
+                >
+                  Add
+                </ion-button>
+              </div>
             </form>
 
             @if (participants().length === 0) {
@@ -117,9 +143,9 @@ type Section = 'entrants' | 'scoring' | 'schedule';
                 <h3>No entrants yet</h3>
                 <p>
                   @if (pointsTable()) {
-                    Add the people or teams who will score into the table.
+                    Add the teams who will score into the table.
                   } @else {
-                    Add at least two before generating a schedule.
+                    Add at least two teams before generating a schedule.
                   }
                 </p>
               </div>
@@ -129,10 +155,19 @@ type Section = 'entrants' | 'scoring' | 'schedule';
                   <ion-item>
                     <ion-label>
                       <h2>{{ participant.name }}</h2>
-                      @if (participant.roster.length) {
-                        <p>{{ participant.roster.length }} on the roster</p>
-                      }
+                      <p>
+                        {{ participant.roster.length }}
+                        {{ participant.roster.length === 1 ? 'member' : 'members' }}
+                      </p>
                     </ion-label>
+                    <ion-button
+                      slot="end"
+                      fill="clear"
+                      size="small"
+                      (click)="openTeam(participant)"
+                    >
+                      Profile
+                    </ion-button>
                     <ion-button
                       slot="end"
                       fill="clear"
@@ -461,6 +496,7 @@ type Section = 'entrants' | 'scoring' | 'schedule';
 })
 export class CompetitionSetupPage implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly alerts = inject(AlertController);
@@ -471,6 +507,9 @@ export class CompetitionSetupPage implements OnInit {
   readonly competition = signal<CompetitionDetail | null>(null);
   readonly participants = signal<Participant[]>([]);
   readonly categories = signal<ScoringCategory[]>([]);
+  readonly profiles = signal<ProfileSummary[]>([]);
+  readonly memberships = signal<Membership[]>([]);
+  readonly selectedProfileIds = signal<string[]>([]);
   readonly policy = signal<PointsPolicy | null>(null);
   readonly loading = signal(true);
   readonly busy = signal(false);
@@ -522,12 +561,18 @@ export class CompetitionSetupPage implements OnInit {
   load(): void {
     this.loading.set(true);
 
-    this.api.getCompetition(this.competitionId).subscribe({
-      next: (competition) => {
+    forkJoin({
+      competition: this.api.getCompetition(this.competitionId),
+      profiles: this.api.listProfiles(),
+      members: this.api.listMembers(this.competitionId),
+    }).subscribe({
+      next: ({ competition, profiles, members }) => {
         this.competition.set(competition);
         this.participants.set(competition.participants);
         this.categories.set(competition.scoring_categories);
         this.policy.set(competition.points_policy);
+        this.profiles.set(profiles.results);
+        this.memberships.set(members.results);
         if (isPointsTable(competition) && this.section() === 'schedule') {
           this.section.set('entrants');
         }
@@ -559,23 +604,79 @@ export class CompetitionSetupPage implements OnInit {
 
   // --- Entrants -------------------------------------------------------------
 
+  canAddParticipant(): boolean {
+    return !!this.newParticipantName.trim() && this.selectedProfileIds().length >= 2;
+  }
+
+  profileBlocked(id: string): boolean {
+    const membership = this.memberships().find((item) => item.user.id === id);
+    if (!membership || membership.role === 'member') return false;
+    if (membership.role === 'owner' || membership.role === 'admin') {
+      return membership.user.id !== this.auth.user()?.id || this.onATeam(id);
+    }
+    return true;
+  }
+
+  profileNote(profile: ProfileSummary): string {
+    if (!this.profileBlocked(profile.id)) return profile.email;
+    if (this.onATeam(profile.id)) return 'Already on a team';
+    const membership = this.memberships().find((item) => item.user.id === profile.id);
+    if (membership?.role === 'owner' || membership?.role === 'admin') {
+      return 'Joins their own team';
+    }
+    return "Can't join a team";
+  }
+
+  private onATeam(id: string): boolean {
+    return this.participants().some((participant) =>
+      participant.roster.some((member) => member.user === id),
+    );
+  }
+
+  toggleProfile(id: string, event: CustomEvent<{ checked: boolean }>): void {
+    if (this.profileBlocked(id)) return;
+    const checked = !!event.detail?.checked;
+    this.selectedProfileIds.update((current) => {
+      const selected = current.includes(id);
+      if (checked === selected) return current;
+      return checked ? [...current, id] : current.filter((item) => item !== id);
+    });
+  }
+
   addParticipant(event: Event): void {
     event.preventDefault();
     const name = this.newParticipantName.trim();
-    if (!name || this.busy()) return;
+    if (!this.canAddParticipant() || this.busy()) return;
 
     this.busy.set(true);
-    this.api.createParticipant(this.competitionId, { name }).subscribe({
+    this.api
+      .createParticipant(this.competitionId, {
+        name,
+        kind: 'team',
+        member_ids: this.selectedProfileIds(),
+      })
+      .subscribe({
       next: (participant) => {
         this.participants.update((current) => [...current, participant]);
         this.newParticipantName = '';
+        this.selectedProfileIds.set([]);
         this.busy.set(false);
+        void this.router.navigate([
+          '/tabs/competitions',
+          this.competitionId,
+          'teams',
+          participant.id,
+        ]);
       },
       error: async (err: unknown) => {
         this.busy.set(false);
         await this.toast(extractErrorMessage(err, 'Could not add that entrant.'), 'danger');
       },
     });
+  }
+
+  openTeam(participant: Participant): void {
+    void this.router.navigate(['/tabs/competitions', this.competitionId, 'teams', participant.id]);
   }
 
   async removeParticipant(participant: Participant): Promise<void> {

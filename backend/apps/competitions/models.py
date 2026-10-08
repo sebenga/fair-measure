@@ -248,11 +248,19 @@ class Stage(BaseModel):
 
 
 class Participant(BaseModel):
-    """A team, an individual, a pair — whatever competes."""
+    """A team, an individual, a pair — whatever competes.
+
+    A team profile is made of people who hold the Member role in the league.
+    """
+
+    class Kind(models.TextChoices):
+        INDIVIDUAL = "individual", _("Player")
+        TEAM = "team", _("Team")
 
     competition = models.ForeignKey(
         Competition, on_delete=models.CASCADE, related_name="participants"
     )
+    kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.INDIVIDUAL)
     name = models.CharField(max_length=200)
     short_name = models.CharField(max_length=40, blank=True)
     description = models.TextField(blank=True)

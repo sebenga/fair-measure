@@ -12,9 +12,12 @@ import type {
   FixtureDetail,
   GenerateFixturesRequest,
   MediaAsset,
+  Membership,
   Paginated,
   Participant,
+  ProfileSummary,
   PointsPolicy,
+  RosterMember,
   Post,
   Preset,
   ReactionKind,
@@ -148,9 +151,25 @@ export class ApiService {
     );
   }
 
-  createParticipant(competitionId: string, body: Partial<Participant>) {
+  createParticipant(
+    competitionId: string,
+    body: Partial<Participant> & { member_ids?: string[] },
+  ) {
     return this.http.post<Participant>(
       `${this.base}/competitions/${competitionId}/participants`,
+      body,
+    );
+  }
+
+  getParticipant(competitionId: string, participantId: string) {
+    return this.http.get<Participant>(
+      `${this.base}/competitions/${competitionId}/participants/${participantId}`,
+    );
+  }
+
+  updateParticipant(competitionId: string, participantId: string, body: Partial<Participant>) {
+    return this.http.patch<Participant>(
+      `${this.base}/competitions/${competitionId}/participants/${participantId}`,
       body,
     );
   }
@@ -162,10 +181,33 @@ export class ApiService {
   }
 
   addRosterMember(competitionId: string, participantId: string, body: Record<string, unknown>) {
-    return this.http.post(
+    return this.http.post<RosterMember>(
       `${this.base}/competitions/${competitionId}/participants/${participantId}/roster`,
       body,
     );
+  }
+
+  removeRosterMember(competitionId: string, participantId: string, memberId: string) {
+    return this.http.delete<void>(
+      `${this.base}/competitions/${competitionId}/participants/${participantId}/roster/${memberId}`,
+    );
+  }
+
+  listMembers(competitionId: string): Observable<Paginated<Membership>> {
+    return this.http.get<Paginated<Membership>>(
+      `${this.base}/competitions/${competitionId}/members`,
+      { params: toParams({ page_size: 100 }) },
+    );
+  }
+
+  inviteMember(competitionId: string, body: { email?: string; user_id?: string; role?: string }) {
+    return this.http.post<Membership>(`${this.base}/competitions/${competitionId}/members`, body);
+  }
+
+  listProfiles(): Observable<Paginated<ProfileSummary>> {
+    return this.http.get<Paginated<ProfileSummary>>(`${this.base}/auth/profiles`, {
+      params: toParams({ page_size: 100 }),
+    });
   }
 
   // --- Fixtures -------------------------------------------------------------

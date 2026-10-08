@@ -13,12 +13,19 @@
 
 .add-row {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
   margin: 0 16px 4px;
-  padding: 6px 8px 6px 12px;
+  padding: 8px;
   border-radius: var(--fm-radius);
   background: var(--ion-color-step-50, #f5f6f8);
+
+  .add-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 4px 0 8px;
+  }
 
   ion-input {
     flex: 1 1 auto;
@@ -28,6 +35,19 @@
   ion-button {
     flex: 0 0 auto;
     margin: 0;
+  }
+
+  .hint {
+    margin: 0 8px;
+  }
+
+  .profiles {
+    margin: 0;
+    background: transparent;
+
+    ion-item {
+      --background: transparent;
+    }
   }
 }
 

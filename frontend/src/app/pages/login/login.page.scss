@@ -36,8 +36,15 @@
   }
 }
 
-form ion-button {
+form > ion-button {
   margin: 16px;
+}
+
+ion-input ion-button {
+  margin: 0;
+  height: 36px;
+  --padding-start: 8px;
+  --padding-end: 4px;
 }
 
 .error {

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, Prefetch, Q, QuerySet
 from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
@@ -38,6 +38,7 @@ from .serializers import (
     CompetitionWriteSerializer,
     MembershipSerializer,
     ParticipantSerializer,
+    add_profile_to_team,
     PointsPolicySerializer,
     RosterMemberSerializer,
     RuleSerializer,
@@ -357,7 +358,10 @@ class StageViewSet(CompetitionScopedViewSet):
     destroy=extend_schema(tags=["Participants"], summary="Remove a participant"),
 )
 class ParticipantViewSet(CompetitionScopedViewSet):
-    queryset = Participant.objects.prefetch_related("roster", "stages")
+    queryset = Participant.objects.prefetch_related(
+        Prefetch("roster", queryset=RosterMember.objects.select_related("user")),
+        "stages",
+    )
     serializer_class = ParticipantSerializer
     basename = "participant"
     search_fields = ["name", "short_name"]
@@ -401,7 +405,7 @@ class RosterMemberViewSet(viewsets.ModelViewSet):
         )
 
     def get_queryset(self):
-        return RosterMember.objects.filter(participant=self.get_participant())
+        return RosterMember.objects.filter(participant=self.get_participant()).select_related("user")
 
     def _assert_can_write(self) -> None:
         participant = self.get_participant()
@@ -412,7 +416,16 @@ class RosterMemberViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer) -> None:
         self._assert_can_write()
-        serializer.save(participant=self.get_participant())
+        participant = self.get_participant()
+        member = serializer.validated_data.get("user")
+        if participant.kind == Participant.Kind.TEAM:
+            if member is None:
+                raise ValidationError({"user": "A team is made up of profiles."})
+            serializer.instance = add_profile_to_team(
+                participant, member, self.request.user, field="user"
+            )
+            return
+        serializer.save(participant=participant)
 
     def perform_update(self, serializer) -> None:
         self._assert_can_write()
@@ -420,6 +433,12 @@ class RosterMemberViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance) -> None:
         self._assert_can_write()
+        participant = instance.participant
+        if (
+            participant.kind == Participant.Kind.TEAM
+            and participant.roster.filter(is_active=True).count() <= 2
+        ):
+            raise ValidationError("A team keeps at least two profiles.")
         instance.delete()
 
 

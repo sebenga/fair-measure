@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   IonButton,
   IonContent,
+  IonIcon,
   IonInput,
   IonItem,
   IonList,
@@ -26,6 +27,7 @@ import { extractErrorMessage } from '../../core/error-message';
     IonItem,
     IonInput,
     IonButton,
+    IonIcon,
     IonNote,
     IonSpinner,
     IonText,
@@ -58,11 +60,26 @@ import { extractErrorMessage } from '../../core/error-message';
               <ion-input
                 label="Password"
                 labelPlacement="stacked"
-                type="password"
+                [type]="showPassword() ? 'text' : 'password'"
                 autocomplete="current-password"
                 formControlName="password"
                 placeholder="Your password"
-              />
+              >
+                <ion-button
+                  fill="clear"
+                  slot="end"
+                  type="button"
+                  [attr.aria-pressed]="showPassword()"
+                  [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'"
+                  (click)="togglePassword()"
+                >
+                  <ion-icon
+                    slot="icon-only"
+                    [name]="showPassword() ? 'eye-off-outline' : 'eye-outline'"
+                    aria-hidden="true"
+                  />
+                </ion-button>
+              </ion-input>
             </ion-item>
           </ion-list>
 
@@ -101,11 +118,16 @@ export class LoginPage {
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+  readonly showPassword = signal(false);
 
   readonly form = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required]],
   });
+
+  togglePassword(): void {
+    this.showPassword.update((visible) => !visible);
+  }
 
   submit(): void {
     if (this.form.invalid || this.loading()) return;

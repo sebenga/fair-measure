@@ -23,6 +23,14 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "email", "email_verified", "date_joined"]
 
 
+class ProfileSerializer(serializers.ModelSerializer):
+    """A person who can be picked when a team is created."""
+
+    class Meta:
+        model = User
+        fields = ["id", "display_name", "email", "avatar_url"]
+
+
 class UserSummarySerializer(serializers.ModelSerializer):
     """The lightweight shape embedded in posts, comments and memberships."""
 

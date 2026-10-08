@@ -47,6 +47,21 @@ export interface UserSummary {
   avatar_url: string;
 }
 
+export interface ProfileSummary {
+  id: string;
+  display_name: string;
+  email: string;
+  avatar_url: string;
+}
+
+export interface Membership {
+  id: string;
+  user: UserSummary;
+  member_email: string;
+  role: Role;
+  created_at: string;
+}
+
 export interface AuthResponse {
   access: string;
   refresh: string;
@@ -95,17 +110,21 @@ export interface Stage {
   advances_count: number;
 }
 
+export type ParticipantKind = 'individual' | 'team';
+
 export interface RosterMember {
   id: string;
   name: string;
   number: number | null;
   position: string;
   user: string | null;
+  user_display_name?: string;
   is_active: boolean;
 }
 
 export interface Participant {
   id: string;
+  kind: ParticipantKind;
   name: string;
   short_name: string;
   description: string;

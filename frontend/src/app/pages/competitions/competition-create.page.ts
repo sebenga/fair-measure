@@ -602,7 +602,10 @@ export class CompetitionCreatePage implements OnInit {
   );
 
   readonly sportPresets = computed(() =>
-    this.presets().filter((preset) => presetKind(preset) === 'sport'),
+    this.presets().filter(
+      (preset) =>
+        presetKind(preset) === 'sport' && preset.key !== 'scrabble' && preset.key !== 'darts',
+    ),
   );
 
   readonly activePreset = computed(() => {
@@ -735,8 +738,6 @@ export class CompetitionCreatePage implements OnInit {
       tennis: 'tennisball-outline',
       squash: 'tennisball-outline',
       golf: 'golf-outline',
-      scrabble: 'text-outline',
-      darts: 'locate-outline',
     };
     if (byKey[preset.key]) return byKey[preset.key];
     switch (presetKind(preset)) {
