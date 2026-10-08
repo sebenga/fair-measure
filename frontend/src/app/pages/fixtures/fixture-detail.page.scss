@@ -32,6 +32,34 @@
     .kickoff {
       opacity: 0.82;
     }
+
+    .match-clock {
+      flex: 1 0 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 4px;
+
+      .readout {
+        font-size: 1.35rem;
+        font-weight: 750;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.04em;
+      }
+
+      button {
+        padding: 6px 14px;
+        border: none;
+        border-radius: 999px;
+        background: #fff;
+        color: var(--ion-color-primary-shade);
+        font-weight: 700;
+        font-size: 0.78rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+    }
   }
 
   .line {

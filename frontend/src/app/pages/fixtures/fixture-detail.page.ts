@@ -93,6 +93,14 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
             @if (fx.location) {
               <span class="kickoff">{{ fx.location }}</span>
             }
+            @if (showClock()) {
+              <div class="match-clock">
+                <span class="readout">{{ clockLabel() }}</span>
+                <button type="button" (click)="toggleClock()">
+                  {{ clockRunning() ? 'Pause' : 'Start' }}
+                </button>
+              </div>
+            }
           </div>
 
           <div class="line">
@@ -205,10 +213,18 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   readonly loading = signal(true);
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
+  /** Ticks so the clock appears at kickoff and the readout advances. */
+  readonly now = signal(Date.now());
+  readonly clock = signal<MatchClock>({ running: false, elapsedMs: 0, runStartedAt: null });
+
+  private tickHandle: ReturnType<typeof setInterval> | null = null;
 
   ngOnInit(): void {
     this.competitionId = this.route.snapshot.paramMap.get('competitionId') ?? '';
     this.fixtureId = this.route.snapshot.paramMap.get('fixtureId') ?? '';
+
+    this.clock.set(readMatchClock(this.fixtureId));
+    this.tickHandle = setInterval(() => this.now.set(Date.now()), 1000);
 
     this.load();
     this.realtime.subscribe(fixtureRoom(this.fixtureId));
@@ -231,9 +247,53 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.tickHandle !== null) {
+      clearInterval(this.tickHandle);
+    }
     if (this.fixtureId) {
       this.realtime.unsubscribe(fixtureRoom(this.fixtureId));
     }
+  }
+
+  /** Shown once this fixture has a kickoff, until the match is finished. */
+  showClock(): boolean {
+    const fixture = this.fixture();
+    if (!fixture?.scheduled_at) return false;
+    return (
+      fixture.status !== 'completed' &&
+      fixture.status !== 'cancelled' &&
+      fixture.status !== 'postponed' &&
+      fixture.status !== 'forfeit'
+    );
+  }
+
+  clockRunning(): boolean {
+    return this.clock().running;
+  }
+
+  clockLabel(): string {
+    return formatClock(this.displayedElapsed());
+  }
+
+  /** Goals and cards take the minute showing on the match clock. */
+  private clockMinute(category: ScoringCategory): number | null {
+    if (!this.showClock() || !followsMatchClock(category)) return null;
+    return Math.floor(this.displayedElapsed() / 60_000);
+  }
+
+  toggleClock(): void {
+    const clock = this.clock();
+    const next: MatchClock = clock.running
+      ? { running: false, elapsedMs: this.displayedElapsed(), runStartedAt: null }
+      : { running: true, elapsedMs: clock.elapsedMs, runStartedAt: Date.now() };
+    this.clock.set(next);
+    writeMatchClock(this.fixtureId, next);
+  }
+
+  private displayedElapsed(): number {
+    const clock = this.clock();
+    if (!clock.running || clock.runStartedAt === null) return clock.elapsedMs;
+    return clock.elapsedMs + Math.max(0, this.now() - clock.runStartedAt);
   }
 
   load(): void {
@@ -281,12 +341,16 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     if (this.saving()) return;
     this.saving.set(true);
 
+    const body: Record<string, unknown> = {
+      side: side.id,
+      scoring_category: category.id,
+      quantity: '1',
+    };
+    const minute = this.clockMinute(category);
+    if (minute !== null) body['minute'] = minute;
+
     this.api
-      .recordEvent(this.fixtureId, {
-        side: side.id,
-        scoring_category: category.id,
-        quantity: '1',
-      })
+      .recordEvent(this.fixtureId, body)
       .subscribe({
         next: () => {
           this.saving.set(false);
@@ -397,4 +461,59 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     if (parsed === 0) return '0';
     return parsed > 0 ? `+${parsed}` : String(parsed);
   }
+}
+
+interface MatchClock {
+  running: boolean;
+  elapsedMs: number;
+  runStartedAt: number | null;
+}
+
+function clockKey(fixtureId: string): string {
+  return `fm.matchClock.${fixtureId}`;
+}
+
+function readMatchClock(fixtureId: string): MatchClock {
+  const empty: MatchClock = { running: false, elapsedMs: 0, runStartedAt: null };
+  try {
+    const raw = localStorage.getItem(clockKey(fixtureId));
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw) as Partial<MatchClock>;
+    return {
+      running: parsed.running === true,
+      elapsedMs: typeof parsed.elapsedMs === 'number' ? parsed.elapsedMs : 0,
+      runStartedAt: typeof parsed.runStartedAt === 'number' ? parsed.runStartedAt : null,
+    };
+  } catch {
+    return empty;
+  }
+}
+
+function writeMatchClock(fixtureId: string, clock: MatchClock): void {
+  localStorage.setItem(clockKey(fixtureId), JSON.stringify(clock));
+}
+
+function followsMatchClock(category: ScoringCategory): boolean {
+  const code = category.code.trim().toLowerCase();
+  const name = category.name.trim().toLowerCase();
+  return (
+    code === 'goal' ||
+    code === 'own-goal' ||
+    code === 'yellow-card' ||
+    code === 'red-card' ||
+    name === 'goal' ||
+    name === 'own goal' ||
+    name === 'yellow card' ||
+    name === 'red card'
+  );
+}
+
+function formatClock(elapsedMs: number): string {
+  const total = Math.max(0, Math.floor(elapsedMs / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const mm = String(minutes).padStart(2, '0');
+  const ss = String(seconds).padStart(2, '0');
+  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }

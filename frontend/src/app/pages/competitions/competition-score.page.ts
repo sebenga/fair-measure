@@ -63,13 +63,11 @@ import { isPointsTable } from '../../core/models';
       } @else if (competition(); as comp) {
         <h3 class="fm-section-title">Record a score</h3>
         <p class="hint">
-          @if (criteriaLeague()) {
-            Award a scoring criterion. The table adds what was achieved, and the
-            note explains how those points were accumulated.
-          } @else {
-            Record a finished fixture as a win, draw, or loss. Scoring criteria
-            still describe what a point means.
-          }
+          {{
+            criteriaLeague()
+              ? 'Award a scoring criterion. The table adds what was achieved, and the note explains how those points were accumulated.'
+              : 'Record a finished fixture as a win, draw, or loss. Scoring criteria still describe what a point means.'
+          }}
         </p>
 
         @if (comp.scoring_categories.length === 0) {
@@ -201,12 +199,24 @@ import { isPointsTable } from '../../core/models';
         place-items: center;
         padding: 64px 0;
       }
+      .fm-section-title {
+        margin-left: 32px;
+        margin-right: 32px;
+      }
+      .hint {
+        margin: 0 32px 12px;
+        font-size: 0.9rem;
+        line-height: 1.5;
+        text-align: left;
+        color: var(--ion-color-medium);
+      }
       .submit {
         margin: 16px;
       }
       .footnote {
         display: block;
-        margin: 0 20px 12px;
+        margin: 0 32px 12px;
+        text-align: left;
       }
       .entry p {
         margin: 2px 0 0;

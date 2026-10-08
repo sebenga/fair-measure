@@ -144,7 +144,8 @@ import { RealtimeService } from '../../../core/realtime.service';
               </tr>
               @if (pointsTable() && expanded() === row.participant.id) {
                 <tr class="breakdown">
-                  <td colspan="4">
+                  <td class="pos"></td>
+                  <td class="detail" colspan="3">
                     @for (criterion of breakdownFor(row.participant.id); track criterion.id) {
                       <div class="criterion">
                         <strong>{{ criterion.name }}</strong>
@@ -321,7 +322,11 @@ import { RealtimeService } from '../../../core/realtime.service';
 
       tr.breakdown td {
         background: var(--ion-color-step-50, #f7f8fa);
-        padding: 8px 12px 12px;
+        text-align: left;
+      }
+
+      tr.breakdown td.detail {
+        padding: 8px 12px 12px 4px;
       }
 
       .criterion {
@@ -338,6 +343,7 @@ import { RealtimeService } from '../../../core/realtime.service';
         grid-column: 1 / -1;
         margin: 0;
         color: var(--ion-color-medium);
+        text-align: left;
       }
     `,
   ],
