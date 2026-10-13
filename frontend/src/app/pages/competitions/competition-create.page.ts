@@ -365,7 +365,7 @@ function presetKind(preset: Preset): PresetKind {
               <p class="hint">{{ lockedStructureHint() }}</p>
             } @else {
               <div class="formats">
-                @for (option of formats; track option.value) {
+                @for (option of formatChoices(); track option.value) {
                   <button
                     type="button"
                     class="format"
@@ -484,6 +484,12 @@ function presetKind(preset: Preset): PresetKind {
                   <dt>Type</dt>
                   <dd>{{ typeLabel() }}</dd>
                 </div>
+                @if (activePreset()?.description) {
+                  <div>
+                    <dt>How points are earned</dt>
+                    <dd>{{ activePreset()?.description }}</dd>
+                  </div>
+                }
                 <div>
                   <dt>Scoring</dt>
                   <dd>
@@ -595,17 +601,11 @@ export class CompetitionCreatePage implements OnInit {
   readonly error = signal<string | null>(null);
 
   readonly everydayPresets = computed(() =>
-    this.presets().filter(
-      (preset) =>
-        presetKind(preset) !== 'sport' && preset.key !== 'kpi' && preset.key !== 'cleaning',
-    ),
+    this.presets().filter((preset) => presetKind(preset) !== 'sport'),
   );
 
   readonly sportPresets = computed(() =>
-    this.presets().filter(
-      (preset) =>
-        presetKind(preset) === 'sport' && preset.key !== 'scrabble' && preset.key !== 'darts',
-    ),
+    this.presets().filter((preset) => presetKind(preset) === 'sport'),
   );
 
   readonly activePreset = computed(() => {
@@ -730,26 +730,30 @@ export class CompetitionCreatePage implements OnInit {
   }
 
   presetIcon(preset: Preset): string {
-    const byKey: Record<string, string> = {
-      custom: 'construct-outline',
-      soccer: 'football-outline',
-      rugby: 'american-football-outline',
-      basketball: 'basketball-outline',
-      tennis: 'tennisball-outline',
-      squash: 'tennisball-outline',
-      golf: 'golf-outline',
-    };
-    if (byKey[preset.key]) return byKey[preset.key];
-    switch (presetKind(preset)) {
-      case 'work':
-        return 'stats-chart-outline';
-      case 'home':
-        return 'water-outline';
-      case 'custom':
-        return 'construct-outline';
-      default:
-        return 'trophy-outline';
+    return preset.icon || 'trophy-outline';
+  }
+
+  formatChoices(): FormatOption[] {
+    const allowed = this.activePreset()?.formats_allowed;
+    if (!allowed?.length) return this.formats;
+    const mapped = new Set(allowed.map((value) => this.modelFormat(value)));
+    const choices = this.formats.filter((option) => mapped.has(option.value));
+    return choices.length ? choices : this.formats;
+  }
+
+  private modelFormat(value: string): CompetitionFormat {
+    if (value === 'groups_knockout') return 'group_knockout';
+    if (value === 'round_robin') return 'league';
+    if (
+      value === 'league' ||
+      value === 'knockout' ||
+      value === 'group_knockout' ||
+      value === 'ladder' ||
+      value === 'freeform'
+    ) {
+      return value;
     }
+    return 'league';
   }
 
   formatShort(format: string): string {

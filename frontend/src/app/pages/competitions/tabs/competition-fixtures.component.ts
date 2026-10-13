@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   OnInit,
   computed,
   inject,
@@ -55,6 +56,27 @@ interface FixtureGroup {
         <ion-segment-button value="all"><ion-label>All</ion-label></ion-segment-button>
       </ion-segment>
     </div>
+
+    @if (competition().format === 'knockout' && bracket().length) {
+      <section class="bracket">
+        <h3 class="fm-section-title">Bracket</h3>
+        @for (round of bracket(); track round.round) {
+          <div class="round">
+            <p class="round-label">Round {{ round.round }}</p>
+            @for (fixture of round.fixtures; track fixture.id) {
+              <button type="button" class="tie" (click)="openFixture(fixture)">
+                @for (side of fixture.sides; track side.id) {
+                  <span [class.winner]="side.outcome === 'win'">
+                    {{ side.participant.short_name || side.participant.name }}
+                    <strong>{{ trim(side.score) }}</strong>
+                  </span>
+                }
+              </button>
+            }
+          </div>
+        }
+      </section>
+    }
 
     @if (loading()) {
       <div class="centered"><ion-spinner name="crescent" /></div>
@@ -123,6 +145,34 @@ interface FixtureGroup {
     `
       .filter {
         padding: 12px 16px 4px;
+      }
+
+      .bracket {
+        padding: 4px 16px 8px;
+      }
+
+      .round-label {
+        margin: 8px 0 4px;
+        color: var(--ion-color-medium);
+        font-size: 0.8rem;
+      }
+
+      .tie {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        width: 100%;
+        margin: 0 0 8px;
+        padding: 10px 12px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--fm-surface, var(--ion-color-light));
+        color: inherit;
+        text-align: left;
+      }
+
+      .tie .winner {
+        font-weight: 700;
       }
 
       .centered {
@@ -229,6 +279,7 @@ export class CompetitionFixturesComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
   private readonly realtime = inject(RealtimeService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly competition = input.required<CompetitionDetail>();
 
@@ -236,6 +287,19 @@ export class CompetitionFixturesComponent implements OnInit {
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly filter = signal<Filter>('upcoming');
+
+  readonly bracket = computed(() => {
+    const rounds = new Map<number, Fixture[]>();
+    for (const fixture of this.fixtures()) {
+      const round = fixture.round_number ?? 1;
+      const list = rounds.get(round) ?? [];
+      list.push(fixture);
+      rounds.set(round, list);
+    }
+    return [...rounds.entries()]
+      .sort((left, right) => left[0] - right[0])
+      .map(([round, fixtures]) => ({ round, fixtures }));
+  });
 
   readonly groups = computed<FixtureGroup[]>(() => {
     const filtered = this.fixtures().filter((fixture) => this.matchesFilter(fixture));
@@ -277,7 +341,7 @@ export class CompetitionFixturesComponent implements OnInit {
         'score.corrected',
         'score.removed',
       ])
-      .pipe(takeUntilDestroyed())
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.load(false));
   }
 

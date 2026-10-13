@@ -1,9 +1,9 @@
 """Populate a database with a competition that already looks lived-in.
 
 Running the app against empty tables makes it hard to tell whether a screen is
-broken or simply has nothing to show. This builds a rugby league mid-season:
-played fixtures with scores, upcoming ones, a standings table, and some chatter
-in the feed.
+broken or simply has nothing to show. This builds a soccer league mid-season
+and a golf stroke-play event: played fixtures, a live match, a standings table,
+and some chatter in the feed.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from django.utils import timezone
 from apps.competitions.models import Competition, Membership, Participant
 from apps.competitions.presets import apply_preset
 from apps.core.permissions import Role
-from apps.fixtures.models import Fixture, ScoreEvent
+from apps.fixtures.models import Fixture, FixtureSide, ScoreEvent
 from apps.fixtures.services import ScheduleOptions, generate_round_robin
 from apps.social.models import Comment, Post, Reaction
 from apps.standings.services import refresh_standings
@@ -115,6 +115,7 @@ class Command(BaseCommand):
         played = self._play_fixtures(competition, fixtures)
         refresh_standings(competition)
         self._create_feed(competition, [owner, *members], fixtures)
+        medal = self._create_golf(owner)
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -122,8 +123,61 @@ class Command(BaseCommand):
                 f"  {len(participants)} teams, {len(fixtures)} fixtures ({played} played)\n"
                 f"  Sign in as {owner.email} / {options['password']}\n"
                 f"  Competition id: {competition.id}\n"
+                f"  Golf event: {medal.name} ({medal.id})\n"
             )
         )
+
+    def _create_golf(self, owner) -> Competition:
+        existing = Competition.objects.filter(name="Club Medal").first()
+        if existing:
+            return existing
+
+        medal = Competition.objects.create(
+            name="Club Medal",
+            description="18 holes. The lowest total wins. Ties go to countback from the last hole.",
+            sport="golf",
+            format="freeform",
+            status=Competition.Status.ACTIVE,
+            owner=owner,
+            starts_on=date.today(),
+            timezone="Europe/London",
+        )
+        Membership.objects.create(competition=medal, user=owner, role=Role.OWNER)
+        apply_preset(medal, "golf_stroke")
+        players = [
+            Participant.objects.create(competition=medal, name=name, kind="individual")
+            for name in ("Sam Okafor", "Ama Boateng", "Dev Patel")
+        ]
+        fixture = Fixture.objects.create(
+            competition=medal,
+            label="Round 1",
+            status=Fixture.Status.COMPLETED,
+        )
+        stroke = medal.scoring_categories.get(code="stroke")
+        cards = (72, 74, 71)
+        for position, (player, total) in enumerate(zip(players, cards, strict=True)):
+            side = FixtureSide.objects.create(fixture=fixture, participant=player, position=position)
+            per_hole, remainder = divmod(total, 18)
+            for index in range(18):
+                ScoreEvent.objects.create(
+                    fixture=fixture,
+                    side=side,
+                    scoring_category=stroke,
+                    quantity=Decimal(per_hole + (1 if index < remainder else 0)),
+                    unit_index=index,
+                    recorded_by=owner,
+                )
+        fixture.recalculate_scores()
+        refresh_standings(medal)
+        live = Fixture.objects.create(
+            competition=medal,
+            label="Round 2",
+            status=Fixture.Status.LIVE,
+        )
+        for position, player in enumerate(players):
+            FixtureSide.objects.create(fixture=live, participant=player, position=position)
+        self.stdout.write(f"  created golf event {medal.name}")
+        return medal
 
     # --- Steps ----------------------------------------------------------------
 
@@ -142,10 +196,10 @@ class Command(BaseCommand):
         competition = Competition.objects.create(
             name=name,
             description=(
-                "Six teams, one pitch, and a points system nobody fully agrees with. "
-                "Bonus point for winning by 15 or more."
+                "Six teams. A win is 3 points, a draw is 1, a loss is 0. "
+                "Level on points, the table uses goal difference, then goals scored."
             ),
-            sport="rugby",
+            sport="soccer",
             format="league",
             status=Competition.Status.ACTIVE,
             owner=owner,
@@ -164,7 +218,7 @@ class Command(BaseCommand):
             ]
         )
 
-        apply_preset(competition, "rugby")
+        apply_preset(competition, "soccer")
         self.stdout.write(f"  created competition {competition.name}")
         return competition
 
@@ -202,10 +256,8 @@ class Command(BaseCommand):
         categories = {
             category.code: category for category in competition.scoring_categories.all()
         }
-        try_category = categories.get("try")
-        conversion = categories.get("conversion")
-        penalty = categories.get("penalty")
-        if try_category is None:
+        goal = categories.get("goal") or categories.get("try")
+        if goal is None:
             return 0
 
         now = timezone.now()
@@ -217,32 +269,14 @@ class Command(BaseCommand):
 
             sides = list(fixture.sides.all())
             for side in sides:
-                for _ in range(random.randint(0, 5)):
+                for _ in range(random.randint(0, 3)):
                     ScoreEvent.objects.create(
                         fixture=fixture,
                         side=side,
-                        scoring_category=try_category,
+                        scoring_category=goal,
                         quantity=Decimal("1"),
-                        minute=random.randint(1, 80),
-                        recorded_by=competition.owner,
-                    )
-                if conversion:
-                    for _ in range(random.randint(0, 3)):
-                        ScoreEvent.objects.create(
-                            fixture=fixture,
-                            side=side,
-                            scoring_category=conversion,
-                            quantity=Decimal("1"),
-                            minute=random.randint(1, 80),
-                            recorded_by=competition.owner,
-                        )
-                if penalty and random.random() < 0.6:
-                    ScoreEvent.objects.create(
-                        fixture=fixture,
-                        side=side,
-                        scoring_category=penalty,
-                        quantity=Decimal("1"),
-                        minute=random.randint(1, 80),
+                        minute=random.randint(1, 90),
+                        unit_index=0 if random.random() < 0.5 else 1,
                         recorded_by=competition.owner,
                     )
 
@@ -270,7 +304,7 @@ class Command(BaseCommand):
                 ScoreEvent.objects.create(
                     fixture=live,
                     side=side,
-                    scoring_category=try_category,
+                    scoring_category=goal,
                     quantity=Decimal("1"),
                     minute=18,
                     recorded_by=competition.owner,

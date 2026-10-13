@@ -1,235 +1,259 @@
-"""Official starting points for a competition.
+"""Starting-point presets.
 
-Each preset is either head-to-head (entrants play each other) or accumulation
-(entrants build a total from a fixed scoring structure). Official presets write
-their scoring through the same models as a hand-built competition, then lock
-those rows. Only the Custom preset stays editable afterwards.
+A preset is data: how entrants score, how a match is split into units, and how
+a table is ordered. The engine reads those fields and does not branch on the
+preset key.
 """
 
 from __future__ import annotations
 
-from decimal import Decimal
-from typing import Any, TypedDict
+from typing import TypedDict
 
 
-class Preset(TypedDict):
+class Preset(TypedDict, total=False):
     label: str
+    icon: str
+    description: str
     sport: str
+    kind: str
     format: str
-    kind: str  # sport | work | home | custom
-    # head_to_head = VS fixtures; points = accumulate scores into one table.
+    contest_type: str
+    participant_type: str
+    formats_allowed: list[str]
+    score_types: list[dict]
+    match_structure: list[dict]
+    win_condition: str
+    draw_allowed: bool
+    draw_resolution: str
+    league_points: dict
+    tiebreakers: list[str]
+    accumulation_ranking: str
+    locked: bool
     table_mode: str
-    # Official presets refuse later edits to categories and the points policy.
-    scoring_locked: bool
-    scoring_categories: list[dict[str, Any]]
-    points_policy: dict[str, Any]
-    rules: list[dict[str, str]]
+    rules: list[dict]
 
 
-T = "score_difference"
 POINTS_TABLE = "points"
 HEAD_TO_HEAD = "head_to_head"
 
-# Shared policy for boards that rank by accumulated score, not match results.
-POINTS_ACCUMULATION_POLICY: dict[str, Any] = {
-    "win_points": Decimal("0"),
-    "draw_points": Decimal("0"),
-    "loss_points": Decimal("0"),
-    "allow_draws": True,
-    "bonus_win_margin": None,
-    "bonus_win_points": Decimal("0"),
-    "bonus_loss_margin": None,
-    "bonus_loss_points": Decimal("0"),
-    "tiebreakers": ["score_for", "name"],
-}
+SCORING_LOCKED_MESSAGE = "This preset locks scoring. Duplicate the competition to change it."
 
-# League tables use the same result points for every head-to-head sport.
-# Match scoring (a try, a goal, a leg) stays on the scoring categories.
-LEAGUE_POLICY: dict[str, Any] = {
-    "win_points": Decimal("3"),
-    "draw_points": Decimal("1"),
-    "loss_points": Decimal("0"),
-    "allow_draws": True,
-    "bonus_win_margin": None,
-    "bonus_win_points": Decimal("0"),
-    "bonus_loss_margin": None,
-    "bonus_loss_points": Decimal("0"),
-    "tiebreakers": ["points", T, "score_for", "name"],
-}
-
-# Knockout fixtures only need a winner. They do not feed a league table.
-KNOCKOUT_POLICY: dict[str, Any] = {
-    "win_points": Decimal("1"),
-    "draw_points": Decimal("0"),
-    "loss_points": Decimal("0"),
-    "allow_draws": False,
-    "bonus_win_margin": None,
-    "bonus_win_points": Decimal("0"),
-    "bonus_loss_margin": None,
-    "bonus_loss_points": Decimal("0"),
-    "tiebreakers": ["wins", "name"],
+# The model uses group_knockout; presets say groups_knockout.
+FORMAT_TO_MODEL = {
+    "league": "league",
+    "knockout": "knockout",
+    "groups_knockout": "group_knockout",
+    "round_robin": "league",
+    "ladder": "ladder",
 }
 
 
-def league_policy(*, allow_draws: bool = True) -> dict[str, Any]:
-    policy = dict(LEAGUE_POLICY)
-    policy["allow_draws"] = allow_draws
-    return policy
+def _categories(score_types: list[dict]) -> list[dict]:
+    rows = []
+    for item in score_types:
+        rows.append(
+            {
+                "name": item["label"],
+                "code": item["key"],
+                "points": item["value"],
+                "affects_score": item.get("affects_score", True),
+                "description": item.get("description", ""),
+            }
+        )
+    return rows
+
+
+def _policy(preset: Preset) -> dict:
+    league = preset.get("league_points") or {"win": 0, "draw": 0, "loss": 0}
+    return {
+        "win_points": league.get("win", 0),
+        "draw_points": league.get("draw", 0),
+        "loss_points": league.get("loss", 0),
+        "bonus_win_points": 0,
+        "bonus_loss_points": 0,
+        "tiebreakers": list(preset.get("tiebreakers") or ["points", "score_difference", "score_for"]),
+    }
+
+
+SOCCER: Preset = {
+    "label": "Soccer",
+    "icon": "football-outline",
+    "description": (
+        "Each goal is worth 1. A league match is two halves of 45 minutes. "
+        "A draw shares the points. In a knockout, a draw is played out with "
+        "extra time and then a penalty shoot-out. The table ranks by points, "
+        "then goal difference, then goals scored, then the head-to-head result."
+    ),
+    "sport": "soccer",
+    "kind": "sport",
+    "format": "league",
+    "contest_type": "head_to_head",
+    "participant_type": "team",
+    "formats_allowed": ["league", "knockout", "groups_knockout", "round_robin"],
+    "score_types": [
+        {"key": "goal", "label": "Goal", "value": 1, "affects_score": True},
+    ],
+    "match_structure": [
+        {"unit": "half", "count": 2, "minutes": 45, "affects_total": True},
+        {"unit": "extra_time", "count": 2, "minutes": 15, "affects_total": True},
+        {"unit": "penalties", "count": 1, "affects_total": False, "resolves_draw": True},
+    ],
+    "win_condition": "highest_total",
+    "draw_allowed": True,
+    "draw_resolution": "penalties",
+    "league_points": {"win": 3, "draw": 1, "loss": 0},
+    "tiebreakers": ["points", "score_difference", "score_for", "head_to_head"],
+    "locked": True,
+    "rules": [
+        {
+            "name": "League points",
+            "description": "A win is 3 points, a draw is 1, a loss is 0.",
+        },
+        {
+            "name": "Knockout",
+            "description": "If the match is level, extra time is played, then penalties decide who advances.",
+        },
+    ],
+}
+
+GOLF_STROKE: Preset = {
+    "label": "Golf (stroke play)",
+    "icon": "golf-outline",
+    "description": (
+        "Each hole is scored in strokes. After 18 holes the lowest total wins. "
+        "If two players finish on the same total, the last hole is compared, "
+        "then the one before it, back to the first."
+    ),
+    "sport": "golf",
+    "kind": "sport",
+    "format": "league",
+    "contest_type": "accumulation",
+    "participant_type": "individual",
+    "formats_allowed": ["league"],
+    "score_types": [
+        {
+            "key": "stroke",
+            "label": "Stroke",
+            "value": 1,
+            "affects_score": True,
+            "description": "One stroke on a hole. The lowest total wins.",
+        },
+    ],
+    "match_structure": [
+        {"unit": "hole", "count": 18, "affects_total": True},
+    ],
+    "win_condition": "lowest_total",
+    "draw_allowed": True,
+    "draw_resolution": "sudden_death",
+    "league_points": {"win": 0, "draw": 0, "loss": 0},
+    "tiebreakers": ["countback"],
+    "accumulation_ranking": "lowest_first",
+    "locked": True,
+    "rules": [
+        {
+            "name": "Stroke play",
+            "description": "Add a stroke every time the ball is played. The lowest 18-hole total ranks first.",
+        },
+    ],
+}
+
+CUSTOM: Preset = {
+    "label": "Custom",
+    "icon": "construct-outline",
+    "description": "You define how points are earned. Scoring stays editable.",
+    "sport": "",
+    "kind": "custom",
+    "format": "freeform",
+    "contest_type": "accumulation",
+    "participant_type": "team",
+    "formats_allowed": ["league", "knockout", "ladder"],
+    "score_types": [],
+    "match_structure": [],
+    "win_condition": "highest_total",
+    "draw_allowed": True,
+    "draw_resolution": "replay",
+    "league_points": {"win": 0, "draw": 0, "loss": 0},
+    "tiebreakers": ["points", "score_difference", "score_for"],
+    "accumulation_ranking": "highest_first",
+    "locked": False,
+    "table_mode": POINTS_TABLE,
+    "rules": [],
+}
+
+from .catalog import CATALOG
 
 PRESETS: dict[str, Preset] = {
-    "soccer": {
-        "label": "Soccer",
-        "sport": "soccer",
-        "kind": "sport",
-        "format": "league",
-        "table_mode": HEAD_TO_HEAD,
-        "scoring_locked": True,
-        "scoring_categories": [
-            {"name": "Goal", "code": "goal", "points": Decimal("1"), "description": "Ball over the line."},
-            {"name": "Own goal", "code": "own-goal", "points": Decimal("1"), "description": "Credited to the opposing side."},
-            {"name": "Yellow card", "code": "yellow-card", "points": Decimal("0"), "affects_score": False},
-            {"name": "Red card", "code": "red-card", "points": Decimal("0"), "affects_score": False},
-        ],
-        "points_policy": league_policy(),
-        "rules": [
-            {"name": "Match length", "description": "Two halves of 45 minutes plus stoppage time."},
-            {"name": "Squad size", "description": "Eleven players per side, up to five substitutions."},
-        ],
-    },
-    "rugby": {
-        "label": "Rugby union",
-        "sport": "rugby",
-        "kind": "sport",
-        "format": "league",
-        "table_mode": HEAD_TO_HEAD,
-        "scoring_locked": True,
-        "scoring_categories": [
-            {"name": "Try", "code": "try", "points": Decimal("5"), "description": "Grounding the ball over the line."},
-            {"name": "Conversion", "code": "conversion", "points": Decimal("2"), "description": "Kick after a try."},
-            {"name": "Penalty kick", "code": "penalty", "points": Decimal("3")},
-            {"name": "Drop goal", "code": "drop-goal", "points": Decimal("3")},
-        ],
-        "points_policy": league_policy(),
-        "rules": [
-            {"name": "Match length", "description": "Two halves of 40 minutes."},
-            {
-                "name": "League points",
-                "description": "3 points for a win, 1 for a draw, 0 for a loss.",
-            },
-        ],
-    },
-    "basketball": {
-        "label": "Basketball",
-        "sport": "basketball",
-        "kind": "sport",
-        "format": "league",
-        "table_mode": HEAD_TO_HEAD,
-        "scoring_locked": True,
-        "scoring_categories": [
-            {"name": "Free throw", "code": "free-throw", "points": Decimal("1"), "description": "A shot worth one point, taken from the free-throw line."},
-            {"name": "Field goal", "code": "field-goal", "points": Decimal("2"), "description": "A shot worth two points, inside the three-point line."},
-            {"name": "Three pointer", "code": "three-pointer", "points": Decimal("3"), "description": "A shot worth three points, from outside the three-point line."},
-        ],
-        "points_policy": league_policy(allow_draws=False),
-        "rules": [{"name": "Match length", "description": "Four quarters of 12 minutes."}],
-    },
-    "tennis": {
-        "label": "Tennis",
-        "sport": "tennis",
-        "kind": "sport",
-        "format": "knockout",
-        "table_mode": HEAD_TO_HEAD,
-        "scoring_locked": True,
-        "scoring_categories": [
-            {"name": "Set won", "code": "set", "points": Decimal("1"), "description": "A set won. The match winner is the first to win the agreed number of sets."},
-            {"name": "Game won", "code": "game", "points": Decimal("0"), "affects_score": False},
-            {"name": "Ace", "code": "ace", "points": Decimal("0"), "affects_score": False},
-        ],
-        "points_policy": dict(KNOCKOUT_POLICY),
-        "rules": [
-            {"name": "Match format", "description": "Best of three tie-break sets."},
-            {
-                "name": "How the competition is decided",
-                "description": "The winner of each match advances. There is no league table.",
-            },
-        ],
-    },
-    "squash": {
-        "label": "Squash",
-        "sport": "squash",
-        "kind": "sport",
-        "format": "league",
-        "table_mode": HEAD_TO_HEAD,
-        "scoring_locked": True,
-        "scoring_categories": [
-            {"name": "Game won", "code": "game", "points": Decimal("1"), "description": "A game won. Games are played to 11 points, and must be won by two."},
-            {"name": "Rally won", "code": "rally", "points": Decimal("0"), "affects_score": False},
-        ],
-        "points_policy": league_policy(allow_draws=False),
-        "rules": [{"name": "Match format", "description": "Best of five games to eleven points."}],
-    },
-    "golf": {
-        "label": "Golf (stroke play)",
-        "sport": "golf",
-        "kind": "sport",
-        "format": "league",
-        "table_mode": POINTS_TABLE,
-        "scoring_locked": True,
-        "scoring_categories": [
-            # Each stroke lowers the total, so the highest total is the fewest strokes.
-            {
-                "name": "Stroke",
-                "code": "stroke",
-                "points": Decimal("-1"),
-                "description": "One stroke played. Each stroke is −1, so the highest total is the fewest strokes.",
-            },
-            {
-                "name": "Penalty stroke",
-                "code": "penalty-stroke",
-                "points": Decimal("-1"),
-                "description": "A penalty stroke under the Rules of Golf. It also counts as −1.",
-            },
-        ],
-        "points_policy": dict(POINTS_ACCUMULATION_POLICY),
-        "rules": [
-            {
-                "name": "Format",
-                "description": "Stroke play over eighteen holes. Entrants do not play each other. The table ranks by total, highest first, which is the fewest strokes.",
-            },
-        ],
-    },
-    "custom": {
-        "label": "Custom",
-        "sport": "",
-        "kind": "custom",
-        "format": "league",
-        "table_mode": POINTS_TABLE,
-        "scoring_locked": False,
-        "scoring_categories": [],
-        "points_policy": dict(POINTS_ACCUMULATION_POLICY),
-        "rules": [],
-    },
+    "soccer": SOCCER,
+    "golf_stroke": GOLF_STROKE,
+    **CATALOG,
+    "custom": CUSTOM,
 }
 
 PRESET_CHOICES = [(key, value["label"]) for key, value in PRESETS.items()]
 
-SCORING_LOCKED_MESSAGE = (
-    "This competition uses an official preset. Scoring categories and the "
-    "points policy cannot be changed."
-)
-
 
 def scoring_is_locked(competition) -> bool:
-    """True when the competition was created from an official preset."""
+    settings = competition.settings_json or {}
+    if settings.get("lock_when_started"):
+        status = getattr(competition, "status", None)
+        return status not in {None, "", "draft"}
+    if "scoring_locked" in settings:
+        return bool(settings["scoring_locked"])
+    if "locked" in settings:
+        return bool(settings["locked"])
+    preset = PRESETS.get(settings.get("preset") or "")
+    if preset is None:
+        return False
+    return bool(preset.get("locked", preset.get("key") != "custom"))
 
-    settings = getattr(competition, "settings_json", None) or {}
-    return bool(settings.get("scoring_locked"))
+
+def public_preset(key: str, preset: Preset) -> dict:
+    categories = _categories(preset.get("score_types") or [])
+    contest = preset.get("contest_type", HEAD_TO_HEAD)
+    table_mode = preset.get("table_mode") or (
+        POINTS_TABLE if contest == "accumulation" else HEAD_TO_HEAD
+    )
+    return {
+        "key": key,
+        "label": preset["label"],
+        "icon": preset.get("icon", "trophy-outline"),
+        "description": preset.get("description", ""),
+        "sport": preset.get("sport", ""),
+        "kind": preset.get("kind", "sport"),
+        "format": preset.get("format", "league"),
+        "formats_allowed": list(preset.get("formats_allowed") or []),
+        "contest_type": contest,
+        "participant_type": preset.get("participant_type", "team"),
+        "score_types": list(preset.get("score_types") or []),
+        "match_structure": list(preset.get("match_structure") or []),
+        "win_condition": preset.get("win_condition", "highest_total"),
+        "draw_allowed": bool(preset.get("draw_allowed", True)),
+        "draw_resolution": preset.get("draw_resolution", "replay"),
+        "league_points": dict(preset.get("league_points") or {}),
+        "tiebreakers": list(preset.get("tiebreakers") or []),
+        "accumulation_ranking": preset.get("accumulation_ranking"),
+        "locked": bool(preset.get("locked", key != "custom")),
+        "lock_when_started": bool(preset.get("lock_when_started")),
+        "table_mode": table_mode,
+        "scoring_locked": bool(preset.get("locked", key != "custom")),
+        "scoring_categories": [
+            {
+                "name": item["name"],
+                "code": item["code"],
+                "points": str(item["points"]),
+                "affects_score": item.get("affects_score", True),
+                "description": item.get("description", ""),
+            }
+            for item in categories
+        ],
+        "rules": list(preset.get("rules") or []),
+    }
 
 
 def apply_preset(competition, preset_key: str) -> None:
-    """Populate a competition's scoring, points policy and rules from a preset."""
+    """Copy a preset's scoring, structure, and ranking onto a competition."""
 
-    from .models import PointsPolicy, Rule, ScoringCategory
+    from .models import MatchUnit, PointsPolicy, Rule, ScoringCategory
 
     preset = PRESETS.get(preset_key)
     if preset is None:
@@ -246,20 +270,76 @@ def apply_preset(competition, preset_key: str) -> None:
                 affects_score=item.get("affects_score", True),
                 display_order=index,
             )
-            for index, item in enumerate(preset["scoring_categories"])
+            for index, item in enumerate(_categories(preset.get("score_types") or []))
         ]
     )
 
     PointsPolicy.objects.update_or_create(
-        competition=competition, defaults=preset["points_policy"]
+        competition=competition, defaults=_policy(preset)
     )
 
+    competition.match_units.all().delete()
+    MatchUnit.objects.bulk_create(
+        [
+            MatchUnit(
+                competition=competition,
+                display_order=index,
+                unit=block.get("unit") or "unit",
+                count=int(block.get("count") or block.get("best_of") or 1),
+                minutes=block.get("minutes"),
+                best_of=block.get("best_of"),
+                first_to=block.get("first_to"),
+                win_by=block.get("win_by"),
+                tiebreak_at=block.get("tiebreak_at"),
+                affects_total=bool(block.get("affects_total", True)),
+                resolves_draw=bool(block.get("resolves_draw", False)),
+            )
+            for index, block in enumerate(preset.get("match_structure") or [])
+        ]
+    )
+
+    contest = preset.get("contest_type", HEAD_TO_HEAD)
+    table_mode = preset.get("table_mode") or (
+        POINTS_TABLE if contest == "accumulation" else HEAD_TO_HEAD
+    )
+    locked = bool(preset.get("locked", preset_key != "custom"))
     settings = dict(competition.settings_json or {})
-    table_mode = preset.get("table_mode", HEAD_TO_HEAD)
-    settings["preset"] = preset_key
-    settings["table_mode"] = table_mode
-    settings["scoring_basis"] = "criteria" if table_mode == POINTS_TABLE else "results"
-    settings["scoring_locked"] = bool(preset.get("scoring_locked", preset_key != "custom"))
+    settings.update(
+        {
+            "preset": preset_key,
+            "table_mode": table_mode,
+            "scoring_basis": "criteria" if table_mode == POINTS_TABLE else "results",
+            "scoring_locked": locked,
+            "locked": locked,
+            "icon": preset.get("icon", ""),
+            "description": preset.get("description", ""),
+            "contest_type": contest,
+            "participant_type": preset.get("participant_type", "team"),
+            "formats_allowed": list(preset.get("formats_allowed") or []),
+            "match_structure": list(preset.get("match_structure") or []),
+            "win_condition": preset.get("win_condition", "highest_total"),
+            "draw_allowed": bool(preset.get("draw_allowed", True)),
+            "draw_resolution": preset.get("draw_resolution", "replay"),
+            "league_points": dict(preset.get("league_points") or {}),
+            "tiebreakers": list(preset.get("tiebreakers") or []),
+            "accumulation_ranking": preset.get("accumulation_ranking"),
+            "score_types": list(preset.get("score_types") or []),
+            "participant_types": list(preset.get("participant_types") or []),
+            "bonuses": list(preset.get("bonuses") or []),
+            "rate_basis": preset.get("rate_basis") or {},
+            "countback_windows": list(preset.get("countback_windows") or []),
+            "placing_points": list(preset.get("placing_points") or []),
+            "handicap": bool(preset.get("handicap")),
+            "performance": preset.get("performance"),
+            "lock_when_started": bool(preset.get("lock_when_started")),
+            "target": preset.get("target"),
+            "category_better": {
+                item["key"]: item["better"]
+                for item in (preset.get("score_types") or [])
+                if item.get("better")
+            },
+        }
+    )
     competition.settings_json = settings
     competition.save(update_fields=["settings_json", "updated_at"])
 
@@ -271,6 +351,6 @@ def apply_preset(competition, preset_key: str) -> None:
                 description=item["description"],
                 display_order=index,
             )
-            for index, item in enumerate(preset["rules"])
+            for index, item in enumerate(preset.get("rules") or [])
         ]
     )

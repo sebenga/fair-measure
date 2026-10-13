@@ -53,7 +53,7 @@ def test_login_then_read_me(anon_api, user):
 def test_creating_a_competition_with_a_preset_seeds_scoring(api):
     response = api.post(
         "/api/v1/competitions",
-        {"name": "Sunday Rugby", "preset": "rugby"},
+        {"name": "Sunday Soccer", "preset": "soccer"},
         format="json",
     )
     assert response.status_code == 201
@@ -61,12 +61,9 @@ def test_creating_a_competition_with_a_preset_seeds_scoring(api):
     detail = api.get(f"/api/v1/competitions/{response.data['id']}")
     codes = {item["code"] for item in detail.data["scoring_categories"]}
 
-    assert codes == {"try", "conversion", "penalty", "drop-goal"}
+    assert codes == {"goal"}
     by_code = {item["code"]: item for item in detail.data["scoring_categories"]}
-    assert by_code["try"]["points"] == "5.00"
-    assert by_code["conversion"]["points"] == "2.00"
-    assert by_code["penalty"]["points"] == "3.00"
-    assert by_code["drop-goal"]["points"] == "3.00"
+    assert by_code["goal"]["points"] == "1.00"
     assert detail.data["points_policy"]["win_points"] == "3.00"
     assert detail.data["points_policy"]["draw_points"] == "1.00"
     assert detail.data["points_policy"]["loss_points"] == "0.00"
@@ -96,26 +93,26 @@ def test_locked_preset_scoring_cannot_be_changed(api):
         {"points": "9"},
         format="json",
     )
-    assert edited.status_code == 400
+    assert edited.status_code == 403
 
     added = api.post(
         f"/api/v1/competitions/{competition_id}/scoring-categories",
         {"name": "Bonus", "code": "bonus", "points": "1"},
         format="json",
     )
-    assert added.status_code == 400
+    assert added.status_code == 403
 
     removed = api.delete(
         f"/api/v1/competitions/{competition_id}/scoring-categories/{goal['id']}"
     )
-    assert removed.status_code == 400
+    assert removed.status_code == 403
 
     policy_edit = api.patch(
         f"/api/v1/competitions/{competition_id}/points-policy",
         {"win_points": "10"},
         format="json",
     )
-    assert policy_edit.status_code == 400
+    assert policy_edit.status_code == 403
 
     unlocked = api.patch(
         f"/api/v1/competitions/{competition_id}",
@@ -130,7 +127,7 @@ def test_locked_preset_scoring_cannot_be_changed(api):
         {"win_points": "10"},
         format="json",
     )
-    assert still_locked.status_code == 400
+    assert still_locked.status_code == 403
 
     overridden = api.post(
         "/api/v1/competitions",
@@ -141,20 +138,20 @@ def test_locked_preset_scoring_cannot_be_changed(api):
         },
         format="json",
     )
-    assert overridden.status_code == 400
+    assert overridden.status_code == 403
 
     reapplied = api.post(
         f"/api/v1/competitions/{competition_id}/apply-preset",
-        {"preset": "rugby", "replace_existing": True},
+        {"preset": "soccer", "replace_existing": True},
         format="json",
     )
-    assert reapplied.status_code == 400
+    assert reapplied.status_code == 403
 
 
 def test_golf_stroke_play_accumulates_without_results(api):
     created = api.post(
         "/api/v1/competitions",
-        {"name": "Monthly medal", "preset": "golf"},
+        {"name": "Monthly medal", "preset": "golf_stroke"},
         format="json",
     )
     assert created.status_code == 201
@@ -163,8 +160,9 @@ def test_golf_stroke_play_accumulates_without_results(api):
     assert detail.data["settings_json"]["scoring_basis"] == "criteria"
     assert detail.data["points_policy"]["win_points"] == "0.00"
     stroke = next(item for item in detail.data["scoring_categories"] if item["code"] == "stroke")
-    assert stroke["points"] == "-1.00"
-    assert "fewest strokes" in stroke["description"]
+    assert stroke["points"] == "1.00"
+    assert detail.data["settings_json"]["accumulation_ranking"] == "lowest_first"
+    assert "lowest total" in stroke["description"]
 
 
 def test_create_accepts_custom_scoring_with_descriptions(api):
@@ -350,17 +348,25 @@ def test_presets_include_kind_and_category_descriptions(anon_api):
     assert response.status_code == 200
 
     by_key = {item["key"]: item for item in response.data}
-    assert "kpi" not in by_key
-    assert "cleaning" not in by_key
-    assert "scrabble" not in by_key
-    assert "darts" not in by_key
+    assert by_key["kpi"]["lock_when_started"] is True
+    assert by_key["cleaning"]["score_types"]
+    assert by_key["scrabble"]["locked"] is True
+    assert by_key["darts_501"]["locked"] is True
     assert by_key["custom"]["kind"] == "custom"
     assert by_key["custom"]["scoring_categories"] == []
     assert by_key["custom"]["table_mode"] == "points"
     assert by_key["soccer"]["table_mode"] == "head_to_head"
     assert by_key["soccer"]["scoring_locked"] is True
     assert by_key["custom"]["scoring_locked"] is False
-    assert by_key["golf"]["table_mode"] == "points"
+    assert "rugby" not in by_key
+    assert "golf" not in by_key
+    assert by_key["golf_stroke"]["table_mode"] == "points"
+    assert by_key["golf_stroke"]["contest_type"] == "accumulation"
+    assert by_key["golf_stroke"]["locked"] is True
+    assert by_key["soccer"]["draw_resolution"] == "penalties"
+    assert "rugby_union" in by_key
+    assert "golf_stableford" in by_key
+    assert by_key["padel"]["match_structure"] == by_key["tennis"]["match_structure"]
 
 
 def test_custom_preset_uses_points_accumulation_table(api):

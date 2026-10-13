@@ -2,15 +2,15 @@
 
 Nothing here is sport-specific. A competition is described entirely by data:
 
-* `ScoringCategory` rows define the ways a participant can score (a rugby try
-  worth 5, a squash rally worth 1, a golf stroke worth -1).
+* `ScoringCategory` rows define the ways a participant can score. The value of
+  each action comes from the preset, not from the model.
 * `PointsPolicy` defines how a finished fixture converts into league points and
   how ties are broken.
 * `Rule` rows are free-text rules displayed to entrants.
 * `Stage` allows a season to mix formats (a group phase then a knockout).
 
-Because scoring and ranking are rows rather than code, soccer, a KPI board, a
-cleaning rota, and an invented office ladder are all the same model.
+Because scoring and ranking are rows rather than code, every contest uses the
+same model. The preset supplies the numbers.
 """
 
 from __future__ import annotations
@@ -174,6 +174,16 @@ class PointsPolicy(BaseModel):
         WINS = "wins", _("Wins")
         PLAYED = "played", _("Fewest played")
         HEAD_TO_HEAD = "head_to_head", _("Head to head")
+        UNITS_DIFFERENCE = "units_difference", _("Units won difference")
+        UNITS_FOR = "units_for", _("Units won")
+        UNITS_RATIO = "units_ratio", _("Units won divided by units lost")
+        SCORE_RATIO = "score_ratio", _("Score for divided by score against")
+        RATE = "rate", _("Scoring rate minus the rate conceded")
+        SONNEBORN_BERGER = "sonneborn_berger", _("Sum of defeated opponents' scores")
+        BEST_SINGLE = "best_single", _("Best single result")
+        NEXT_ATTEMPT = "next_attempt", _("Next-best attempt")
+        RECENT = "recent", _("Most recent scoring activity")
+        COUNTBACK = "countback", _("Countback from the last unit")
         NAME = "name", _("Alphabetical")
 
     competition = models.OneToOneField(
@@ -182,7 +192,7 @@ class PointsPolicy(BaseModel):
     win_points = models.DecimalField(max_digits=6, decimal_places=2, default=3)
     draw_points = models.DecimalField(max_digits=6, decimal_places=2, default=1)
     loss_points = models.DecimalField(max_digits=6, decimal_places=2, default=0)
-    # Rugby-style bonus points; ignored when the thresholds are null.
+    # Optional margin bonus; ignored when the thresholds are null.
     bonus_win_margin = models.PositiveIntegerField(
         null=True, blank=True, help_text=_("Award a bonus point for winning by this margin.")
     )
@@ -211,7 +221,11 @@ class PointsPolicy(BaseModel):
     @property
     def effective_tiebreakers(self) -> list[str]:
         valid = {choice.value for choice in self.Tiebreaker}
-        ordered = [t for t in self.tiebreakers if t in valid]
+        ordered = [
+            t
+            for t in self.tiebreakers
+            if t in valid or str(t).startswith("category:")
+        ]
         return ordered or [
             self.Tiebreaker.POINTS,
             self.Tiebreaker.SCORE_DIFFERENCE,
@@ -245,6 +259,30 @@ class Stage(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.competition.name} — {self.name}"
+
+
+class MatchUnit(BaseModel):
+    """One block of a match, copied from the preset. The engine never names a sport."""
+
+    competition = models.ForeignKey(
+        Competition, on_delete=models.CASCADE, related_name="match_units"
+    )
+    display_order = models.PositiveIntegerField(default=0)
+    unit = models.CharField(max_length=40)
+    count = models.PositiveIntegerField(default=1)
+    minutes = models.PositiveIntegerField(null=True, blank=True)
+    best_of = models.PositiveIntegerField(null=True, blank=True)
+    first_to = models.PositiveIntegerField(null=True, blank=True)
+    win_by = models.PositiveIntegerField(null=True, blank=True)
+    tiebreak_at = models.PositiveIntegerField(null=True, blank=True)
+    affects_total = models.BooleanField(default=True)
+    resolves_draw = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["display_order", "created_at"]
+
+    def __str__(self) -> str:
+        return self.unit
 
 
 class Participant(BaseModel):

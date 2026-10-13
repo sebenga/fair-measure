@@ -1,9 +1,8 @@
 """The standings engine.
 
 Given a competition's completed fixtures and its `PointsPolicy`, produce an
-ordered league table. Everything the engine needs is data, so the same code
-ranks a soccer league, a rugby league with bonus points and a golf order of
-merit where lower scores are better.
+ordered league table. Everything the engine needs is data on the competition:
+points, tie-breakers, and whether a lower total ranks first.
 """
 
 from __future__ import annotations
@@ -36,13 +35,73 @@ class Row:
     bonus_points: Decimal = ZERO
     form: list[str] = field(default_factory=list)
     beaten: set[str] = field(default_factory=set)
+    units_difference: Decimal = ZERO
+    units_for: Decimal = ZERO
+    units_against: Decimal = ZERO
+    rate: Decimal = ZERO
+    sonneborn: Decimal = ZERO
+    best_single: Decimal = ZERO
+    next_attempt: Decimal = ZERO
+    last_activity: Decimal = ZERO
+    category_totals: dict = field(default_factory=dict)
+    category_points: dict = field(default_factory=dict)
+    drawn: set[str] = field(default_factory=set)
+    countback: tuple = ()
 
     @property
     def score_difference(self) -> Decimal:
         return self.score_for - self.score_against
 
 
-def _sort_key(row: Row, tiebreakers: list[str]) -> tuple:
+def _attempts(side, fixture, settings: dict) -> list[Decimal]:
+    from apps.competitions.engine import score_rules
+
+    rules = score_rules(settings)
+    values = []
+    for event in fixture.events.all():
+        if event.side_id != side.id or event.scoring_category is None:
+            continue
+        rule = rules.get(event.scoring_category.code, {})
+        if rule.get("aggregate") == "best" and event.scoring_category.affects_score:
+            values.append(event.points)
+    return values
+
+
+def _attempt_sort(values: list[Decimal], lower: bool) -> tuple:
+    ordered = sorted(values, reverse=not lower)
+    best = ordered[0] if ordered else ZERO
+    missing = Decimal("999999") if lower else ZERO
+    second = ordered[1] if len(ordered) > 1 else missing
+    if lower:
+        return (best, second)
+    return (-best, -second)
+
+
+def _performance_is_lower(settings: dict, fixture) -> bool:
+    """A fixture ranks low-to-high when every scored action on it says so."""
+
+    better = settings.get("category_better") or {}
+    directions = set()
+    for event in fixture.events.all():
+        if event.scoring_category is None:
+            continue
+        direction = better.get(event.scoring_category.code)
+        if direction:
+            directions.add(direction)
+    if directions == {"lower"}:
+        return True
+    if directions == {"higher"}:
+        return False
+    return settings.get("performance") == "lower"
+
+
+def _ratio(for_value: Decimal, against_value: Decimal) -> Decimal:
+    if against_value == 0:
+        return for_value
+    return for_value / against_value
+
+
+def _sort_key(row: Row, tiebreakers: list[str], settings: dict | None = None) -> tuple:
     """Build a sort key from the policy's ordered tiebreakers.
 
     Negation gives descending order for "more is better" metrics. Two are
@@ -57,20 +116,203 @@ def _sort_key(row: Row, tiebreakers: list[str]) -> tuple:
         elif rule == PointsPolicy.Tiebreaker.SCORE_DIFFERENCE:
             key.append(-row.score_difference)
         elif rule == PointsPolicy.Tiebreaker.SCORE_FOR:
-            key.append(-row.score_for)
+            if (settings or {}).get("performance") == "lower":
+                key.append(row.score_for)
+            else:
+                key.append(-row.score_for)
         elif rule == PointsPolicy.Tiebreaker.SCORE_AGAINST:
             key.append(row.score_against)
         elif rule == PointsPolicy.Tiebreaker.WINS:
             key.append(-row.wins)
         elif rule == PointsPolicy.Tiebreaker.PLAYED:
             key.append(row.played)
+        elif rule == PointsPolicy.Tiebreaker.UNITS_DIFFERENCE:
+            key.append(-row.units_difference)
+        elif rule == PointsPolicy.Tiebreaker.UNITS_FOR:
+            key.append(-row.units_for)
+        elif rule == PointsPolicy.Tiebreaker.UNITS_RATIO:
+            key.append(-_ratio(row.units_for, row.units_against))
+        elif rule == PointsPolicy.Tiebreaker.SCORE_RATIO:
+            key.append(-_ratio(row.score_for, row.score_against))
+        elif rule == PointsPolicy.Tiebreaker.RATE:
+            key.append(-row.rate)
+        elif rule == PointsPolicy.Tiebreaker.SONNEBORN_BERGER:
+            key.append(-row.sonneborn)
+        elif rule == PointsPolicy.Tiebreaker.BEST_SINGLE:
+            key.append(-row.best_single)
+        elif rule == PointsPolicy.Tiebreaker.NEXT_ATTEMPT:
+            if (settings or {}).get("performance") == "lower":
+                key.append(row.next_attempt or Decimal("999999"))
+            else:
+                key.append(-row.next_attempt)
+        elif rule == PointsPolicy.Tiebreaker.RECENT:
+            key.append(-row.last_activity)
+        elif str(rule).startswith("category:"):
+            code = str(rule).split(":", 1)[1]
+            total = row.category_totals.get(code, ZERO)
+            better = ((settings or {}).get("category_better") or {}).get(code)
+            key.append(total if better == "lower" else -total)
+        elif rule == PointsPolicy.Tiebreaker.COUNTBACK:
+            key.append(row.countback)
         elif rule == PointsPolicy.Tiebreaker.NAME:
             key.append(row.name.lower())
         # HEAD_TO_HEAD needs the whole tied group, so it is applied afterwards.
     return tuple(key)
 
 
-def _apply_head_to_head(rows: list[Row], tiebreakers: list[str]) -> list[Row]:
+def _attach_unit_tiebreakers(rows: dict[str, Row], competition: Competition) -> None:
+    """Fill unit records, countback, category totals and scoring rate from events."""
+
+    from apps.competitions.engine import expand_units, split_scores, unit_table
+
+    settings = competition.settings_json or {}
+    lowest = settings.get("accumulation_ranking") == "lowest_first" or settings.get(
+        "win_condition"
+    ) in {"lowest_total", "count_down_to_zero"}
+    events = list(
+        ScoreEvent.objects.filter(
+            fixture__competition=competition,
+            fixture__status__in=[Fixture.Status.COMPLETED, Fixture.Status.FORFEIT],
+        ).select_related("side", "scoring_category", "fixture")
+    )
+    by_fixture: dict[str, list] = defaultdict(list)
+    for event in events:
+        by_fixture[str(event.fixture_id)].append(event)
+        if event.scoring_category is None:
+            continue
+        row = rows.get(str(event.side.participant_id))
+        if row is None:
+            continue
+        code = event.scoring_category.code
+        row.category_totals[code] = row.category_totals.get(code, ZERO) + Decimal(event.quantity)
+        if event.scoring_category.affects_score:
+            row.category_points[code] = row.category_points.get(code, ZERO) + event.points
+        stamp = event.created_at.timestamp() if event.created_at else 0
+        if stamp > row.last_activity:
+            row.last_activity = Decimal(str(stamp))
+
+    slots = expand_units(settings.get("match_structure") or [])
+    combined: dict[str, dict[int, Decimal]] = defaultdict(lambda: defaultdict(lambda: ZERO))
+    participant_of: dict[str, str] = {}
+    for fixture_events in by_fixture.values():
+        sides = list(fixture_events[0].fixture.sides.all())
+        if len(sides) < 2 or not slots:
+            for event in fixture_events:
+                if event.unit_index is None or not event.scoring_category.affects_score:
+                    continue
+                combined[str(event.side.participant_id)][event.unit_index] += event.points
+            continue
+        _match, _decider, per_unit, tiebreak = split_scores(sides, fixture_events, slots, settings)
+        side_ids = [side.id for side in sides]
+        for side in sides:
+            participant_of[side.id] = str(side.participant_id)
+        winners = unit_table(side_ids, slots, per_unit, tiebreak)
+        won_by: dict[str, int] = defaultdict(int)
+        for winner in winners.values():
+            if winner is not None:
+                won_by[participant_of[winner]] += 1
+        present = {participant_of[side.id] for side in sides}
+        for participant_id in present:
+            row = rows.get(participant_id)
+            if row is None:
+                continue
+            row.units_for += won_by.get(participant_id, 0)
+            row.units_against += sum(
+                count for other, count in won_by.items() if other != participant_id
+            )
+        for side in sides:
+            participant_id = participant_of[side.id]
+            for slot in slots:
+                combined[participant_id][slot["index"]] += per_unit[side.id][slot["index"]]
+
+    for row in rows.values():
+        row.units_difference = row.units_for - row.units_against
+
+    windows = settings.get("countback_windows") or []
+    for participant_id, slots_map in combined.items():
+        row = rows.get(participant_id)
+        if row is None or not slots_map:
+            continue
+        ordered = [slots_map[index] for index in sorted(slots_map)]
+        if windows:
+            sequence = []
+            for size in windows:
+                chunk = ordered[-int(size) :]
+                total = sum(chunk, ZERO)
+                sequence.append(total if lowest else -total)
+            row.countback = tuple(sequence)
+            continue
+        sequence = list(reversed(ordered))
+        if not lowest:
+            sequence = [-value for value in sequence]
+        row.countback = tuple(sequence)
+
+    _attach_rate(rows, settings, by_fixture)
+
+
+def _attach_rate(rows: dict[str, Row], settings: dict, by_fixture: dict[str, list]) -> None:
+    basis = settings.get("rate_basis") or {}
+    codes = set(basis.get("for") or [])
+    balls_code = basis.get("balls")
+    if not codes or not balls_code:
+        return
+    scale = Decimal(str(basis.get("scale") or 1))
+    scored: dict[str, Decimal] = defaultdict(lambda: ZERO)
+    faced: dict[str, Decimal] = defaultdict(lambda: ZERO)
+    conceded: dict[str, Decimal] = defaultdict(lambda: ZERO)
+    bowled: dict[str, Decimal] = defaultdict(lambda: ZERO)
+    from apps.competitions.engine import expand_units
+
+    decider_indexes = {
+        slot["index"]
+        for slot in expand_units(settings.get("match_structure") or [])
+        if slot.get("resolves_draw")
+    }
+    for fixture_events in by_fixture.values():
+        match_scored: dict[str, Decimal] = defaultdict(lambda: ZERO)
+        match_faced: dict[str, Decimal] = defaultdict(lambda: ZERO)
+        for event in fixture_events:
+            if event.scoring_category is None or event.unit_index in decider_indexes:
+                continue
+            participant_id = str(event.side.participant_id)
+            code = event.scoring_category.code
+            if code in codes and event.scoring_category.affects_score:
+                match_scored[participant_id] += event.points
+            if code == balls_code:
+                match_faced[participant_id] += Decimal(event.quantity)
+        players = set(match_scored) | set(match_faced)
+        for participant_id in players:
+            scored[participant_id] += match_scored[participant_id]
+            faced[participant_id] += match_faced[participant_id]
+            conceded[participant_id] += sum(
+                (match_scored[other] for other in players if other != participant_id), ZERO
+            )
+            bowled[participant_id] += sum(
+                (match_faced[other] for other in players if other != participant_id), ZERO
+            )
+    for participant_id, row in rows.items():
+        overs = faced[participant_id] / scale if scale else ZERO
+        overs_against = bowled[participant_id] / scale if scale else ZERO
+        if overs <= 0 or overs_against <= 0:
+            continue
+        row.rate = scored[participant_id] / overs - conceded[participant_id] / overs_against
+
+
+def _attach_sonneborn(rows: dict[str, Row]) -> None:
+    for row in rows.values():
+        total = ZERO
+        for opponent_id in row.beaten:
+            opponent = rows.get(opponent_id)
+            if opponent is not None:
+                total += opponent.score_for
+        for opponent_id in row.drawn:
+            opponent = rows.get(opponent_id)
+            if opponent is not None:
+                total += opponent.score_for / 2
+        row.sonneborn = total
+
+
+def _apply_head_to_head(rows: list[Row], tiebreakers: list[str], settings: dict | None = None) -> list[Row]:
     """Reorder groups that are level on every earlier tiebreaker by head-to-head.
 
     Only pairs are resolved. Circular results among three or more participants
@@ -88,7 +330,7 @@ def _apply_head_to_head(rows: list[Row], tiebreakers: list[str]) -> list[Row]:
     bucket_key: tuple | None = None
 
     for row in [*rows, None]:
-        key = _sort_key(row, preceding) if row is not None else None
+        key = _sort_key(row, preceding, settings) if row is not None else None
         if row is None or key != bucket_key:
             if len(bucket) == 2 and bucket[1].participant_id in bucket[0].beaten:
                 pass  # already in the right order
@@ -177,6 +419,7 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
 
     policy, _ = PointsPolicy.objects.get_or_create(competition=competition)
     criteria_league = is_criteria_league(competition)
+    settings = competition.settings_json or {}
 
     rows: dict[str, Row] = {}
     participants = competition.participants.all()
@@ -200,9 +443,58 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
 
     form_by_participant: dict[str, list[str]] = defaultdict(list)
 
+    placing = [Decimal(str(value)) for value in (settings.get("placing_points") or [])]
+    no_result_codes = {
+        item["key"]
+        for item in (settings.get("score_types") or [])
+        if item.get("role") == "no_result"
+    }
+    no_result_fixtures = set()
+    if no_result_codes:
+        no_result_fixtures = set(
+            ScoreEvent.objects.filter(
+                fixture__competition=competition,
+                scoring_category__code__in=no_result_codes,
+            ).values_list("fixture_id", flat=True)
+        )
+    no_result_points = Decimal(str((settings.get("league_points") or {}).get("no_result", 1)))
+
     for fixture in fixtures:
         sides = list(fixture.sides.all())
         if not sides:
+            continue
+        if fixture.id in no_result_fixtures:
+            for side in sides:
+                row = rows.get(str(side.participant_id))
+                if row is None:
+                    continue
+                row.played += 1
+                row.draws += 1
+                row.points += no_result_points
+            continue
+        if any(side.outcome == FixtureSide.Outcome.PENDING for side in sides):
+            continue
+        if placing and len(sides) >= 2:
+            lower = _performance_is_lower(settings, fixture)
+            attempts = {
+                side.id: _attempts(side, fixture, settings) for side in sides
+            }
+            ordered_sides = sorted(sides, key=lambda side: _attempt_sort(attempts[side.id], lower))
+            for index, side in enumerate(ordered_sides):
+                row = rows.get(str(side.participant_id))
+                if row is None:
+                    continue
+                row.played += 1
+                best = side.score
+                row.score_for += best
+                if best > row.best_single:
+                    row.best_single = best
+                ordered_attempts = sorted(attempts[side.id], reverse=not lower)
+                second = ordered_attempts[1] if len(ordered_attempts) > 1 else ZERO
+                if row.next_attempt == 0:
+                    row.next_attempt = second
+                if index < len(placing):
+                    row.points += placing[index]
             continue
 
         # Criteria leagues add each side's score. A one-person entry is how
@@ -216,6 +508,8 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
                 row.played += 1
                 row.score_for += side.score
                 row.points += side.score
+                if side.score > row.best_single:
+                    row.best_single = side.score
             continue
 
         if len(sides) < 2:
@@ -251,12 +545,15 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
                 row.draws += 1
                 row.points += policy.draw_points
                 form_by_participant[participant_id].append("D")
+                for other in sides:
+                    if other.id != side.id:
+                        row.drawn.add(str(other.participant_id))
             else:
                 row.losses += 1
                 row.points += policy.loss_points
                 form_by_participant[participant_id].append("L")
 
-            # Bonus points (rugby style). Margin is measured against the best
+            # Optional margin bonus. Margin is measured against the best
             # of the other sides, which also works for multi-way fixtures.
             best_other = max(
                 (other.score for other in sides if other.id != side.id), default=ZERO
@@ -283,9 +580,30 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
         if participant_id in rows:
             rows[participant_id].form = list(reversed(results[-5:]))
 
+    if settings.get("handicap"):
+        for participant in participants:
+            adjustment = Decimal(str((participant.metadata or {}).get("handicap") or 0))
+            row = rows.get(str(participant.id))
+            if row is not None and adjustment:
+                row.points += adjustment
+                row.score_for += adjustment
+
+    _attach_unit_tiebreakers(rows, competition)
+    _attach_sonneborn(rows)
     tiebreakers = policy.effective_tiebreakers
-    ordered = sorted(rows.values(), key=lambda row: _sort_key(row, tiebreakers))
-    return _apply_head_to_head(ordered, tiebreakers)
+    if settings.get("placing_points"):
+        ordered = sorted(rows.values(), key=lambda row: _sort_key(row, tiebreakers, settings))
+    elif settings.get("contest_type") == "accumulation":
+        lowest = settings.get("accumulation_ranking") == "lowest_first"
+
+        def accumulation_key(row: Row) -> tuple:
+            primary = row.score_for if lowest else -row.score_for
+            return (primary, _sort_key(row, tiebreakers, settings))
+
+        ordered = sorted(rows.values(), key=accumulation_key)
+    else:
+        ordered = sorted(rows.values(), key=lambda row: _sort_key(row, tiebreakers, settings))
+    return _apply_head_to_head(ordered, tiebreakers, settings)
 
 
 @transaction.atomic

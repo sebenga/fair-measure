@@ -102,8 +102,15 @@ type Section = 'entrants' | 'scoring' | 'schedule';
 
             <form class="add-row" (submit)="addParticipant($event)">
               <p class="hint">
-                Pick at least two profiles. You can add yourself to one team in this league.
+                @if (entrantKind() === 'individual') {
+                  Add each person by name. The table ranks them on their total.
+                } @else if (entrantKind() === 'pair') {
+                  A pair is two profiles.
+                } @else {
+                  Pick at least two profiles. You can add yourself to one team in this league.
+                }
               </p>
+              @if (entrantKind() !== 'individual') {
               <ion-list class="profiles" lines="none">
                 @for (profile of profiles(); track profile.id) {
                   <ion-item>
@@ -120,11 +127,12 @@ type Section = 'entrants' | 'scoring' | 'schedule';
                   </ion-item>
                 }
               </ion-list>
+              }
               <div class="add-name">
                 <ion-input
                   [(ngModel)]="newParticipantName"
                   name="participant"
-                  placeholder="Team name"
+                  [placeholder]="entrantKind() === 'individual' ? 'Player name' : 'Team name'"
                   maxlength="200"
                 />
                 <ion-button
@@ -604,8 +612,17 @@ export class CompetitionSetupPage implements OnInit {
 
   // --- Entrants -------------------------------------------------------------
 
+  entrantKind(): 'team' | 'individual' | 'pair' {
+    const value = this.competition()?.settings_json?.['participant_type'];
+    if (value === 'individual' || value === 'pair') return value;
+    return 'team';
+  }
+
   canAddParticipant(): boolean {
-    return !!this.newParticipantName.trim() && this.selectedProfileIds().length >= 2;
+    if (!this.newParticipantName.trim()) return false;
+    if (this.entrantKind() === 'individual') return true;
+    if (this.entrantKind() === 'pair') return this.selectedProfileIds().length === 2;
+    return this.selectedProfileIds().length >= 2;
   }
 
   profileBlocked(id: string): boolean {
@@ -652,8 +669,8 @@ export class CompetitionSetupPage implements OnInit {
     this.api
       .createParticipant(this.competitionId, {
         name,
-        kind: 'team',
-        member_ids: this.selectedProfileIds(),
+        kind: this.entrantKind() === 'individual' ? 'individual' : 'team',
+        member_ids: this.entrantKind() === 'individual' ? [] : this.selectedProfileIds(),
       })
       .subscribe({
       next: (participant) => {
@@ -661,12 +678,14 @@ export class CompetitionSetupPage implements OnInit {
         this.newParticipantName = '';
         this.selectedProfileIds.set([]);
         this.busy.set(false);
-        void this.router.navigate([
-          '/tabs/competitions',
-          this.competitionId,
-          'teams',
-          participant.id,
-        ]);
+        if (participant.kind === 'team') {
+          void this.router.navigate([
+            '/tabs/competitions',
+            this.competitionId,
+            'teams',
+            participant.id,
+          ]);
+        }
       },
       error: async (err: unknown) => {
         this.busy.set(false);

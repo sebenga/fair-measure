@@ -197,6 +197,7 @@ export interface ScoreEvent {
   points: string;
   minute: number | null;
   period: string;
+  unit_index?: number | null;
   player: string | null;
   player_name: string;
   note: string;
@@ -348,11 +349,17 @@ export type TableMode = 'points' | 'head_to_head';
 export interface Preset {
   key: string;
   label: string;
+  icon?: string;
+  description?: string;
   sport: string;
   kind?: PresetKind;
   format: CompetitionFormat;
+  formats_allowed?: string[];
+  contest_type?: 'head_to_head' | 'accumulation';
+  participant_type?: 'team' | 'individual' | 'pair';
   table_mode?: TableMode;
   scoring_locked?: boolean;
+  locked?: boolean;
   scoring_categories: Array<{
     name: string;
     code: string;
@@ -384,9 +391,14 @@ export function isPointsTable(competition: {
 }
 
 export function isScoringLocked(competition: {
+  status?: string;
   settings_json?: Record<string, unknown>;
 }): boolean {
-  return competition.settings_json?.['scoring_locked'] === true;
+  const settings = competition.settings_json ?? {};
+  if (settings['lock_when_started'] === true) {
+    return !!competition.status && competition.status !== 'draft';
+  }
+  return settings['scoring_locked'] === true;
 }
 
 export function isPointsPreset(preset: Pick<Preset, 'kind' | 'table_mode' | 'key'> | null): boolean {

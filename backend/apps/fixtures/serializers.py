@@ -59,6 +59,7 @@ class ScoreEventSerializer(serializers.ModelSerializer):
             "points",
             "minute",
             "period",
+            "unit_index",
             "player",
             "player_name",
             "note",

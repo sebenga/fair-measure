@@ -30,7 +30,7 @@ from .models import (
     ScoringCategory,
     Stage,
 )
-from .presets import PRESETS, SCORING_LOCKED_MESSAGE, apply_preset, scoring_is_locked
+from .presets import PRESETS, SCORING_LOCKED_MESSAGE, apply_preset, public_preset, scoring_is_locked
 from .serializers import (
     ApplyPresetSerializer,
     CompetitionDetailSerializer,
@@ -129,31 +129,7 @@ class CompetitionViewSet(viewsets.ModelViewSet):
     )
     @action(detail=False, methods=["get"], permission_classes=[])
     def presets(self, request: Request) -> Response:
-        return Response(
-            [
-                {
-                    "key": key,
-                    "label": preset["label"],
-                    "sport": preset["sport"],
-                    "kind": preset.get("kind", "sport"),
-                    "format": preset["format"],
-                    "table_mode": preset.get("table_mode", "head_to_head"),
-                    "scoring_locked": bool(preset.get("scoring_locked", key != "custom")),
-                    "scoring_categories": [
-                        {
-                            "name": item["name"],
-                            "code": item["code"],
-                            "points": str(item["points"]),
-                            "affects_score": item.get("affects_score", True),
-                            "description": item.get("description", ""),
-                        }
-                        for item in preset["scoring_categories"]
-                    ],
-                    "rules": preset["rules"],
-                }
-                for key, preset in PRESETS.items()
-            ]
-        )
+        return Response([public_preset(key, preset) for key, preset in PRESETS.items()])
 
     @extend_schema(
         tags=["Competitions"],
@@ -167,7 +143,7 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         serializer = ApplyPresetSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         if scoring_is_locked(competition):
-            raise ValidationError(SCORING_LOCKED_MESSAGE)
+            raise PermissionDenied(SCORING_LOCKED_MESSAGE)
 
         with transaction.atomic():
             if serializer.validated_data["replace_existing"]:
@@ -178,6 +154,76 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         competition.refresh_from_db()
         return Response(
             CompetitionDetailSerializer(competition, context=self.get_serializer_context()).data
+        )
+
+    @extend_schema(
+        tags=["Competitions"],
+        summary="Advance knockout winners into the next round",
+        responses={201: dict},
+    )
+    @action(detail=True, methods=["post"], url_path="advance")
+    def advance(self, request: Request, pk: str | None = None) -> Response:
+        from apps.fixtures.models import Fixture, FixtureSide
+
+        from .engine import pair_advancers, round_winners
+
+        competition = self.get_object()
+        if not has_at_least(competition, request.user, Role.ADMIN):
+            raise PermissionDenied("Only competition admins can advance a bracket.")
+
+        latest = (
+            Fixture.objects.filter(competition=competition)
+            .order_by("-round_number")
+            .values_list("round_number", flat=True)
+            .first()
+        )
+        if latest is None:
+            raise ValidationError("There is no round to advance.")
+        current = list(
+            Fixture.objects.filter(competition=competition, round_number=latest).order_by(
+                "created_at"
+            )
+        )
+        winners = round_winners(current)
+        if not winners:
+            raise ValidationError("Every match in this round needs a winner first.")
+        if len(winners) < 2:
+            return Response({"advanced": False, "detail": "The bracket is complete."})
+
+        pairs, bye = pair_advancers(winners)
+        created = []
+        with transaction.atomic():
+            for home_id, away_id in pairs:
+                fixture = Fixture.objects.create(
+                    competition=competition,
+                    round_number=(latest or 0) + 1,
+                    status=Fixture.Status.SCHEDULED,
+                )
+                FixtureSide.objects.create(
+                    fixture=fixture, participant_id=home_id, position=0, is_home=True
+                )
+                FixtureSide.objects.create(
+                    fixture=fixture, participant_id=away_id, position=1, is_home=False
+                )
+                created.append(str(fixture.id))
+            if bye is not None and pairs:
+                # A bye waits in the following round against the next winner.
+                fixture = Fixture.objects.create(
+                    competition=competition,
+                    round_number=(latest or 0) + 1,
+                    label="Bye",
+                    status=Fixture.Status.COMPLETED,
+                )
+                side = FixtureSide.objects.create(
+                    fixture=fixture, participant_id=bye, position=0, is_home=True
+                )
+                side.outcome = FixtureSide.Outcome.WIN
+                side.save(update_fields=["outcome", "updated_at"])
+                created.append(str(fixture.id))
+
+        return Response(
+            {"advanced": True, "round_number": (latest or 0) + 1, "fixtures": created},
+            status=status.HTTP_201_CREATED,
         )
 
     @extend_schema(
@@ -308,7 +354,7 @@ class ScoringCategoryViewSet(CompetitionScopedViewSet):
 
     def _assert_scoring_editable(self) -> None:
         if scoring_is_locked(self.get_competition()):
-            raise ValidationError(SCORING_LOCKED_MESSAGE)
+            raise PermissionDenied(SCORING_LOCKED_MESSAGE)
 
     def perform_create(self, serializer) -> None:
         self._assert_scoring_editable()
@@ -521,7 +567,7 @@ class PointsPolicyView(generics.RetrieveUpdateAPIView):
         if not has_at_least(competition, self.request.user, Role.ADMIN):
             raise PermissionDenied("Only competition admins can change the points policy.")
         if scoring_is_locked(competition):
-            raise ValidationError(SCORING_LOCKED_MESSAGE)
+            raise PermissionDenied(SCORING_LOCKED_MESSAGE)
         serializer.save()
 
         # Every row of the league table is derived from this policy.

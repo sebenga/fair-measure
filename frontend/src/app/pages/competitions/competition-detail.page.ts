@@ -97,7 +97,7 @@ type Tab = 'feed' | 'fixtures' | 'standings';
           <ion-segment-button value="feed" (click)="selectTab('feed')">
             <ion-label>Feed</ion-label>
           </ion-segment-button>
-          @if (!pointsLeague()) {
+          @if (showsFixtures()) {
             <ion-segment-button value="fixtures" (click)="selectTab('fixtures')">
               <ion-label>Fixtures</ion-label>
             </ion-segment-button>
@@ -122,12 +122,15 @@ type Tab = 'feed' | 'fixtures' | 'standings';
           <ion-button fill="clear" (click)="load()">Try again</ion-button>
         </div>
       } @else if (competition(); as comp) {
+        @if (howItScores()) {
+          <p class="how-points">{{ howItScores() }}</p>
+        }
         @switch (tab()) {
           @case ('feed') {
             <fm-competition-feed [competition]="comp" />
           }
           @case ('fixtures') {
-            @if (!pointsLeague()) {
+            @if (showsFixtures()) {
               <fm-competition-fixtures [competition]="comp" />
             }
           }
@@ -153,6 +156,13 @@ type Tab = 'feed' | 'fixtures' | 'standings';
 
       .add-points {
         margin: 12px 16px 0;
+      }
+
+      .how-points {
+        margin: 16px 32px 0;
+        color: var(--ion-color-medium);
+        font-size: 0.95rem;
+        line-height: 1.45;
       }
     `,
   ],
@@ -236,8 +246,19 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
     return competition ? isPointsTable(competition) : false;
   }
 
+  howItScores(): string {
+    const value = this.competition()?.settings_json?.['description'];
+    return typeof value === 'string' ? value : '';
+  }
+
+  showsFixtures(): boolean {
+    const structure = this.competition()?.settings_json?.['match_structure'];
+    if (Array.isArray(structure) && structure.length > 0) return true;
+    return !this.pointsLeague();
+  }
+
   selectTab(value: string | undefined): void {
-    if (value === 'fixtures' && this.pointsLeague()) return;
+    if (value === 'fixtures' && !this.showsFixtures()) return;
     if (value !== 'feed' && value !== 'fixtures' && value !== 'standings') return;
     if (value === this.tab()) return;
     this.tab.set(value);

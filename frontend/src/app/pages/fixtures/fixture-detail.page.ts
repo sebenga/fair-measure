@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   OnDestroy,
   OnInit,
   inject,
@@ -119,6 +120,21 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
         @if (canScore() && fx.status !== 'completed' && fx.status !== 'cancelled') {
           <h3 class="fm-section-title">Record a score</h3>
 
+          @if (units().length) {
+            <div class="units">
+              @for (unit of units(); track unit.index) {
+                <button
+                  type="button"
+                  class="unit"
+                  [class.selected]="unitIndex() === unit.index"
+                  (click)="unitIndex.set(unit.index)"
+                >
+                  {{ unit.label }}
+                </button>
+              }
+            </div>
+          }
+
           @if (categories().length === 0) {
             <div class="fm-empty compact">
               <p>No scoring categories are configured for this competition yet.</p>
@@ -168,6 +184,9 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
                 <span class="detail">
                   <strong>{{ participantName(event) }}</strong>
                   {{ event.scoring_category_name }}
+                  @if (unitLabel(event); as unit) {
+                    <span class="player">{{ unit }}</span>
+                  }
                   @if (numeric(event.quantity) !== 1) {
                     <em>×{{ trim(event.quantity) }}</em>
                   }
@@ -200,6 +219,7 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
 })
 export class FixtureDetailPage implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly realtime = inject(RealtimeService);
   private readonly actionSheets = inject(ActionSheetController);
@@ -216,6 +236,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   /** Ticks so the clock appears at kickoff and the readout advances. */
   readonly now = signal(Date.now());
   readonly clock = signal<MatchClock>({ running: false, elapsedMs: 0, runStartedAt: null });
+  readonly unitIndex = signal(0);
 
   private tickHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -238,7 +259,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
         'fixture.live',
         'fixture.completed',
       ])
-      .pipe(takeUntilDestroyed())
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((message) => {
         if (message.payload.fixture_id === this.fixtureId) {
           this.reloadFixture();
@@ -328,6 +349,28 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     return this.competition()?.scoring_categories ?? [];
   }
 
+  units(): Array<{ index: number; label: string }> {
+    const structure = this.competition()?.settings_json?.['match_structure'];
+    if (!Array.isArray(structure)) return [];
+    const slots: Array<{ index: number; label: string }> = [];
+    for (const block of structure) {
+      if (!block || typeof block !== 'object') continue;
+      const record = block as { unit?: string; count?: number; best_of?: number; repeat?: boolean };
+      let count = Number(record.count || record.best_of || 1);
+      if (record.repeat) count = Math.max(count, 3);
+      const name = String(record.unit || 'unit').replaceAll('_', ' ');
+      for (let offset = 0; offset < count; offset += 1) {
+        slots.push({ index: slots.length, label: `${name} ${offset + 1}` });
+      }
+    }
+    return slots;
+  }
+
+  unitLabel(event: ScoreEvent): string {
+    if (event.unit_index === null || event.unit_index === undefined) return '';
+    return this.units().find((unit) => unit.index === event.unit_index)?.label ?? '';
+  }
+
   canScore(): boolean {
     const role = this.competition()?.my_role;
     return role === 'owner' || role === 'admin' || role === 'scorer';
@@ -346,6 +389,10 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       scoring_category: category.id,
       quantity: '1',
     };
+    if (this.units().length) {
+      body['unit_index'] = this.unitIndex();
+      body['period'] = this.unitLabel({ unit_index: this.unitIndex() } as ScoreEvent);
+    }
     const minute = this.clockMinute(category);
     if (minute !== null) body['minute'] = minute;
 

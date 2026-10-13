@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   OnInit,
   inject,
   input,
@@ -107,6 +108,7 @@ import { PostComposerComponent } from '../../../shared/post-composer.component';
 export class CompetitionFeedComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly realtime = inject(RealtimeService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly competition = input.required<CompetitionDetail>();
 
@@ -123,7 +125,7 @@ export class CompetitionFeedComponent implements OnInit {
     // so surface a pill they can tap instead of splicing the post in.
     this.realtime
       .on<{ post_id: string; author_id: string }>('post.created')
-      .pipe(takeUntilDestroyed())
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((payload) => {
         const alreadyShown = this.posts().some((post) => post.id === payload.post_id);
         if (!alreadyShown) {
@@ -133,7 +135,7 @@ export class CompetitionFeedComponent implements OnInit {
 
     this.realtime
       .on<{ post_id: string }>('post.deleted')
-      .pipe(takeUntilDestroyed())
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((payload) => this.remove(payload.post_id));
   }
 

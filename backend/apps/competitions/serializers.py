@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils.text import slugify
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from apps.accounts.serializers import UserSummarySerializer
 from apps.core.permissions import Role, role_in
@@ -27,7 +28,7 @@ def _preset_locks_scoring(preset_key: str | None) -> bool:
     if not preset_key or preset_key == "custom":
         return False
     preset = PRESETS.get(preset_key)
-    return bool(preset and preset.get("scoring_locked", True))
+    return bool(preset and preset.get("scoring_locked", preset.get("locked", True)))
 
 
 def _unique_category_code(competition, base: str) -> str:
@@ -61,7 +62,7 @@ class ScoringCategorySerializer(serializers.ModelSerializer):
         extra_kwargs = {"code": {"required": False, "allow_blank": True}}
 
     def validate(self, attrs: dict) -> dict:
-        if not attrs.get("code"):
+        if self.instance is None and not attrs.get("code"):
             attrs["code"] = slugify(attrs.get("name") or "")[:60] or "score"
         return attrs
 
@@ -224,7 +225,43 @@ class ParticipantSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Stages must belong to the same competition.")
         return stages
 
+    def _allowed_entrants(self) -> list[str]:
+        competition = self.context.get("competition")
+        settings = getattr(competition, "settings_json", None) or {}
+        allowed = list(settings.get("participant_types") or [])
+        primary = settings.get("participant_type") or "team"
+        if primary not in allowed:
+            allowed.insert(0, primary)
+        return allowed or ["team"]
+
+    def _entrant_type(self) -> str:
+        return self._allowed_entrants()[0]
+
     def validate(self, attrs: dict) -> dict:
+        entrant_type = self._entrant_type()
+        allowed = self._allowed_entrants()
+        if self.instance is None and "individual" in allowed and "pair" in allowed:
+            member_ids = list(dict.fromkeys(attrs.get("member_ids") or []))
+            if len(member_ids) == 2:
+                attrs["kind"] = Participant.Kind.TEAM
+                attrs["member_ids"] = member_ids
+                return attrs
+            attrs["kind"] = Participant.Kind.INDIVIDUAL
+            attrs.pop("member_ids", None)
+            return attrs
+        if self.instance is None and entrant_type == "individual":
+            attrs["kind"] = Participant.Kind.INDIVIDUAL
+            attrs.pop("member_ids", None)
+            return attrs
+        if self.instance is None and entrant_type == "pair":
+            attrs["kind"] = Participant.Kind.TEAM
+            member_ids = list(dict.fromkeys(attrs.get("member_ids") or []))
+            if len(member_ids) != 2:
+                raise serializers.ValidationError(
+                    {"member_ids": "A pair is two profiles."}
+                )
+            attrs["member_ids"] = member_ids
+            return attrs
         if self.instance is None:
             if attrs.get("kind") == Participant.Kind.INDIVIDUAL:
                 raise serializers.ValidationError({"kind": "Add a team instead of a player."})
@@ -437,16 +474,32 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
                 )
         if self.instance is None and _preset_locks_scoring(attrs.get("preset")):
             if attrs.get("scoring_categories"):
-                raise serializers.ValidationError({"scoring_categories": SCORING_LOCKED_MESSAGE})
+                raise PermissionDenied(SCORING_LOCKED_MESSAGE)
             if attrs.get("scoring_basis"):
-                raise serializers.ValidationError({"scoring_basis": SCORING_LOCKED_MESSAGE})
+                raise PermissionDenied(SCORING_LOCKED_MESSAGE)
         return attrs
 
     def update(self, instance: Competition, validated_data: dict) -> Competition:
         if scoring_is_locked(instance) and "settings_json" in validated_data:
             current = dict(instance.settings_json or {})
             incoming = dict(validated_data.get("settings_json") or {})
-            for key in ("preset", "scoring_locked", "table_mode", "scoring_basis"):
+            for key in (
+                "preset",
+                "scoring_locked",
+                "locked",
+                "table_mode",
+                "scoring_basis",
+                "contest_type",
+                "participant_type",
+                "match_structure",
+                "win_condition",
+                "draw_allowed",
+                "draw_resolution",
+                "league_points",
+                "tiebreakers",
+                "accumulation_ranking",
+                "description",
+            ):
                 if key in current:
                     incoming[key] = current[key]
             incoming["scoring_locked"] = True
@@ -478,7 +531,9 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         else:
             PointsPolicy.objects.create(competition=competition)
 
-        if custom_categories is not None and preset_key in (None, "custom"):
+        if custom_categories is not None and (
+            preset_key in (None, "custom") or not _preset_locks_scoring(preset_key)
+        ):
             competition.scoring_categories.all().delete()
             used: set[str] = set()
             rows = []

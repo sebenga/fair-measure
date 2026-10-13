@@ -2,9 +2,9 @@
 
 A fixture's score is never entered directly. It is the sum of its `ScoreEvent`
 rows, each of which references a `ScoringCategory` belonging to the competition.
-That indirection is what makes the platform sport-agnostic: recording a rugby try
-and recording a basketball three-pointer are the same write, and correcting a
-mistake means deleting one event rather than recalculating a total by hand.
+That indirection is what makes the platform sport-agnostic: every scoring
+action is the same write, and correcting a mistake means deleting one event
+rather than recalculating a total by hand.
 
 `FixtureSide.score` is a denormalised cache of that sum. It is recomputed inside
 the same transaction as any event change, so it can never drift.
@@ -82,6 +82,15 @@ class Fixture(BaseModel):
 
     def recalculate_scores(self) -> None:
         """Recompute each side's cached score from its events, then resolve winners."""
+
+        settings = self.competition.settings_json or {}
+        if (settings.get("match_structure") or settings.get("win_condition")) and not (
+            self.sides.filter(forfeited=True).exists()
+        ):
+            from apps.competitions.engine import settle_fixture
+
+            settle_fixture(self)
+            return
 
         totals = (
             ScoreEvent.objects.filter(fixture=self, scoring_category__affects_score=True)
@@ -180,6 +189,8 @@ class ScoreEvent(BaseModel):
     quantity = models.DecimalField(max_digits=8, decimal_places=2, default=1)
     minute = models.PositiveIntegerField(null=True, blank=True)
     period = models.CharField(max_length=40, blank=True)
+    # Which expanded match unit this event belongs to (0 = first half, first hole, …).
+    unit_index = models.PositiveIntegerField(null=True, blank=True)
     player = models.ForeignKey(
         RosterMember,
         on_delete=models.SET_NULL,

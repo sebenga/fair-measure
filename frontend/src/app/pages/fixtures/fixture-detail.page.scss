@@ -121,6 +121,28 @@
     color: var(--ion-color-medium);
   }
 
+  .units {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    margin: 0 0 12px;
+    padding-bottom: 4px;
+  }
+
+  .unit {
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 999px;
+    padding: 6px 12px;
+    background: var(--ion-color-light);
+    color: inherit;
+  }
+
+  .unit.selected {
+    background: var(--ion-color-primary);
+    color: var(--ion-color-primary-contrast);
+  }
+
   .chips {
     display: flex;
     flex-wrap: wrap;
