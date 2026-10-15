@@ -9,12 +9,32 @@ class UserAdmin(BaseUserAdmin):
     ordering = ["-date_joined"]
     list_display = ["email", "display_name", "is_active", "is_staff", "date_joined"]
     list_filter = ["is_active", "is_staff", "is_superuser", "email_verified"]
-    search_fields = ["email", "display_name"]
+    search_fields = ["email", "display_name", "given_name", "family_name"]
     readonly_fields = ["date_joined", "last_login", "updated_at"]
 
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         ("Profile", {"fields": ("display_name", "avatar_url", "bio")}),
+        (
+            "Personal details",
+            {
+                "fields": (
+                    "given_name",
+                    "family_name",
+                    "date_of_birth",
+                    "id_number",
+                    "phone",
+                    "city",
+                    "country",
+                    "headline",
+                    "website",
+                    "experience",
+                    "education",
+                    "skills",
+                    "languages",
+                )
+            },
+        ),
         (
             "Permissions",
             {

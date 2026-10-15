@@ -15,6 +15,7 @@ import {
   IonLabel,
   IonList,
   IonNote,
+  IonSearchbar,
   IonSegment,
   IonSegmentButton,
   IonSelect,
@@ -26,13 +27,11 @@ import {
   ToastController,
 } from '@ionic/angular/standalone';
 
-import { forkJoin } from 'rxjs';
-
 import { ApiService } from '../../core/api.service';
-import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type {
   CompetitionDetail,
+  DraftBoard,
   GenerateFixturesRequest,
   Membership,
   Participant,
@@ -42,7 +41,7 @@ import type {
 } from '../../core/models';
 import { isPointsTable, isScoringLocked } from '../../core/models';
 
-type Section = 'entrants' | 'scoring' | 'schedule';
+type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
 
 @Component({
   selector: 'fm-competition-setup',
@@ -68,6 +67,7 @@ type Section = 'entrants' | 'scoring' | 'schedule';
     IonButton,
     IonIcon,
     IonNote,
+    IonSearchbar,
     IonSpinner,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -88,6 +88,7 @@ type Section = 'entrants' | 'scoring' | 'schedule';
               <ion-label>Schedule</ion-label>
             </ion-segment-button>
           }
+          <ion-segment-button value="officials"><ion-label>Officials</ion-label></ion-segment-button>
         </ion-segment>
       </ion-toolbar>
     </ion-header>
@@ -100,50 +101,135 @@ type Section = 'entrants' | 'scoring' | 'schedule';
           @case ('entrants') {
             <h3 class="fm-section-title">Entrants ({{ participants().length }})</h3>
 
-            <form class="add-row" (submit)="addParticipant($event)">
+            @if (entrantKind() === 'team') {
               <p class="hint">
-                @if (entrantKind() === 'individual') {
-                  Add each person by name. The table ranks them on their total.
-                } @else if (entrantKind() === 'pair') {
-                  A pair is two profiles.
-                } @else {
-                  Pick at least two profiles. You can add yourself to one team in this league.
-                }
+                Choose how teams are filled. A team needs 14 players, and each player accepts before they count.
               </p>
-              @if (entrantKind() !== 'individual') {
-              <ion-list class="profiles" lines="none">
-                @for (profile of profiles(); track profile.id) {
+              <div class="entry-modes">
+                <button
+                  type="button"
+                  [class.selected]="teamEntry() === 'pick'"
+                  (click)="setTeamEntry('pick')"
+                  [disabled]="busy()"
+                >
+                  Pick teams
+                </button>
+                <button
+                  type="button"
+                  [class.selected]="teamEntry() === 'draft'"
+                  (click)="setTeamEntry('draft')"
+                  [disabled]="busy()"
+                >
+                  Draft
+                </button>
+              </div>
+            }
+
+            @if (entrantKind() !== 'team' || teamEntry()) {
+              <form class="add-row" (submit)="addParticipant($event)">
+                <p class="hint">
+                  @if (entrantKind() === 'individual') {
+                    Add each person by name. The table ranks them on their total.
+                  } @else if (entrantKind() === 'pair') {
+                    Name the pair first. Open it and pick two profiles. Each person accepts before they are in.
+                  } @else if (teamEntry() === 'draft') {
+                    Name each team. Players are drafted onto them, one pick at a time, until every team has 14.
+                  } @else {
+                    Name the team and select at least 14 profiles. They accept before they join.
+                  }
+                </p>
+                @if (teamEntry() === 'pick') {
+                  <ion-searchbar
+                    placeholder="Search profiles"
+                    [debounce]="150"
+                    (ionInput)="profileQuery.set($any($event.detail.value) ?? '')"
+                  />
+                  <p class="hint">{{ selectedProfileIds().length }} of 14 selected</p>
+                  <ion-list class="profiles" lines="none">
+                    @for (profile of visibleProfiles(); track profile.id) {
+                      <ion-item>
+                        <ion-checkbox
+                          slot="start"
+                          [checked]="selectedProfileIds().includes(profile.id)"
+                          [disabled]="profileBlocked(profile.id) || busy()"
+                          (ionChange)="toggleProfile(profile.id, $event)"
+                        />
+                        <ion-label>
+                          <h2>{{ profile.display_name || profile.email }}</h2>
+                          <p>{{ profileNote(profile) }}</p>
+                        </ion-label>
+                      </ion-item>
+                    }
+                  </ion-list>
+                }
+                <div class="add-name">
+                  <ion-input
+                    [(ngModel)]="newParticipantName"
+                    name="participant"
+                    [placeholder]="entrantKind() === 'individual' ? 'Player name' : 'Team name'"
+                    maxlength="200"
+                  />
+                  <ion-button
+                    type="submit"
+                    size="small"
+                    [disabled]="!canAddParticipant() || busy()"
+                  >
+                    Add
+                  </ion-button>
+                </div>
+              </form>
+            }
+
+            @if (teamEntry() === 'draft' && draftBoard(); as board) {
+              <h3 class="fm-section-title">Draft</h3>
+              @if (board.on_the_clock) {
+                <p class="hint">On the clock: {{ board.on_the_clock.name }}. Draft a profile onto that team.</p>
+              } @else if (!board.teams.length) {
+                <p class="hint">Name the teams first, then draft profiles onto them.</p>
+              } @else {
+                <p class="hint">Every team has 14 players drafted.</p>
+              }
+              <ion-list inset="true">
+                @for (team of board.teams; track team.id) {
                   <ion-item>
-                    <ion-checkbox
-                      slot="start"
-                      [checked]="selectedProfileIds().includes(profile.id)"
-                      [disabled]="profileBlocked(profile.id) || busy()"
-                      (ionChange)="toggleProfile(profile.id, $event)"
-                    />
                     <ion-label>
-                      <h2>{{ profile.display_name || profile.email }}</h2>
-                      <p>{{ profileNote(profile) }}</p>
+                      <h2>{{ team.name }}</h2>
+                      <p>
+                        {{ team.accepted }} of {{ board.squad_size }} accepted
+                        @if (team.pending) {
+                          · {{ team.pending }} waiting
+                        }
+                      </p>
                     </ion-label>
                   </ion-item>
                 }
               </ion-list>
-              }
-              <div class="add-name">
-                <ion-input
-                  [(ngModel)]="newParticipantName"
-                  name="participant"
-                  [placeholder]="entrantKind() === 'individual' ? 'Player name' : 'Team name'"
-                  maxlength="200"
+              @if (board.on_the_clock) {
+                <ion-searchbar
+                  placeholder="Search profiles"
+                  [debounce]="150"
+                  (ionInput)="profileQuery.set($any($event.detail.value) ?? '')"
                 />
-                <ion-button
-                  type="submit"
-                  size="small"
-                  [disabled]="!canAddParticipant() || busy()"
-                >
-                  Add
-                </ion-button>
-              </div>
-            </form>
+                <ion-list class="profiles" lines="none">
+                  @for (profile of visibleProfiles(); track profile.id) {
+                    <ion-item>
+                      <ion-label>
+                        <h2>{{ profile.display_name || profile.email }}</h2>
+                        <p>{{ profileNote(profile) }}</p>
+                      </ion-label>
+                      <ion-button
+                        slot="end"
+                        size="small"
+                        [disabled]="profileBlocked(profile.id) || busy()"
+                        (click)="draftProfile(profile)"
+                      >
+                        Draft
+                      </ion-button>
+                    </ion-item>
+                  }
+                </ion-list>
+              }
+            }
 
             @if (participants().length === 0) {
               <div class="fm-empty">
@@ -164,8 +250,15 @@ type Section = 'entrants' | 'scoring' | 'schedule';
                     <ion-label>
                       <h2>{{ participant.name }}</h2>
                       <p>
-                        {{ participant.roster.length }}
-                        {{ participant.roster.length === 1 ? 'member' : 'members' }}
+                        @if (teamEntry() && participant.kind === 'team') {
+                          {{ participant.roster.length }} of 14 accepted
+                          @if (participant.pending_count) {
+                            · {{ participant.pending_count }} waiting
+                          }
+                        } @else {
+                          {{ participant.roster.length }}
+                          {{ participant.roster.length === 1 ? 'member' : 'members' }}
+                        }
                       </p>
                     </ion-label>
                     <ion-button
@@ -496,6 +589,71 @@ type Section = 'entrants' | 'scoring' | 'schedule';
               }
             }
           }
+          @case ('officials') {
+            <h3 class="fm-section-title">Game time</h3>
+            <p class="hint">
+              Set the time limit for a game, then how long overtime lasts. End game appears on the match once overtime is over.
+            </p>
+            <form class="add-row" (submit)="saveTimeLimits($event)">
+              <ion-input
+                type="number"
+                inputmode="numeric"
+                min="1"
+                [(ngModel)]="timeLimit"
+                name="timeLimit"
+                placeholder="Time limit in minutes"
+              />
+              <ion-input
+                type="number"
+                inputmode="numeric"
+                min="0"
+                [(ngModel)]="overtimeLimit"
+                name="overtime"
+                placeholder="Overtime in minutes"
+              />
+              <ion-button type="submit" size="small" [disabled]="busy() || !canManage()">Save</ion-button>
+            </form>
+
+            <h3 class="fm-section-title">Admins</h3>
+            <p class="hint">
+              The creator and admins choose who else can run this competition. Referees are chosen on each game and score only that game.
+            </p>
+            <ion-list inset="true">
+              @for (membership of admins(); track membership.id) {
+                <ion-item>
+                  <ion-label>
+                    <h2>{{ membership.user.display_name || membership.member_email }}</h2>
+                    <p>{{ membership.role === 'owner' ? 'Creator' : 'Admin' }}</p>
+                  </ion-label>
+                  @if (canManage() && isOwner() && membership.role === 'admin') {
+                    <ion-button slot="end" fill="clear" size="small" (click)="dismissAdmin(membership)">
+                      Remove
+                    </ion-button>
+                  }
+                </ion-item>
+              }
+            </ion-list>
+            @if (canManage()) {
+              <ion-searchbar
+                placeholder="Search profiles"
+                [debounce]="150"
+                (ionInput)="officialQuery.set($any($event.detail.value) ?? '')"
+              />
+              <ion-list class="profiles" lines="none">
+                @for (profile of officialChoices(); track profile.id) {
+                  <ion-item>
+                    <ion-label>
+                      <h2>{{ profile.display_name || profile.email }}</h2>
+                      <p>{{ profile.email }}</p>
+                    </ion-label>
+                    <ion-button slot="end" size="small" [disabled]="busy()" (click)="appointAdmin(profile)">
+                      Make admin
+                    </ion-button>
+                  </ion-item>
+                }
+              </ion-list>
+            }
+          }
         }
       }
     </ion-content>
@@ -504,7 +662,6 @@ type Section = 'entrants' | 'scoring' | 'schedule';
 })
 export class CompetitionSetupPage implements OnInit {
   private readonly api = inject(ApiService);
-  private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly alerts = inject(AlertController);
@@ -516,8 +673,11 @@ export class CompetitionSetupPage implements OnInit {
   readonly participants = signal<Participant[]>([]);
   readonly categories = signal<ScoringCategory[]>([]);
   readonly profiles = signal<ProfileSummary[]>([]);
-  readonly memberships = signal<Membership[]>([]);
+  readonly profileQuery = signal('');
   readonly selectedProfileIds = signal<string[]>([]);
+  readonly draftBoard = signal<DraftBoard | null>(null);
+  readonly memberships = signal<Membership[]>([]);
+  readonly officialQuery = signal('');
   readonly policy = signal<PointsPolicy | null>(null);
   readonly loading = signal(true);
   readonly busy = signal(false);
@@ -535,6 +695,28 @@ export class CompetitionSetupPage implements OnInit {
     return competition ? isScoringLocked(competition) : false;
   });
 
+  readonly visibleProfiles = computed(() => {
+    const query = this.profileQuery().trim().toLowerCase();
+    const profiles = this.profiles();
+    if (!query) return profiles;
+    return profiles.filter((profile) => {
+      const name = (profile.display_name || '').toLowerCase();
+      const email = (profile.email || '').toLowerCase();
+      return name.includes(query) || email.includes(query);
+    });
+  });
+
+  readonly reservedIds = computed(() => {
+    const ids = new Set<string>();
+    for (const participant of this.participants()) {
+      for (const member of participant.roster) {
+        if (member.user) ids.add(member.user);
+      }
+      for (const userId of participant.pending_user_ids ?? []) ids.add(userId);
+    }
+    return ids;
+  });
+
   readonly weekdays = [
     { value: 0, label: 'Mon' },
     { value: 1, label: 'Tue' },
@@ -546,6 +728,8 @@ export class CompetitionSetupPage implements OnInit {
   ];
 
   newParticipantName = '';
+  timeLimit = '';
+  overtimeLimit = '';
   newCategoryName = '';
   newCategoryDescription = '';
   newCategoryPoints = '1';
@@ -569,18 +753,12 @@ export class CompetitionSetupPage implements OnInit {
   load(): void {
     this.loading.set(true);
 
-    forkJoin({
-      competition: this.api.getCompetition(this.competitionId),
-      profiles: this.api.listProfiles(),
-      members: this.api.listMembers(this.competitionId),
-    }).subscribe({
-      next: ({ competition, profiles, members }) => {
+    this.api.getCompetition(this.competitionId).subscribe({
+      next: (competition) => {
         this.competition.set(competition);
         this.participants.set(competition.participants);
         this.categories.set(competition.scoring_categories);
         this.policy.set(competition.points_policy);
-        this.profiles.set(profiles.results);
-        this.memberships.set(members.results);
         if (isPointsTable(competition) && this.section() === 'schedule') {
           this.section.set('entrants');
         }
@@ -590,7 +768,18 @@ export class CompetitionSetupPage implements OnInit {
         if (competition.starts_on) {
           this.generate.starts_on = competition.starts_on;
         }
+        const limit = competition.settings_json?.['time_limit_minutes'];
+        const overtime = competition.settings_json?.['overtime_minutes'];
+        this.timeLimit = limit === undefined || limit === null ? '' : String(limit);
+        this.overtimeLimit = overtime === undefined || overtime === null ? '' : String(overtime);
         this.loading.set(false);
+        if (this.teamEntry() === 'draft' || this.teamEntry() === 'pick') {
+          this.ensureProfiles();
+        }
+        if (this.teamEntry() === 'draft') this.loadDraft();
+        this.api.listMembers(this.competitionId).subscribe({
+          next: (page) => this.memberships.set(page.results),
+        });
       },
       error: async (err: unknown) => {
         this.loading.set(false);
@@ -601,8 +790,9 @@ export class CompetitionSetupPage implements OnInit {
 
   setSection(value: string | undefined): void {
     if (value === 'schedule' && this.pointsTable()) return;
-    if (value === 'entrants' || value === 'scoring' || value === 'schedule') {
+    if (value === 'entrants' || value === 'scoring' || value === 'schedule' || value === 'officials') {
       this.section.set(value);
+      if (value === 'officials') this.ensureProfiles();
     }
   }
 
@@ -618,36 +808,82 @@ export class CompetitionSetupPage implements OnInit {
     return 'team';
   }
 
-  canAddParticipant(): boolean {
-    if (!this.newParticipantName.trim()) return false;
-    if (this.entrantKind() === 'individual') return true;
-    if (this.entrantKind() === 'pair') return this.selectedProfileIds().length === 2;
-    return this.selectedProfileIds().length >= 2;
+  teamEntry(): 'pick' | 'draft' | null {
+    if (this.entrantKind() !== 'team') return null;
+    const value = this.competition()?.settings_json?.['team_entry'];
+    return value === 'pick' || value === 'draft' ? value : null;
   }
 
-  profileBlocked(id: string): boolean {
-    const membership = this.memberships().find((item) => item.user.id === id);
-    if (!membership || membership.role === 'member') return false;
-    if (membership.role === 'owner' || membership.role === 'admin') {
-      return membership.user.id !== this.auth.user()?.id || this.onATeam(id);
-    }
+  canManage(): boolean {
+    const role = this.competition()?.my_role;
+    return role === 'owner' || role === 'admin';
+  }
+
+  isOwner(): boolean {
+    return this.competition()?.my_role === 'owner';
+  }
+
+  readonly admins = computed(() =>
+    this.memberships().filter((membership) => membership.role === 'owner' || membership.role === 'admin'),
+  );
+
+  readonly officialChoices = computed(() => {
+    const taken = new Set(this.admins().map((membership) => membership.user.id));
+    const query = this.officialQuery().trim().toLowerCase();
+    return this.profiles()
+      .filter((profile) => !taken.has(profile.id))
+      .filter((profile) => {
+        if (!query) return true;
+        const name = (profile.display_name || '').toLowerCase();
+        return name.includes(query) || profile.email.toLowerCase().includes(query);
+      })
+      .slice(0, 20);
+  });
+
+  canAddParticipant(): boolean {
+    if (!this.newParticipantName.trim()) return false;
+    if (this.teamEntry() === 'pick') return this.selectedProfileIds().length >= 14;
     return true;
   }
 
-  profileNote(profile: ProfileSummary): string {
-    if (!this.profileBlocked(profile.id)) return profile.email;
-    if (this.onATeam(profile.id)) return 'Already on a team';
-    const membership = this.memberships().find((item) => item.user.id === profile.id);
-    if (membership?.role === 'owner' || membership?.role === 'admin') {
-      return 'Joins their own team';
-    }
-    return "Can't join a team";
+  setTeamEntry(mode: 'pick' | 'draft'): void {
+    const competition = this.competition();
+    if (!competition || this.busy() || this.teamEntry() === mode) return;
+    this.busy.set(true);
+    const settings = {
+      ...(competition.settings_json ?? {}),
+      participant_type: 'team',
+      team_entry: mode,
+    };
+    this.api.updateCompetition(this.competitionId, { settings_json: settings }).subscribe({
+      next: (updated) => {
+        const settingsJson =
+          updated.settings_json && Object.keys(updated.settings_json).length
+            ? updated.settings_json
+            : settings;
+        this.competition.update((current) =>
+          current ? { ...current, settings_json: settingsJson } : current,
+        );
+        this.selectedProfileIds.set([]);
+        this.busy.set(false);
+        this.ensureProfiles();
+        if (mode === 'draft') this.loadDraft();
+        else this.draftBoard.set(null);
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not save that choice.'), 'danger');
+      },
+    });
   }
 
-  private onATeam(id: string): boolean {
-    return this.participants().some((participant) =>
-      participant.roster.some((member) => member.user === id),
-    );
+  profileBlocked(id: string): boolean {
+    return this.reservedIds().has(id);
+  }
+
+  profileNote(profile: ProfileSummary): string {
+    if (this.reservedIds().has(profile.id)) return 'Already picked in this league';
+    return profile.email;
   }
 
   toggleProfile(id: string, event: CustomEvent<{ checked: boolean }>): void {
@@ -657,6 +893,123 @@ export class CompetitionSetupPage implements OnInit {
       const selected = current.includes(id);
       if (checked === selected) return current;
       return checked ? [...current, id] : current.filter((item) => item !== id);
+    });
+  }
+
+  draftProfile(profile: ProfileSummary): void {
+    if (this.profileBlocked(profile.id) || this.busy()) return;
+    this.busy.set(true);
+    this.api.draftPlayer(this.competitionId, profile.id).subscribe({
+      next: (board) => {
+        this.draftBoard.set(board);
+        this.busy.set(false);
+        this.refreshEntrants();
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not draft that profile.'), 'danger');
+      },
+    });
+  }
+
+  private ensureProfiles(): void {
+    if (this.profiles().length) return;
+    this.api.listProfiles().subscribe({
+      next: (page) => this.profiles.set(page.results),
+    });
+  }
+
+  private loadDraft(): void {
+    this.api.getDraft(this.competitionId).subscribe({
+      next: (board) => this.draftBoard.set(board),
+    });
+  }
+
+  private refreshEntrants(): void {
+    this.api.getCompetition(this.competitionId).subscribe({
+      next: (competition) => {
+        this.competition.set(competition);
+        this.participants.set(competition.participants);
+      },
+    });
+  }
+
+  saveTimeLimits(event: Event): void {
+    event.preventDefault();
+    const competition = this.competition();
+    if (!competition || !this.canManage() || this.busy()) return;
+    const regulation = Number(this.timeLimit);
+    const overtime = Number(this.overtimeLimit || 0);
+    if (!Number.isFinite(regulation) || regulation < 1) {
+      void this.toast('Enter a time limit of at least 1 minute.', 'danger');
+      return;
+    }
+    if (!Number.isFinite(overtime) || overtime < 0) {
+      void this.toast('Overtime cannot be negative.', 'danger');
+      return;
+    }
+    this.busy.set(true);
+    const settings = {
+      ...(competition.settings_json ?? {}),
+      time_limit_minutes: regulation,
+      overtime_minutes: overtime,
+    };
+    this.api.updateCompetition(this.competitionId, { settings_json: settings }).subscribe({
+      next: (updated) => {
+        const settingsJson =
+          updated.settings_json && Object.keys(updated.settings_json).length
+            ? updated.settings_json
+            : settings;
+        this.competition.update((current) =>
+          current ? { ...current, settings_json: settingsJson } : current,
+        );
+        this.busy.set(false);
+        void this.toast('Game time saved.', 'success');
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not save the time limit.'), 'danger');
+      },
+    });
+  }
+
+  appointAdmin(profile: ProfileSummary): void {
+    if (!this.canManage() || this.busy()) return;
+    this.busy.set(true);
+    const existing = this.memberships().find((membership) => membership.user.id === profile.id);
+    const request = existing
+      ? this.api.updateMember(this.competitionId, existing.id, { role: 'admin' })
+      : this.api.inviteMember(this.competitionId, { user_id: profile.id, role: 'admin' });
+    request.subscribe({
+      next: (membership) => {
+        this.memberships.update((current) => {
+          const without = current.filter((item) => item.id !== membership.id && item.user.id !== profile.id);
+          return [...without, membership];
+        });
+        this.busy.set(false);
+        void this.toast(`${profile.display_name || profile.email} is now an admin.`, 'success');
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not make that person an admin.'), 'danger');
+      },
+    });
+  }
+
+  dismissAdmin(membership: Membership): void {
+    if (!this.isOwner() || this.busy()) return;
+    this.busy.set(true);
+    this.api.updateMember(this.competitionId, membership.id, { role: 'member' }).subscribe({
+      next: (updated) => {
+        this.memberships.update((current) =>
+          current.map((item) => (item.id === updated.id ? updated : item)),
+        );
+        this.busy.set(false);
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not remove that admin.'), 'danger');
+      },
     });
   }
 
@@ -670,7 +1023,7 @@ export class CompetitionSetupPage implements OnInit {
       .createParticipant(this.competitionId, {
         name,
         kind: this.entrantKind() === 'individual' ? 'individual' : 'team',
-        member_ids: this.entrantKind() === 'individual' ? [] : this.selectedProfileIds(),
+        member_ids: this.teamEntry() === 'pick' ? this.selectedProfileIds() : [],
       })
       .subscribe({
       next: (participant) => {
@@ -678,6 +1031,10 @@ export class CompetitionSetupPage implements OnInit {
         this.newParticipantName = '';
         this.selectedProfileIds.set([]);
         this.busy.set(false);
+        if (this.teamEntry() === 'draft') {
+          this.loadDraft();
+          return;
+        }
         if (participant.kind === 'team') {
           void this.router.navigate([
             '/tabs/competitions',

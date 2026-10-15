@@ -71,6 +71,9 @@ import { RealtimeService } from '../../core/realtime.service';
             }
           </ion-avatar>
           <h2>{{ user.display_name }}</h2>
+          @if (legalName(user)) {
+            <p class="legal">{{ legalName(user) }}</p>
+          }
           <p>{{ user.email }}</p>
         </div>
 
@@ -102,6 +105,119 @@ import { RealtimeService } from '../../core/realtime.service';
                 formControlName="avatar_url"
                 inputmode="url"
                 placeholder="https://…"
+              />
+            </ion-item>
+          </ion-list>
+
+          <h3 class="fm-section-title">Personal details</h3>
+          <p class="hint">None of these are compulsory.</p>
+          <ion-list inset="true">
+            <ion-item>
+              <ion-input label="Name" labelPlacement="stacked" formControlName="given_name" maxlength="80" />
+            </ion-item>
+            <ion-item>
+              <ion-input
+                label="Surname"
+                labelPlacement="stacked"
+                formControlName="family_name"
+                maxlength="80"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-input
+                label="Date of birth"
+                labelPlacement="stacked"
+                type="date"
+                formControlName="date_of_birth"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-input
+                label="ID number"
+                labelPlacement="stacked"
+                formControlName="id_number"
+                maxlength="40"
+                autocomplete="off"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-input
+                label="Phone"
+                labelPlacement="stacked"
+                type="tel"
+                formControlName="phone"
+                maxlength="40"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-input label="City" labelPlacement="stacked" formControlName="city" maxlength="80" />
+            </ion-item>
+            <ion-item>
+              <ion-input
+                label="Country"
+                labelPlacement="stacked"
+                formControlName="country"
+                maxlength="80"
+              />
+            </ion-item>
+          </ion-list>
+
+          <h3 class="fm-section-title">Experience</h3>
+          <p class="hint">None of these are compulsory.</p>
+          <ion-list inset="true">
+            <ion-item>
+              <ion-input
+                label="Headline"
+                labelPlacement="stacked"
+                formControlName="headline"
+                maxlength="160"
+                placeholder="Role or one-line title"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-input
+                label="Website"
+                labelPlacement="stacked"
+                formControlName="website"
+                inputmode="url"
+                placeholder="https://…"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-textarea
+                label="Experience"
+                labelPlacement="stacked"
+                formControlName="experience"
+                autoGrow="true"
+                rows="3"
+                placeholder="Roles, clubs, or work"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-textarea
+                label="Education"
+                labelPlacement="stacked"
+                formControlName="education"
+                autoGrow="true"
+                rows="2"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-textarea
+                label="Skills"
+                labelPlacement="stacked"
+                formControlName="skills"
+                autoGrow="true"
+                rows="2"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-textarea
+                label="Languages"
+                labelPlacement="stacked"
+                formControlName="languages"
+                autoGrow="true"
+                rows="2"
               />
             </ion-item>
           </ion-list>
@@ -182,29 +298,28 @@ export class ProfilePage implements OnInit {
     display_name: ['', [Validators.required, Validators.maxLength(120)]],
     bio: [''],
     avatar_url: [''],
+    given_name: [''],
+    family_name: [''],
+    date_of_birth: [''],
+    id_number: [''],
+    phone: [''],
+    city: [''],
+    country: [''],
+    headline: [''],
+    website: [''],
+    experience: [''],
+    education: [''],
+    skills: [''],
+    languages: [''],
   });
 
   ngOnInit(): void {
     const user = this.auth.user();
-    if (user) {
-      this.form.patchValue({
-        display_name: user.display_name,
-        bio: user.bio,
-        avatar_url: user.avatar_url,
-      });
-    }
+    if (user) this.form.patchValue(this.profileValue(user));
 
     // The cached user may be stale after signing in on another device.
     this.auth.loadProfile().subscribe({
-      next: (fresh) =>
-        this.form.patchValue(
-          {
-            display_name: fresh.display_name,
-            bio: fresh.bio,
-            avatar_url: fresh.avatar_url,
-          },
-          { emitEvent: false },
-        ),
+      next: (fresh) => this.form.patchValue(this.profileValue(fresh), { emitEvent: false }),
       error: () => undefined,
     });
   }
@@ -215,7 +330,8 @@ export class ProfilePage implements OnInit {
     this.saving.set(true);
     this.error.set(null);
 
-    this.auth.updateProfile(this.form.getRawValue()).subscribe({
+    const raw = this.form.getRawValue();
+    this.auth.updateProfile({ ...raw, date_of_birth: raw.date_of_birth || null }).subscribe({
       next: async () => {
         this.saving.set(false);
         this.form.markAsPristine();
@@ -262,6 +378,10 @@ export class ProfilePage implements OnInit {
     await alert.present();
   }
 
+  legalName(user: { given_name?: string; family_name?: string }): string {
+    return [user.given_name, user.family_name].filter(Boolean).join(' ');
+  }
+
   initials(name: string): string {
     return name
       .split(/\s+/)
@@ -272,6 +392,44 @@ export class ProfilePage implements OnInit {
 
   memberSince(date: string): string {
     return new Date(date).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }
+
+  private profileValue(user: {
+    display_name: string;
+    bio: string;
+    avatar_url: string;
+    given_name?: string;
+    family_name?: string;
+    date_of_birth?: string | null;
+    id_number?: string;
+    phone?: string;
+    city?: string;
+    country?: string;
+    headline?: string;
+    website?: string;
+    experience?: string;
+    education?: string;
+    skills?: string;
+    languages?: string;
+  }) {
+    return {
+      display_name: user.display_name,
+      bio: user.bio ?? '',
+      avatar_url: user.avatar_url ?? '',
+      given_name: user.given_name ?? '',
+      family_name: user.family_name ?? '',
+      date_of_birth: user.date_of_birth ?? '',
+      id_number: user.id_number ?? '',
+      phone: user.phone ?? '',
+      city: user.city ?? '',
+      country: user.country ?? '',
+      headline: user.headline ?? '',
+      website: user.website ?? '',
+      experience: user.experience ?? '',
+      education: user.education ?? '',
+      skills: user.skills ?? '',
+      languages: user.languages ?? '',
+    };
   }
 
   private async toast(message: string, color: string): Promise<void> {

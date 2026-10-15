@@ -27,9 +27,11 @@ import {
   ToastController,
 } from '@ionic/angular/standalone';
 
+import { forkJoin } from 'rxjs';
+
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
-import type { CompetitionDetail } from '../../core/models';
+import type { CompetitionDetail, TeamPick } from '../../core/models';
 import { isPointsTable } from '../../core/models';
 import { RealtimeService, competitionRoom } from '../../core/realtime.service';
 import { CompetitionFeedComponent } from './tabs/competition-feed.component';
@@ -122,6 +124,15 @@ type Tab = 'feed' | 'fixtures' | 'standings';
           <ion-button fill="clear" (click)="load()">Try again</ion-button>
         </div>
       } @else if (competition(); as comp) {
+        @for (pick of myPicks(); track pick.id) {
+          <div class="pick-banner">
+            <p><strong>{{ pick.team_name }}</strong> picked you. Accept to join the team.</p>
+            <ion-button size="small" (click)="acceptPick(pick)" [disabled]="responding()">Accept</ion-button>
+            <ion-button size="small" fill="outline" (click)="declinePick(pick)" [disabled]="responding()">
+              Decline
+            </ion-button>
+          </div>
+        }
         @if (howItScores()) {
           <p class="how-points">{{ howItScores() }}</p>
         }
@@ -164,6 +175,22 @@ type Tab = 'feed' | 'fixtures' | 'standings';
         font-size: 0.95rem;
         line-height: 1.45;
       }
+
+      .pick-banner {
+        margin: 12px 16px 0;
+        padding: 12px;
+        border-radius: 12px;
+        background: var(--ion-color-light);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .pick-banner p {
+        margin: 0;
+        flex: 1 1 180px;
+      }
     `,
   ],
 })
@@ -181,7 +208,9 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   private readonly standings = viewChild(CompetitionStandingsComponent);
 
   readonly competition = signal<CompetitionDetail | null>(null);
+  readonly myPicks = signal<TeamPick[]>([]);
   readonly loading = signal(true);
+  readonly responding = signal(false);
   readonly error = signal<string | null>(null);
   readonly tab = signal<Tab>('feed');
 
@@ -214,6 +243,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
 
   ionViewWillEnter(): void {
     this.standings()?.load(false);
+    if (this.competitionId) this.load(false);
   }
 
   ngOnDestroy(): void {
@@ -226,9 +256,13 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
     if (showSpinner) this.loading.set(true);
     this.error.set(null);
 
-    this.api.getCompetition(this.competitionId).subscribe({
-      next: (competition) => {
+    forkJoin({
+      competition: this.api.getCompetition(this.competitionId),
+      picks: this.api.myTeamPicks(this.competitionId),
+    }).subscribe({
+      next: ({ competition, picks }) => {
         this.competition.set(competition);
+        this.myPicks.set(picks);
         if (isPointsTable(competition) && this.tab() === 'fixtures') {
           this.selectTab('standings');
         }
@@ -237,6 +271,38 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
       error: (err: unknown) => {
         this.error.set(extractErrorMessage(err));
         this.loading.set(false);
+      },
+    });
+  }
+
+  acceptPick(pick: TeamPick): void {
+    this.respond(pick, 'accept');
+  }
+
+  declinePick(pick: TeamPick): void {
+    this.respond(pick, 'decline');
+  }
+
+  private respond(pick: TeamPick, action: 'accept' | 'decline'): void {
+    if (this.responding()) return;
+    this.responding.set(true);
+    const request =
+      action === 'accept'
+        ? this.api.acceptTeamPick(this.competitionId, pick.id)
+        : this.api.declineTeamPick(this.competitionId, pick.id);
+    request.subscribe({
+      next: () => {
+        this.responding.set(false);
+        this.load(false);
+      },
+      error: async (err: unknown) => {
+        this.responding.set(false);
+        const toast = await this.toasts.create({
+          message: extractErrorMessage(err, 'Could not update that pick.'),
+          color: 'danger',
+          duration: 2500,
+        });
+        await toast.present();
       },
     });
   }

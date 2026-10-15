@@ -43,6 +43,11 @@
   color: var(--ion-color-medium);
 }
 
+.profiles {
+  max-height: 320px;
+  overflow: auto;
+}
+
 .footnote {
   display: block;
   margin-top: 8px;

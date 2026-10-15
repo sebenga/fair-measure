@@ -225,3 +225,40 @@ class ScoreEvent(BaseModel):
         if not self.scoring_category.affects_score:
             return Decimal("0")
         return self.quantity * self.scoring_category.points
+
+
+class PlayerMatchRating(BaseModel):
+    """One rating for a roster profile in one fixture."""
+
+    fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="ratings")
+    player = models.ForeignKey(
+        RosterMember, on_delete=models.CASCADE, related_name="match_ratings"
+    )
+    rating = models.DecimalField(max_digits=3, decimal_places=1)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["fixture", "player"], name="unique_player_match_rating"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.player} {self.rating}"
+
+
+class FixtureReferee(BaseModel):
+    """A person allowed to run scoring for one fixture."""
+
+    fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="referees")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="referee_assignments"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["fixture", "user"], name="uniq_referee_per_fixture")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} referees {self.fixture_id}"

@@ -75,7 +75,29 @@ export class AuthService {
       .pipe(tap((user) => this.setUser(user)));
   }
 
-  updateProfile(changes: Partial<Pick<User, 'display_name' | 'bio' | 'avatar_url'>>) {
+  updateProfile(
+    changes: Partial<
+      Pick<
+        User,
+        | 'display_name'
+        | 'bio'
+        | 'avatar_url'
+        | 'given_name'
+        | 'family_name'
+        | 'date_of_birth'
+        | 'id_number'
+        | 'phone'
+        | 'city'
+        | 'country'
+        | 'headline'
+        | 'website'
+        | 'experience'
+        | 'education'
+        | 'skills'
+        | 'languages'
+      >
+    >,
+  ) {
     return this.http
       .patch<User>(`${this.base}/auth/me`, changes)
       .pipe(tap((user) => this.setUser(user)));

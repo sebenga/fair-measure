@@ -37,6 +37,18 @@
     font-size: 0.85rem;
     color: var(--ion-color-medium);
   }
+
+  .legal {
+    margin-bottom: 2px;
+    color: var(--ion-text-color);
+    font-weight: 600;
+  }
+}
+
+.hint {
+  margin: -4px 20px 8px;
+  font-size: 0.82rem;
+  color: var(--ion-color-medium);
 }
 
 .save {

@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   ActionSheetController,
   IonBackButton,
@@ -25,11 +25,14 @@ import {
 } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type {
   CompetitionDetail,
   FixtureDetail,
   FixtureSide,
+  ProfileSummary,
+  RosterMember,
   ScoreEvent,
   ScoringCategory,
 } from '../../core/models';
@@ -97,9 +100,15 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
             @if (showClock()) {
               <div class="match-clock">
                 <span class="readout">{{ clockLabel() }}</span>
+                @if (inOvertime()) {
+                  <span class="chip">Overtime</span>
+                }
                 <button type="button" (click)="toggleClock()">
                   {{ clockRunning() ? 'Pause' : 'Start' }}
                 </button>
+                @if (showEndGame()) {
+                  <button type="button" class="end-game" (click)="endGame()">End game</button>
+                }
               </div>
             }
           </div>
@@ -116,6 +125,32 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
             }
           </div>
         </section>
+
+        @if (canManage()) {
+          <h3 class="fm-section-title">Referee</h3>
+          <p class="hint">The referee scores this game. An admin can still score it too.</p>
+          <div class="referees">
+            @for (referee of fx.referees ?? []; track referee.id) {
+              <div class="referee">
+                <span>{{ referee.display_name || referee.email }}</span>
+                <button type="button" (click)="removeReferee(referee.id)">Remove</button>
+              </div>
+            }
+            <label>
+              Add a referee
+              <input
+                placeholder="Search profiles"
+                [value]="refereeQuery()"
+                (input)="refereeQuery.set($any($event.target).value)"
+              />
+            </label>
+            @for (profile of refereeChoices(); track profile.id) {
+              <button type="button" class="choice" (click)="assignReferee(profile.id)">
+                {{ profile.display_name || profile.email }}
+              </button>
+            }
+          </div>
+        }
 
         @if (canScore() && fx.status !== 'completed' && fx.status !== 'cancelled') {
           <h3 class="fm-section-title">Record a score</h3>
@@ -143,12 +178,40 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
             @for (side of fx.sides; track side.id) {
               <div class="fm-card scorer">
                 <h4>{{ side.participant.short_name || side.participant.name }}</h4>
+                @if (rosterFor(side).length) {
+                  <div class="who">
+                    <label>
+                      Who scored
+                      <select
+                        [value]="scorerFor(side.id)"
+                        (change)="setScorer(side.id, $any($event.target).value)"
+                      >
+                        <option value="">Choose a profile</option>
+                        @for (member of rosterFor(side); track member.id) {
+                          <option [value]="member.id">{{ member.name }}</option>
+                        }
+                      </select>
+                    </label>
+                    <label>
+                      Rating this game
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                        placeholder="0–10"
+                        [value]="ratingFor(side.id)"
+                        (input)="setRating(side.id, $any($event.target).value)"
+                      />
+                    </label>
+                  </div>
+                }
                 <div class="chips">
                   @for (category of categories(); track category.id) {
                     <button
                       type="button"
                       class="chip-button"
-                      [disabled]="saving()"
+                      [disabled]="saving() || needsScorer(side)"
                       (click)="record(side, category)"
                     >
                       <span class="label">{{ category.name }}</span>
@@ -179,7 +242,11 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
             @for (event of orderedEvents(); track event.id) {
               <div class="event">
                 <span class="minute">
-                  {{ event.minute !== null ? event.minute + "'" : '—' }}
+                  @if (event.minute !== null) {
+                    {{ event.minute + "'" }}
+                  } @else {
+                    {{ event.created_at | date: 'HH:mm' }}
+                  }
                 </span>
                 <span class="detail">
                   <strong>{{ participantName(event) }}</strong>
@@ -191,7 +258,17 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
                     <em>×{{ trim(event.quantity) }}</em>
                   }
                   @if (event.player_name) {
-                    <span class="player">{{ event.player_name }}</span>
+                    @if (event.player_user_id) {
+                      <button
+                        type="button"
+                        class="player link"
+                        (click)="openPlayer(event.player_user_id)"
+                      >
+                        {{ event.player_name }}
+                      </button>
+                    } @else {
+                      <span class="player">{{ event.player_name }}</span>
+                    }
                   }
                 </span>
                 <span class="points">{{ signed(event.points) }}</span>
@@ -212,6 +289,23 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
 
           <p class="updated">Last change {{ lastChangeAt() | relativeTime }}</p>
         }
+
+        @if (fx.ratings.length) {
+          <h3 class="fm-section-title">Ratings this game</h3>
+          <div class="fm-card ratings">
+            @for (rating of fx.ratings; track rating.id) {
+              <button
+                type="button"
+                class="rating-row"
+                [disabled]="!rating.player_user_id"
+                (click)="openPlayer(rating.player_user_id)"
+              >
+                <span>{{ rating.player_name }}</span>
+                <strong>{{ trim(rating.rating) }}</strong>
+              </button>
+            }
+          </div>
+        }
       }
     </ion-content>
   `,
@@ -219,9 +313,11 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
 })
 export class FixtureDetailPage implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly realtime = inject(RealtimeService);
+  private readonly router = inject(Router);
   private readonly actionSheets = inject(ActionSheetController);
   private readonly toasts = inject(ToastController);
 
@@ -237,6 +333,10 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   readonly now = signal(Date.now());
   readonly clock = signal<MatchClock>({ running: false, elapsedMs: 0, runStartedAt: null });
   readonly unitIndex = signal(0);
+  readonly scorers = signal<Record<string, string>>({});
+  readonly gameRatings = signal<Record<string, string>>({});
+  readonly profiles = signal<ProfileSummary[]>([]);
+  readonly refereeQuery = signal('');
 
   private tickHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -279,13 +379,44 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   /** Shown once this fixture has a kickoff, until the match is finished. */
   showClock(): boolean {
     const fixture = this.fixture();
-    if (!fixture?.scheduled_at) return false;
-    return (
-      fixture.status !== 'completed' &&
-      fixture.status !== 'cancelled' &&
-      fixture.status !== 'postponed' &&
-      fixture.status !== 'forfeit'
-    );
+    if (!fixture) return false;
+    if (
+      fixture.status === 'completed' ||
+      fixture.status === 'cancelled' ||
+      fixture.status === 'postponed' ||
+      fixture.status === 'forfeit'
+    ) {
+      return false;
+    }
+    return !!fixture.scheduled_at || this.timeLimits() !== null;
+  }
+
+  timeLimits(): { regulation: number; overtime: number } | null {
+    const settings = this.competition()?.settings_json ?? {};
+    const regulation = Number(settings['time_limit_minutes']);
+    const overtime = Number(settings['overtime_minutes'] ?? 0);
+    if (!Number.isFinite(regulation) || regulation <= 0) return null;
+    return { regulation, overtime: Number.isFinite(overtime) && overtime > 0 ? overtime : 0 };
+  }
+
+  inOvertime(): boolean {
+    this.now();
+    const limits = this.timeLimits();
+    if (!limits || !this.showClock()) return false;
+    const elapsed = this.displayedElapsed();
+    return elapsed >= limits.regulation * 60_000 && elapsed < (limits.regulation + limits.overtime) * 60_000;
+  }
+
+  showEndGame(): boolean {
+    this.now();
+    const limits = this.timeLimits();
+    const fixture = this.fixture();
+    if (!limits || !fixture || !this.canScore()) return false;
+    return this.displayedElapsed() >= (limits.regulation + limits.overtime) * 60_000;
+  }
+
+  endGame(): void {
+    this.setStatus('completed');
   }
 
   clockRunning(): boolean {
@@ -322,7 +453,10 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     this.error.set(null);
 
     this.api.getCompetition(this.competitionId).subscribe({
-      next: (competition) => this.competition.set(competition),
+      next: (competition) => {
+        this.competition.set(competition);
+        if (this.canManage()) this.ensureProfiles();
+      },
       error: () => undefined,
     });
 
@@ -373,15 +507,124 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
 
   canScore(): boolean {
     const role = this.competition()?.my_role;
-    return role === 'owner' || role === 'admin' || role === 'scorer';
+    if (role === 'owner' || role === 'admin') return true;
+    const me = this.auth.user()?.id;
+    const referees = this.fixture()?.referees ?? [];
+    if (referees.some((referee) => referee.id === me)) return true;
+    if (referees.length > 0) return false;
+    return role === 'scorer';
+  }
+
+  canManage(): boolean {
+    const role = this.competition()?.my_role;
+    return role === 'owner' || role === 'admin';
+  }
+
+  refereeChoices(): ProfileSummary[] {
+    const query = this.refereeQuery().trim().toLowerCase();
+    if (!query) return [];
+    const taken = new Set((this.fixture()?.referees ?? []).map((referee) => referee.id));
+    return this.profiles()
+      .filter((profile) => !taken.has(profile.id))
+      .filter((profile) => {
+        const name = (profile.display_name || '').toLowerCase();
+        return name.includes(query) || profile.email.toLowerCase().includes(query);
+      })
+      .slice(0, 8);
+  }
+
+  assignReferee(userId: string): void {
+    if (this.saving()) return;
+    this.saving.set(true);
+    this.api.assignReferee(this.competitionId, this.fixtureId, userId).subscribe({
+      next: (fixture) => {
+        this.fixture.set(fixture);
+        this.refereeQuery.set('');
+        this.saving.set(false);
+      },
+      error: async (err: unknown) => {
+        this.saving.set(false);
+        await this.showToast(extractErrorMessage(err, 'Could not add that referee.'), 'danger');
+      },
+    });
+  }
+
+  removeReferee(userId: string): void {
+    if (this.saving()) return;
+    this.saving.set(true);
+    this.api.removeReferee(this.competitionId, this.fixtureId, userId).subscribe({
+      next: (fixture) => {
+        this.fixture.set(fixture);
+        this.saving.set(false);
+      },
+      error: async (err: unknown) => {
+        this.saving.set(false);
+        await this.showToast(extractErrorMessage(err, 'Could not remove that referee.'), 'danger');
+      },
+    });
+  }
+
+  private ensureProfiles(): void {
+    if (this.profiles().length) return;
+    this.api.listProfiles().subscribe({
+      next: (page) => this.profiles.set(page.results),
+    });
   }
 
   backHref(): string {
     return `/tabs/competitions/${this.competitionId}?tab=fixtures`;
   }
 
-  record(side: FixtureSide, category: ScoringCategory): void {
+  rosterFor(side: FixtureSide): RosterMember[] {
+    return (
+      this.competition()
+        ?.participants.find((participant) => participant.id === side.participant.id)
+        ?.roster.filter((member) => member.is_active) ?? []
+    );
+  }
+
+  scorerFor(sideId: string): string {
+    return this.scorers()[sideId] ?? '';
+  }
+
+  ratingFor(sideId: string): string {
+    return this.gameRatings()[sideId] ?? '';
+  }
+
+  setScorer(sideId: string, value: string): void {
+    this.scorers.update((current) => ({ ...current, [sideId]: value }));
+  }
+
+  setRating(sideId: string, value: string): void {
+    this.gameRatings.update((current) => ({ ...current, [sideId]: value }));
+  }
+
+  needsScorer(side: FixtureSide): boolean {
+    return this.rosterFor(side).length > 0 && !this.scorerFor(side.id);
+  }
+
+  openPlayer(userId: string | null): void {
+    if (!userId) return;
+    void this.router.navigate(['/tabs/competitions', this.competitionId, 'players', userId]);
+  }
+
+  async record(side: FixtureSide, category: ScoringCategory): Promise<void> {
     if (this.saving()) return;
+    const roster = this.rosterFor(side);
+    const playerId = this.scorerFor(side.id);
+    if (roster.length && !playerId) {
+      await this.showToast('Choose who scored.', 'danger');
+      return;
+    }
+    const rating = this.ratingFor(side.id).trim();
+    if (rating) {
+      const value = Number(rating);
+      if (Number.isNaN(value) || value < 0 || value > 10) {
+        await this.showToast('Rate this game from 0 to 10.', 'danger');
+        return;
+      }
+    }
+
     this.saving.set(true);
 
     const body: Record<string, unknown> = {
@@ -389,6 +632,12 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       scoring_category: category.id,
       quantity: '1',
     };
+    if (playerId) {
+      body['player'] = playerId;
+      const member = roster.find((item) => item.id === playerId);
+      if (member) body['player_name'] = member.name;
+    }
+    if (rating) body['rating'] = Number(rating).toFixed(1);
     if (this.units().length) {
       body['unit_index'] = this.unitIndex();
       body['period'] = this.unitLabel({ unit_index: this.unitIndex() } as ScoreEvent);

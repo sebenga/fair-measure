@@ -8,7 +8,7 @@ from rest_framework import serializers
 
 from apps.competitions.models import Participant, ScoringCategory, Stage
 
-from .models import Fixture, FixtureSide, ScoreEvent
+from .models import Fixture, FixtureSide, PlayerMatchRating, ScoreEvent
 
 
 class ParticipantRefSerializer(serializers.ModelSerializer):
@@ -46,6 +46,16 @@ class ScoreEventSerializer(serializers.ModelSerializer):
         max_digits=10, decimal_places=2, read_only=True
     )
     participant_id = serializers.UUIDField(source="side.participant_id", read_only=True)
+    player_user_id = serializers.SerializerMethodField()
+    rating = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        required=False,
+        write_only=True,
+        min_value=Decimal("0"),
+        max_value=Decimal("10"),
+        help_text="This profile's rating for the fixture, from 0 to 10.",
+    )
 
     class Meta:
         model = ScoreEvent
@@ -61,12 +71,20 @@ class ScoreEventSerializer(serializers.ModelSerializer):
             "period",
             "unit_index",
             "player",
+            "player_user_id",
             "player_name",
+            "rating",
             "note",
             "occurred_at",
             "created_at",
         ]
         read_only_fields = ["id", "created_at"]
+
+    def get_player_user_id(self, obj: ScoreEvent):
+        player = getattr(obj, "player", None)
+        if player is None or player.user_id is None:
+            return None
+        return player.user_id
 
     def validate(self, attrs: dict) -> dict:
         fixture = self.context["fixture"]
@@ -86,12 +104,46 @@ class ScoreEventSerializer(serializers.ModelSerializer):
                 }
             )
 
-        player = attrs.get("player")
+        player = attrs.get("player", getattr(self.instance, "player", None))
+        if (
+            self.instance is None
+            and player is None
+            and side is not None
+            and side.participant.roster.filter(is_active=True).exists()
+        ):
+            raise serializers.ValidationError({"player": "Choose the profile who scored."})
         if player is not None and side is not None and player.participant_id != side.participant_id:
             raise serializers.ValidationError(
                 {"player": "That player is not on this side's roster."}
             )
+        if player is not None and not (attrs.get("player_name") or "").strip():
+            attrs["player_name"] = player.name
+        if attrs.get("rating") is not None and player is None:
+            raise serializers.ValidationError(
+                {"rating": "A rating belongs to the profile who played."}
+            )
         return attrs
+
+    def _save_rating(self, event: ScoreEvent, rating: Decimal | None) -> None:
+        if rating is None or event.player_id is None:
+            return
+        PlayerMatchRating.objects.update_or_create(
+            fixture_id=event.fixture_id,
+            player_id=event.player_id,
+            defaults={"rating": rating},
+        )
+
+    def create(self, validated_data: dict) -> ScoreEvent:
+        rating = validated_data.pop("rating", None)
+        event = super().create(validated_data)
+        self._save_rating(event, rating)
+        return event
+
+    def update(self, instance: ScoreEvent, validated_data: dict) -> ScoreEvent:
+        rating = validated_data.pop("rating", None)
+        event = super().update(instance, validated_data)
+        self._save_rating(event, rating)
+        return event
 
 
 class FixtureListSerializer(serializers.ModelSerializer):
@@ -115,11 +167,42 @@ class FixtureListSerializer(serializers.ModelSerializer):
         ]
 
 
+class PlayerMatchRatingSerializer(serializers.ModelSerializer):
+    player_name = serializers.CharField(source="player.name", read_only=True)
+    player_user_id = serializers.UUIDField(
+        source="player.user_id", read_only=True, allow_null=True
+    )
+
+    class Meta:
+        model = PlayerMatchRating
+        fields = ["id", "player", "player_name", "player_user_id", "rating"]
+
+
 class FixtureDetailSerializer(FixtureListSerializer):
     events = ScoreEventSerializer(many=True, read_only=True)
+    ratings = PlayerMatchRatingSerializer(many=True, read_only=True)
+    referees = serializers.SerializerMethodField()
 
     class Meta(FixtureListSerializer.Meta):
-        fields = [*FixtureListSerializer.Meta.fields, "notes", "events", "created_at"]
+        fields = [
+            *FixtureListSerializer.Meta.fields,
+            "notes",
+            "events",
+            "ratings",
+            "referees",
+            "created_at",
+        ]
+
+    def get_referees(self, obj) -> list[dict]:
+        rows = obj.referees.all()
+        return [
+            {
+                "id": str(row.user_id),
+                "display_name": row.user.get_full_name(),
+                "email": row.user.email,
+            }
+            for row in rows
+        ]
 
 
 class FixtureWriteSerializer(serializers.ModelSerializer):

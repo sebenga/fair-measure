@@ -2,13 +2,41 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 User = get_user_model()
 
+PERSONAL_FIELDS = [
+    "given_name",
+    "family_name",
+    "date_of_birth",
+    "id_number",
+    "phone",
+    "city",
+    "country",
+    "headline",
+    "website",
+    "experience",
+    "education",
+    "skills",
+    "languages",
+]
+
+
+class OptionalDateField(serializers.DateField):
+    """A date that may be left blank. An empty string is stored as no date."""
+
+    def to_internal_value(self, value):
+        if value in (None, ""):
+            return None
+        return super().to_internal_value(value)
+
 
 class UserSerializer(serializers.ModelSerializer):
+    date_of_birth = OptionalDateField(allow_null=True, required=False)
+
     class Meta:
         model = User
         fields = [
@@ -17,10 +45,21 @@ class UserSerializer(serializers.ModelSerializer):
             "display_name",
             "avatar_url",
             "bio",
+            *PERSONAL_FIELDS,
             "email_verified",
             "date_joined",
         ]
         read_only_fields = ["id", "email", "email_verified", "date_joined"]
+        extra_kwargs = {
+            name: {"required": False, "allow_blank": True}
+            for name in PERSONAL_FIELDS
+            if name != "date_of_birth"
+        }
+
+    def validate_date_of_birth(self, value):
+        if value and value > timezone.localdate():
+            raise serializers.ValidationError("Date of birth is in the future.")
+        return value
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -28,7 +67,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "display_name", "email", "avatar_url"]
+        fields = ["id", "display_name", "email", "avatar_url", "bio", "headline"]
 
 
 class UserSummarySerializer(serializers.ModelSerializer):

@@ -37,6 +37,19 @@ export interface User {
   display_name: string;
   avatar_url: string;
   bio: string;
+  given_name: string;
+  family_name: string;
+  date_of_birth: string | null;
+  id_number: string;
+  phone: string;
+  city: string;
+  country: string;
+  headline: string;
+  website: string;
+  experience: string;
+  education: string;
+  skills: string;
+  languages: string;
   email_verified: boolean;
   date_joined: string;
 }
@@ -52,6 +65,8 @@ export interface ProfileSummary {
   display_name: string;
   email: string;
   avatar_url: string;
+  bio: string;
+  headline: string;
 }
 
 export interface Membership {
@@ -122,6 +137,26 @@ export interface RosterMember {
   is_active: boolean;
 }
 
+export interface TeamPick {
+  id: string;
+  participant: string;
+  team_name: string;
+  user: string;
+  user_display_name: string;
+  user_email: string;
+  status: 'pending' | 'accepted' | 'declined';
+  created_at: string;
+  responded_at: string | null;
+}
+
+export interface DraftBoard {
+  squad_size: number;
+  on_the_clock: { id: string; name: string } | null;
+  teams: Array<{ id: string; name: string; accepted: number; pending: number; total: number }>;
+  complete: boolean;
+  pick?: TeamPick;
+}
+
 export interface Participant {
   id: string;
   kind: ParticipantKind;
@@ -135,6 +170,8 @@ export interface Participant {
   metadata: Record<string, unknown>;
   stage_ids?: string[];
   roster: RosterMember[];
+  pending_count?: number;
+  pending_user_ids?: string[];
 }
 
 export interface ParticipantRef {
@@ -199,6 +236,7 @@ export interface ScoreEvent {
   period: string;
   unit_index?: number | null;
   player: string | null;
+  player_user_id: string | null;
   player_name: string;
   note: string;
   occurred_at: string | null;
@@ -220,10 +258,57 @@ export interface Fixture {
   completed_at: string | null;
 }
 
+export interface MatchRating {
+  id: string;
+  player: string;
+  player_name: string;
+  player_user_id: string | null;
+  rating: string;
+}
+
 export interface FixtureDetail extends Fixture {
   notes: string;
   events: ScoreEvent[];
+  ratings: MatchRating[];
+  referees: Array<{ id: string; display_name: string; email: string }>;
   created_at: string;
+}
+
+export interface PlayerLeagueProfile {
+  profile: {
+    id: string;
+    display_name: string;
+    avatar_url: string;
+    bio: string;
+    headline: string;
+    city: string;
+    country: string;
+    experience: string;
+    education: string;
+    skills: string;
+    languages: string;
+  };
+  team: { id: string; name: string } | null;
+  totals: Array<{ category: string; count: string; points: string }>;
+  timeline: Array<{
+    id: string;
+    fixture_id: string;
+    fixture_label: string;
+    minute: number | null;
+    period: string;
+    category: string;
+    quantity: string;
+    points: string;
+    team: string;
+    occurred_at: string | null;
+    created_at: string;
+  }>;
+  ratings: Array<{
+    fixture_id: string;
+    fixture_label: string;
+    rating: string;
+    scheduled_at: string | null;
+  }>;
 }
 
 export interface StandingRow {

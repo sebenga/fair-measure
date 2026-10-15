@@ -112,6 +112,37 @@
 .scorer {
   padding: 12px 14px;
 
+  .who {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 12px;
+
+    label {
+      display: grid;
+      gap: 4px;
+      font-size: 0.75rem;
+      font-weight: 650;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--ion-color-medium);
+    }
+
+    select,
+    input {
+      width: 100%;
+      min-height: 40px;
+      padding: 8px 10px;
+      border: 1px solid var(--ion-color-step-200, #d7d8da);
+      border-radius: 10px;
+      background: var(--ion-background-color, #fff);
+      color: inherit;
+      font-size: 0.95rem;
+      text-transform: none;
+      letter-spacing: 0;
+      font-weight: 500;
+    }
+  }
+
   h4 {
     margin: 0 0 10px;
     font-size: 0.82rem;
@@ -178,6 +209,36 @@
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     color: var(--ion-color-primary);
+  }
+}
+
+.ratings {
+  display: grid;
+}
+
+.rating-row,
+.player.link {
+  border: 0;
+  background: transparent;
+  color: var(--ion-color-primary);
+  font: inherit;
+  text-align: left;
+}
+
+.rating-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--ion-color-step-50, #f4f5f7);
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  strong {
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -258,4 +319,46 @@
   margin: 12px 20px 40px;
   font-size: 0.74rem;
   color: var(--ion-color-medium);
+}
+
+.hint {
+  margin: 0 20px 12px;
+  color: var(--ion-color-medium);
+  font-size: 0.85rem;
+}
+
+.referees {
+  display: grid;
+  gap: 8px;
+  margin: 0 16px 16px;
+
+  .referee,
+  label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  input,
+  .choice,
+  .referee button {
+    font: inherit;
+  }
+
+  input {
+    flex: 1;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--ion-color-step-200, #d7d8da);
+  }
+
+  .choice,
+  .referee button {
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--ion-color-light);
+    text-align: left;
+  }
 }

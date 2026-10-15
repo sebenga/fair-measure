@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
@@ -18,6 +19,7 @@ from .models import (
     PointsPolicy,
     RosterMember,
     Rule,
+    TeamPick,
     ScoringCategory,
     Stage,
 )
@@ -170,17 +172,18 @@ def add_profile_to_team(participant: Participant, user, actor, field: str = "mem
             raise serializers.ValidationError(
                 {field: "An admin can only add themselves to a team."}
             )
-        already = (
-            RosterMember.objects.filter(participant__competition=participant.competition, user=user)
-            .exclude(participant=participant)
-            .exists()
-        )
-        if already:
-            raise serializers.ValidationError(
-                {field: "An admin can only be on one team in a league."}
-            )
     elif membership.role != Role.MEMBER:
         raise serializers.ValidationError({field: f"{user.get_full_name()} can't join a team."})
+
+    already = (
+        RosterMember.objects.filter(participant__competition=participant.competition, user=user)
+        .exclude(participant=participant)
+        .exists()
+    )
+    if already:
+        raise serializers.ValidationError(
+            {field: "That profile is already on another team in this league."}
+        )
 
     existing = participant.roster.filter(user=user).first()
     if existing is not None:
@@ -192,8 +195,190 @@ def add_profile_to_team(participant: Participant, user, actor, field: str = "mem
     )
 
 
+MIN_TEAM_PLAYERS = 14
+
+
+def team_entry_mode(competition) -> str | None:
+    """How a team competition fills its squads. Unset leaves the older open flow."""
+    settings = getattr(competition, "settings_json", None) or {}
+    if settings.get("participant_type") in {"individual", "pair"}:
+        return None
+    mode = settings.get("team_entry")
+    if mode in {"pick", "draft"}:
+        return mode
+    return None
+
+
+def squad_counts(participant: Participant) -> tuple[int, int]:
+    accepted = participant.roster.filter(is_active=True).count()
+    pending = participant.picks.filter(status=TeamPick.Status.PENDING).count()
+    return accepted, pending
+
+
+def draft_teams(competition) -> list[Participant]:
+    return list(
+        competition.participants.filter(kind=Participant.Kind.TEAM, is_active=True)
+        .order_by("name")
+    )
+
+
+def next_draft_team(teams: list[Participant]) -> Participant | None:
+    """Snake order. A team that already has 14 players (accepted or waiting) is skipped."""
+    if not teams:
+        return None
+    totals = [sum(squad_counts(team)) for team in teams]
+    if all(total >= MIN_TEAM_PLAYERS for total in totals):
+        return None
+    count = len(teams)
+    made = sum(totals)
+    for step in range(made, made + count * MIN_TEAM_PLAYERS):
+        round_no, index = divmod(step, count)
+        slot = index if round_no % 2 == 0 else count - 1 - index
+        if totals[slot] < MIN_TEAM_PLAYERS:
+            return teams[slot]
+    return None
+
+
+def draft_payload(competition) -> dict:
+    teams = draft_teams(competition)
+    rows = []
+    for team in teams:
+        accepted, pending = squad_counts(team)
+        rows.append(
+            {
+                "id": str(team.id),
+                "name": team.name,
+                "accepted": accepted,
+                "pending": pending,
+                "total": accepted + pending,
+            }
+        )
+    clock = next_draft_team(teams)
+    return {
+        "squad_size": MIN_TEAM_PLAYERS,
+        "on_the_clock": None if clock is None else {"id": str(clock.id), "name": clock.name},
+        "teams": rows,
+        "complete": bool(teams) and clock is None,
+    }
+
+
+def offer_team_pick(participant: Participant, user, actor) -> TeamPick:
+    """Invite a profile onto a team. They are not on the roster until they accept."""
+    if participant.kind != Participant.Kind.TEAM:
+        raise serializers.ValidationError({"user": "Pick profiles onto a team."})
+
+    membership = Membership.objects.filter(
+        competition=participant.competition, user=user
+    ).first()
+    if membership is None:
+        invited_by = actor if getattr(actor, "is_authenticated", False) else None
+        Membership.objects.create(
+            competition=participant.competition,
+            user=user,
+            role=Role.MEMBER,
+            invited_by=invited_by,
+        )
+    elif membership.role in (Role.OWNER, Role.ADMIN):
+        if getattr(actor, "id", None) != user.id:
+            raise serializers.ValidationError(
+                {"user": "An admin can only add themselves to a team."}
+            )
+    elif membership.role != Role.MEMBER:
+        raise serializers.ValidationError({"user": f"{user.get_full_name()} can't join a team."})
+
+    competition_id = participant.competition_id
+    if RosterMember.objects.filter(
+        participant__competition_id=competition_id, user=user, is_active=True
+    ).exists():
+        raise serializers.ValidationError(
+            {"user": "That profile is already on a team in this league."}
+        )
+
+    pending = TeamPick.objects.filter(
+        participant__competition_id=competition_id,
+        user=user,
+        status=TeamPick.Status.PENDING,
+    ).first()
+    if pending is not None:
+        if pending.participant_id == participant.id:
+            return pending
+        raise serializers.ValidationError(
+            {"user": "That profile already has a pick waiting in this league."}
+        )
+
+    return TeamPick.objects.create(
+        participant=participant,
+        user=user,
+        invited_by=actor if getattr(actor, "is_authenticated", False) else None,
+    )
+
+
+def accept_team_pick(pick: TeamPick, actor) -> TeamPick:
+    if pick.user_id != getattr(actor, "id", None):
+        raise PermissionDenied("Only the picked profile can accept.")
+    if pick.status != TeamPick.Status.PENDING:
+        raise serializers.ValidationError({"status": "This pick is already settled."})
+    add_profile_to_team(pick.participant, pick.user, actor, field="user")
+    now = timezone.now()
+    pick.status = TeamPick.Status.ACCEPTED
+    pick.responded_at = now
+    pick.save(update_fields=["status", "responded_at", "updated_at"])
+    TeamPick.objects.filter(
+        participant__competition_id=pick.participant.competition_id,
+        user_id=pick.user_id,
+        status=TeamPick.Status.PENDING,
+    ).update(status=TeamPick.Status.DECLINED, responded_at=now)
+    return pick
+
+
+def decline_team_pick(pick: TeamPick, actor) -> TeamPick:
+    if pick.user_id != getattr(actor, "id", None):
+        raise PermissionDenied("Only the picked profile can decline.")
+    if pick.status != TeamPick.Status.PENDING:
+        raise serializers.ValidationError({"status": "This pick is already settled."})
+    pick.status = TeamPick.Status.DECLINED
+    pick.responded_at = timezone.now()
+    pick.save(update_fields=["status", "responded_at", "updated_at"])
+    return pick
+
+
+class TeamPickSerializer(serializers.ModelSerializer):
+    user_display_name = serializers.SerializerMethodField()
+    user_email = serializers.EmailField(source="user.email", read_only=True)
+    team_name = serializers.CharField(source="participant.name", read_only=True)
+
+    class Meta:
+        model = TeamPick
+        fields = [
+            "id",
+            "participant",
+            "team_name",
+            "user",
+            "user_display_name",
+            "user_email",
+            "status",
+            "created_at",
+            "responded_at",
+        ]
+        read_only_fields = [
+            "id",
+            "participant",
+            "team_name",
+            "user_display_name",
+            "user_email",
+            "status",
+            "created_at",
+            "responded_at",
+        ]
+
+    def get_user_display_name(self, obj: TeamPick) -> str:
+        return obj.user.get_full_name()
+
+
 class ParticipantSerializer(serializers.ModelSerializer):
     roster = RosterMemberSerializer(many=True, read_only=True)
+    pending_count = serializers.SerializerMethodField()
+    pending_user_ids = serializers.SerializerMethodField()
     stage_ids = serializers.PrimaryKeyRelatedField(
         source="stages", many=True, queryset=Stage.objects.all(), required=False
     )
@@ -216,8 +401,22 @@ class ParticipantSerializer(serializers.ModelSerializer):
             "metadata",
             "stage_ids",
             "roster",
+            "pending_count",
+            "pending_user_ids",
             "member_ids",
         ]
+
+    def _pending_picks(self, obj: Participant):
+        cached = getattr(obj, "_prefetched_objects_cache", {}).get("picks")
+        if cached is not None:
+            return [pick for pick in cached if pick.status == TeamPick.Status.PENDING]
+        return list(obj.picks.filter(status=TeamPick.Status.PENDING))
+
+    def get_pending_count(self, obj: Participant) -> int:
+        return len(self._pending_picks(obj))
+
+    def get_pending_user_ids(self, obj: Participant) -> list[str]:
+        return [str(pick.user_id) for pick in self._pending_picks(obj)]
 
     def validate_stage_ids(self, stages: list[Stage]) -> list[Stage]:
         competition = self.context.get("competition")
@@ -255,12 +454,7 @@ class ParticipantSerializer(serializers.ModelSerializer):
             return attrs
         if self.instance is None and entrant_type == "pair":
             attrs["kind"] = Participant.Kind.TEAM
-            member_ids = list(dict.fromkeys(attrs.get("member_ids") or []))
-            if len(member_ids) != 2:
-                raise serializers.ValidationError(
-                    {"member_ids": "A pair is two profiles."}
-                )
-            attrs["member_ids"] = member_ids
+            attrs.pop("member_ids", None)
             return attrs
         if self.instance is None:
             if attrs.get("kind") == Participant.Kind.INDIVIDUAL:
@@ -276,37 +470,44 @@ class ParticipantSerializer(serializers.ModelSerializer):
             and self.instance.kind != Participant.Kind.TEAM
         )
         if creating_team or converting:
+            mode = team_entry_mode(self.context.get("competition"))
             member_ids = list(dict.fromkeys(attrs.get("member_ids") or []))
-            if len(member_ids) < 2:
+            if mode == "pick" and creating_team:
+                if len(member_ids) < MIN_TEAM_PLAYERS:
+                    raise serializers.ValidationError(
+                        {
+                            "member_ids": (
+                                f"A team needs at least {MIN_TEAM_PLAYERS} players."
+                            )
+                        }
+                    )
+                attrs["member_ids"] = member_ids
+            elif mode == "draft" and member_ids:
                 raise serializers.ValidationError(
-                    {"member_ids": "A team is created from at least two profiles."}
+                    {"member_ids": "Name the team, then draft players onto it."}
                 )
-            attrs["member_ids"] = member_ids
+            else:
+                attrs.pop("member_ids", None)
         return attrs
 
     def create(self, validated_data: dict) -> Participant:
-        member_ids = validated_data.pop("member_ids", [])
+        member_ids = [str(value) for value in validated_data.pop("member_ids", []) or []]
         with transaction.atomic():
             participant = super().create(validated_data)
-            if participant.kind == Participant.Kind.TEAM:
-                self._attach_profiles(participant, member_ids)
+            if member_ids:
+                actor = self.context["request"].user
+                users = {str(user.id): user for user in User.objects.filter(id__in=member_ids)}
+                if len(users) != len(set(member_ids)):
+                    raise serializers.ValidationError(
+                        {"member_ids": "Choose profiles that exist."}
+                    )
+                for user_id in member_ids:
+                    offer_team_pick(participant, users[user_id], actor)
         return participant
 
     def update(self, instance: Participant, validated_data: dict) -> Participant:
-        member_ids = validated_data.pop("member_ids", [])
-        with transaction.atomic():
-            participant = super().update(instance, validated_data)
-            if member_ids and participant.kind == Participant.Kind.TEAM:
-                self._attach_profiles(participant, member_ids)
-        return participant
-
-    def _attach_profiles(self, participant: Participant, member_ids: list) -> None:
-        users = list(User.objects.filter(id__in=member_ids))
-        if len(users) != len(set(member_ids)):
-            raise serializers.ValidationError({"member_ids": "Choose profiles that exist."})
-        actor = getattr(self.context.get("request"), "user", None)
-        for user in users:
-            add_profile_to_team(participant, user, actor)
+        validated_data.pop("member_ids", None)
+        return super().update(instance, validated_data)
 
 
 class MembershipSerializer(serializers.ModelSerializer):
@@ -321,7 +522,7 @@ class MembershipSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "member_email", "created_at"]
 
     def validate(self, attrs: dict) -> dict:
-        if not attrs.get("user_id") and not attrs.get("email"):
+        if self.instance is None and not attrs.get("user_id") and not attrs.get("email"):
             raise serializers.ValidationError("Provide either user_id or email.")
         return attrs
 

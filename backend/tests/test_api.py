@@ -48,6 +48,54 @@ def test_login_then_read_me(anon_api, user):
 
     assert me.status_code == 200
     assert me.data["email"] == "owner@example.com"
+    assert me.data["given_name"] == ""
+    assert me.data["family_name"] == ""
+    assert me.data["date_of_birth"] is None
+    assert me.data["id_number"] == ""
+
+
+def test_personal_details_are_optional_and_can_be_saved(api):
+    empty = api.patch("/api/v1/auth/me", {}, format="json")
+    assert empty.status_code == 200
+    assert empty.data["date_of_birth"] is None
+
+    saved = api.patch(
+        "/api/v1/auth/me",
+        {
+            "given_name": "Alex",
+            "family_name": "Nkosi",
+            "date_of_birth": "1994-03-12",
+            "id_number": "9403125800084",
+            "phone": "",
+            "city": "Johannesburg",
+            "headline": "Midfielder",
+            "experience": "Club captain, 2020–2024",
+            "education": "",
+            "skills": "Passing",
+            "website": "",
+        },
+        format="json",
+    )
+    assert saved.status_code == 200
+    assert saved.data["given_name"] == "Alex"
+    assert saved.data["family_name"] == "Nkosi"
+    assert saved.data["date_of_birth"] == "1994-03-12"
+    assert saved.data["id_number"] == "9403125800084"
+    assert saved.data["phone"] == ""
+    assert saved.data["education"] == ""
+
+    cleared = api.patch(
+        "/api/v1/auth/me",
+        {"given_name": "", "family_name": "", "date_of_birth": "", "id_number": ""},
+        format="json",
+    )
+    assert cleared.status_code == 200
+    assert cleared.data["given_name"] == ""
+    assert cleared.data["date_of_birth"] is None
+    assert cleared.data["id_number"] == ""
+
+    future = api.patch("/api/v1/auth/me", {"date_of_birth": "2999-01-01"}, format="json")
+    assert future.status_code == 400
 
 
 def test_creating_a_competition_with_a_preset_seeds_scoring(api):
@@ -246,8 +294,9 @@ def test_owner_can_delete_a_league_that_already_has_points(api):
     assert api.get(f"/api/v1/competitions/{competition_id}").status_code == 404
 
 
-def test_a_team_is_created_from_multiple_profiles(api, user, other_user):
+def test_a_team_is_named_then_a_player_accepts_the_pick(api, user, other_user):
     from apps.accounts.models import User
+    from rest_framework.test import APIClient
 
     second = User.objects.create_user(
         email="second@example.com", password="s3cret-password", display_name="Second"
@@ -257,78 +306,183 @@ def test_a_team_is_created_from_multiple_profiles(api, user, other_user):
     competition_id = created.data["id"]
     participants_url = f"/api/v1/competitions/{competition_id}/participants"
 
-    too_small = api.post(
+    named = api.post(
         participants_url,
-        {"name": "Short", "kind": "team", "member_ids": [str(other_user.id)]},
+        {"name": "Short", "kind": "team"},
         format="json",
     )
-    assert too_small.status_code == 400
-
-    team = api.post(
-        participants_url,
-        {
-            "name": "Northside",
-            "kind": "team",
-            "member_ids": [str(other_user.id), str(second.id)],
-        },
-        format="json",
-    )
-    assert team.status_code == 201
-    assert team.data["kind"] == "team"
-    assert sorted(member["name"] for member in team.data["roster"]) == ["Member", "Second"]
+    assert named.status_code == 201
+    assert named.data["roster"] == []
 
     player = api.post(participants_url, {"name": "Solo", "kind": "individual"}, format="json")
     assert player.status_code == 400
 
-    with_owner = api.post(
-        participants_url,
-        {
-            "name": "Owners",
-            "kind": "team",
-            "member_ids": [str(user.id), str(other_user.id)],
-        },
-        format="json",
-    )
-    assert with_owner.status_code == 201
-    assert "Owner" in [member["name"] for member in with_owner.data["roster"]]
+    team = api.post(participants_url, {"name": "Northside", "kind": "team"}, format="json")
+    assert team.status_code == 201
+    picks_url = f"{participants_url}/{team.data['id']}/picks"
 
-    second_team = api.post(
-        participants_url,
-        {
-            "name": "Owners again",
-            "kind": "team",
-            "member_ids": [str(user.id), str(second.id)],
-        },
+    offered = api.post(picks_url, {"user": str(other_user.id)}, format="json")
+    assert offered.status_code == 201
+    assert offered.data["status"] == "pending"
+    assert team_roster(api, competition_id, team.data["id"]) == []
+
+    waiting = api.post(picks_url, {"user": str(second.id)}, format="json")
+    assert waiting.status_code == 201
+
+    member = APIClient()
+    member.force_authenticate(user=other_user)
+    accepted = member.post(
+        f"/api/v1/competitions/{competition_id}/picks/{offered.data['id']}/accept"
+    )
+    assert accepted.status_code == 200
+    assert "Member" in team_roster(api, competition_id, team.data["id"])
+
+    rival = api.post(participants_url, {"name": "Owners", "kind": "team"}, format="json")
+    assert rival.status_code == 201
+    taken = api.post(
+        f"{participants_url}/{rival.data['id']}/picks",
+        {"user": str(other_user.id)},
         format="json",
     )
-    assert second_team.status_code == 400
+    assert taken.status_code == 400
+
+    reserved = api.post(
+        f"{participants_url}/{rival.data['id']}/picks",
+        {"user": str(second.id)},
+        format="json",
+    )
+    assert reserved.status_code == 400
+
+    declined = APIClient()
+    declined.force_authenticate(user=second)
+    answer = declined.post(
+        f"/api/v1/competitions/{competition_id}/picks/{waiting.data['id']}/decline"
+    )
+    assert answer.status_code == 200
+    freed = api.post(
+        f"{participants_url}/{rival.data['id']}/picks",
+        {"user": str(second.id)},
+        format="json",
+    )
+    assert freed.status_code == 201
 
     admin = User.objects.create_user(
         email="coach@example.com", password="s3cret-password", display_name="Coach"
     )
     Membership.objects.create(competition_id=competition_id, user=admin, role=Role.ADMIN)
-    placed_by_owner = api.post(
-        f"/api/v1/competitions/{competition_id}/participants/{team.data['id']}/roster",
-        {"user": str(admin.id), "name": "Coach"},
-        format="json",
-    )
+    placed_by_owner = api.post(picks_url, {"user": str(admin.id)}, format="json")
     assert placed_by_owner.status_code == 400
-
-    from rest_framework.test import APIClient
 
     coach = APIClient()
     coach.force_authenticate(user=admin)
+    self_pick = coach.post(
+        f"{participants_url}/{rival.data['id']}/picks",
+        {"user": str(admin.id)},
+        format="json",
+    )
+    assert self_pick.status_code == 201
+    assert team_roster(api, competition_id, rival.data["id"]) == []
     joined = coach.post(
+        f"/api/v1/competitions/{competition_id}/picks/{self_pick.data['id']}/accept"
+    )
+    assert joined.status_code == 200
+    assert "Coach" in team_roster(api, competition_id, rival.data["id"])
+
+    mine = member.get(f"/api/v1/competitions/{competition_id}/picks")
+    assert mine.status_code == 200
+    assert mine.data == []
+
+
+def team_roster(api, competition_id, participant_id) -> list[str]:
+    detail = api.get(f"/api/v1/competitions/{competition_id}/participants/{participant_id}")
+    assert detail.status_code == 200
+    return [member["name"] for member in detail.data["roster"]]
+
+
+def test_teams_are_picked_or_drafted_with_fourteen_players(api, other_user):
+    from apps.accounts.models import User
+
+    created = api.post("/api/v1/competitions", {"name": "Squad league"}, format="json")
+    assert created.status_code == 201
+    competition_id = created.data["id"]
+    settings = {"participant_type": "team", "team_entry": "pick"}
+    chosen = api.patch(
+        f"/api/v1/competitions/{competition_id}",
+        {"settings_json": settings},
+        format="json",
+    )
+    assert chosen.status_code == 200
+
+    players = [other_user]
+    for index in range(13):
+        players.append(
+            User.objects.create_user(
+                email=f"squad{index}@example.com",
+                password="s3cret-password",
+                display_name=f"Squad {index}",
+            )
+        )
+    participants_url = f"/api/v1/competitions/{competition_id}/participants"
+    short = api.post(
         participants_url,
+        {"name": "Short", "kind": "team", "member_ids": [str(player.id) for player in players[:13]]},
+        format="json",
+    )
+    assert short.status_code == 400
+
+    full = api.post(
+        participants_url,
+        {"name": "Full", "kind": "team", "member_ids": [str(player.id) for player in players]},
+        format="json",
+    )
+    assert full.status_code == 201
+    assert full.data["roster"] == []
+    assert full.data["pending_count"] == 14
+
+    removed = api.delete(f"{participants_url}/{full.data['id']}")
+    assert removed.status_code == 204
+
+    settings["team_entry"] = "draft"
+    drafted = api.patch(
+        f"/api/v1/competitions/{competition_id}",
+        {"settings_json": settings},
+        format="json",
+    )
+    assert drafted.status_code == 200
+    alpha = api.post(participants_url, {"name": "Alpha", "kind": "team"}, format="json")
+    bravo = api.post(participants_url, {"name": "Bravo", "kind": "team"}, format="json")
+    assert alpha.status_code == 201
+    assert bravo.status_code == 201
+
+    order = []
+    for index in range(4):
+        player = User.objects.create_user(
+            email=f"draft{index}@example.com",
+            password="s3cret-password",
+            display_name=f"Draft {index}",
+        )
+        response = api.post(
+            f"/api/v1/competitions/{competition_id}/draft",
+            {"user": str(player.id)},
+            format="json",
+        )
+        assert response.status_code == 201
+        order.append(response.data["pick"]["team_name"])
+    assert order == ["Alpha", "Bravo", "Bravo", "Alpha"]
+
+    blocked = api.post(
+        f"/api/v1/competitions/{competition_id}/fixtures/generate",
         {
-            "name": "Coaches",
-            "kind": "team",
-            "member_ids": [str(admin.id), str(second.id)],
+            "method": "round_robin",
+            "starts_on": "2026-11-01",
+            "kickoff": "15:00",
+            "minutes_between_fixtures": 0,
+            "double_round": False,
+            "replace_existing": False,
         },
         format="json",
     )
-    assert joined.status_code == 201
-    assert "Coach" in [member["name"] for member in joined.data["roster"]]
+    assert blocked.status_code == 400
 
 
 def test_non_owner_cannot_delete_a_competition(competition, other_user):
@@ -570,6 +724,63 @@ def test_scorers_can_record_but_not_restructure(
     assert blocked.status_code == 403
 
 
+def test_an_admin_can_appoint_another_admin_and_a_referee_scores_one_game(
+    api, competition, other_user, rugby_scoring, participants
+):
+    from apps.accounts.models import User
+    from apps.fixtures.models import FixtureSide
+    from rest_framework.test import APIClient
+
+    appointed = api.post(
+        f"/api/v1/competitions/{competition.id}/members",
+        {"user_id": str(other_user.id), "role": "admin"},
+        format="json",
+    )
+    assert appointed.status_code == 201
+    assert appointed.data["role"] == "admin"
+
+    changed = api.patch(
+        f"/api/v1/competitions/{competition.id}/members/{appointed.data['id']}",
+        {"role": "member"},
+        format="json",
+    )
+    assert changed.status_code == 200
+    assert changed.data["role"] == "member"
+
+    fixture = Fixture.objects.create(competition=competition)
+    side = FixtureSide.objects.create(fixture=fixture, participant=participants[0], position=0)
+    FixtureSide.objects.create(fixture=fixture, participant=participants[1], position=1)
+    referee = User.objects.create_user(
+        email="referee@example.com", password="s3cret-password", display_name="Referee"
+    )
+    assigned = api.post(
+        f"/api/v1/competitions/{competition.id}/fixtures/{fixture.id}/referees",
+        {"user": str(referee.id)},
+        format="json",
+    )
+    assert assigned.status_code == 201
+    assert assigned.data["referees"][0]["email"] == "referee@example.com"
+
+    scorer = APIClient()
+    scorer.force_authenticate(user=other_user)
+    Membership.objects.filter(competition=competition, user=other_user).update(role=Role.SCORER)
+    denied = scorer.post(
+        f"/api/v1/fixtures/{fixture.id}/events",
+        {"side": str(side.id), "scoring_category": str(rugby_scoring["try"].id), "quantity": "1"},
+        format="json",
+    )
+    assert denied.status_code == 403
+
+    official = APIClient()
+    official.force_authenticate(user=referee)
+    recorded = official.post(
+        f"/api/v1/fixtures/{fixture.id}/events",
+        {"side": str(side.id), "scoring_category": str(rugby_scoring["try"].id), "quantity": "1"},
+        format="json",
+    )
+    assert recorded.status_code == 201
+
+
 def test_score_event_updates_the_fixture_score(api, competition, rugby_scoring, participants):
     from apps.fixtures.models import FixtureSide
 
@@ -593,6 +804,80 @@ def test_score_event_updates_the_fixture_score(api, competition, rugby_scoring, 
 
     assert scores[participants[0].name] == "5.00"
     assert len(detail.data["events"]) == 1
+
+
+def test_scoring_names_the_player_and_rates_the_game(
+    api, competition, rugby_scoring, other_user
+):
+    from apps.accounts.models import User
+    from apps.competitions.models import Participant, RosterMember
+    from apps.fixtures.models import FixtureSide
+
+    mate = User.objects.create_user(
+        email="mate@example.com", password="s3cret-password", display_name="Mate"
+    )
+    mate.bio = "Plays on the wing."
+    mate.save(update_fields=["bio"])
+    created = api.post(
+        f"/api/v1/competitions/{competition.id}/participants",
+        {"name": "Wings", "kind": "team"},
+        format="json",
+    )
+    assert created.status_code == 201
+    mate_row = RosterMember.objects.create(
+        participant_id=created.data["id"], user=mate, name="Mate"
+    )
+    RosterMember.objects.create(
+        participant_id=created.data["id"], user=other_user, name="Member"
+    )
+    roster_id = str(mate_row.id)
+    opponent = Participant.objects.create(competition=competition, name="The Rest")
+    fixture = Fixture.objects.create(competition=competition, label="Week 1")
+    side = FixtureSide.objects.create(
+        fixture=fixture, participant_id=created.data["id"], position=0
+    )
+    FixtureSide.objects.create(fixture=fixture, participant=opponent, position=1)
+
+    missing = api.post(
+        f"/api/v1/fixtures/{fixture.id}/events",
+        {
+            "side": str(side.id),
+            "scoring_category": str(rugby_scoring["try"].id),
+            "quantity": "1",
+        },
+        format="json",
+    )
+    assert missing.status_code == 400
+
+    recorded = api.post(
+        f"/api/v1/fixtures/{fixture.id}/events",
+        {
+            "side": str(side.id),
+            "scoring_category": str(rugby_scoring["try"].id),
+            "quantity": "1",
+            "minute": 23,
+            "player": roster_id,
+            "rating": "7.5",
+        },
+        format="json",
+    )
+    assert recorded.status_code == 201
+    assert recorded.data["player_name"] == "Mate"
+    assert recorded.data["minute"] == 23
+
+    detail = api.get(f"/api/v1/competitions/{competition.id}/fixtures/{fixture.id}")
+    assert detail.data["ratings"][0]["player_name"] == "Mate"
+    assert detail.data["ratings"][0]["rating"] == "7.5"
+    assert detail.data["events"][0]["player_name"] == "Mate"
+
+    card = api.get(f"/api/v1/competitions/{competition.id}/players/{mate.id}")
+    assert card.status_code == 200
+    assert card.data["profile"]["bio"] == "Plays on the wing."
+    assert card.data["team"]["name"] == "Wings"
+    assert card.data["timeline"][0]["minute"] == 23
+    assert card.data["timeline"][0]["category"] == "Try"
+    assert card.data["ratings"][0]["rating"] == "7.5"
+    assert card.data["totals"][0]["category"] == "Try"
 
 
 def test_an_event_cannot_reference_another_competitions_category(

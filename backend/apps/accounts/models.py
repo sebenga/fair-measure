@@ -43,6 +43,23 @@ class User(UUIDModel, AbstractBaseUser, PermissionsMixin):
     avatar_url = models.URLField(blank=True)
     bio = models.TextField(blank=True)
 
+    # Optional personal details. A profile is usable with every one of these empty.
+    given_name = models.CharField(_("name"), max_length=80, blank=True)
+    family_name = models.CharField(_("surname"), max_length=80, blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    id_number = models.CharField(_("ID number"), max_length=40, blank=True)
+    phone = models.CharField(max_length=40, blank=True)
+    city = models.CharField(max_length=80, blank=True)
+    country = models.CharField(max_length=80, blank=True)
+    headline = models.CharField(
+        max_length=160, blank=True, help_text=_("A role or one-line title, as on a CV.")
+    )
+    website = models.URLField(blank=True)
+    experience = models.TextField(blank=True)
+    education = models.TextField(blank=True)
+    skills = models.TextField(blank=True)
+    languages = models.TextField(blank=True)
+
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     email_verified = models.BooleanField(default=False)
@@ -62,10 +79,13 @@ class User(UUIDModel, AbstractBaseUser, PermissionsMixin):
         return self.display_name or self.email
 
     def get_full_name(self) -> str:
-        return self.display_name or self.email
+        legal = " ".join(part for part in (self.given_name, self.family_name) if part).strip()
+        return legal or self.display_name or self.email
 
     def get_short_name(self) -> str:
-        return self.display_name.split(" ")[0] if self.display_name else self.email
+        return self.given_name or (
+            self.display_name.split(" ")[0] if self.display_name else self.email
+        )
 
 
 class SocialAccount(UUIDModel):

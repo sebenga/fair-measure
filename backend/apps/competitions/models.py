@@ -335,6 +335,46 @@ COMPETITION_FORMAT_CHOICES = Competition.Format.choices
 STAGE_KIND_CHOICES = Stage.Kind.choices
 
 
+class TeamPick(BaseModel):
+    """A profile invited onto a team. They join the roster only after they accept."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Waiting for the player")
+        ACCEPTED = "accepted", _("Accepted")
+        DECLINED = "declined", _("Declined")
+
+    participant = models.ForeignKey(
+        Participant, on_delete=models.CASCADE, related_name="picks"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="team_picks"
+    )
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="team_picks_sent",
+    )
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.PENDING, db_index=True
+    )
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["participant", "user"],
+                condition=models.Q(status="pending"),
+                name="unique_pending_pick_per_team",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} → {self.participant_id} ({self.status})"
+
+
 class RosterMember(BaseModel):
     """An individual within a participant, so events can name a scorer."""
 

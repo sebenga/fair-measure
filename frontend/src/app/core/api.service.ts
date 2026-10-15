@@ -1,6 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { EMPTY, Observable, expand, reduce } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import type {
@@ -18,11 +18,14 @@ import type {
   ProfileSummary,
   PointsPolicy,
   RosterMember,
+  TeamPick,
   Post,
   Preset,
   ReactionKind,
   ReactionResult,
   Rule,
+  PlayerLeagueProfile,
+  DraftBoard,
   ScoreEvent,
   ScoreAssistEntry,
   ScoringCategory,
@@ -193,6 +196,48 @@ export class ApiService {
     );
   }
 
+  listTeamPicks(competitionId: string, participantId: string): Observable<TeamPick[]> {
+    return this.http.get<TeamPick[]>(
+      `${this.base}/competitions/${competitionId}/participants/${participantId}/picks`,
+    );
+  }
+
+  offerTeamPick(competitionId: string, participantId: string, userId: string) {
+    return this.http.post<TeamPick>(
+      `${this.base}/competitions/${competitionId}/participants/${participantId}/picks`,
+      { user: userId },
+    );
+  }
+
+  myTeamPicks(competitionId: string): Observable<TeamPick[]> {
+    return this.http.get<TeamPick[]>(`${this.base}/competitions/${competitionId}/picks`);
+  }
+
+  acceptTeamPick(competitionId: string, pickId: string) {
+    return this.http.post<TeamPick>(
+      `${this.base}/competitions/${competitionId}/picks/${pickId}/accept`,
+      {},
+    );
+  }
+
+  declineTeamPick(competitionId: string, pickId: string) {
+    return this.http.post<TeamPick>(
+      `${this.base}/competitions/${competitionId}/picks/${pickId}/decline`,
+      {},
+    );
+  }
+
+  getDraft(competitionId: string): Observable<DraftBoard> {
+    return this.http.get<DraftBoard>(`${this.base}/competitions/${competitionId}/draft`);
+  }
+
+  draftPlayer(competitionId: string, userId: string) {
+    return this.http.post<DraftBoard>(
+      `${this.base}/competitions/${competitionId}/draft`,
+      { user: userId },
+    );
+  }
+
   listMembers(competitionId: string): Observable<Paginated<Membership>> {
     return this.http.get<Paginated<Membership>>(
       `${this.base}/competitions/${competitionId}/members`,
@@ -204,10 +249,51 @@ export class ApiService {
     return this.http.post<Membership>(`${this.base}/competitions/${competitionId}/members`, body);
   }
 
+  updateMember(competitionId: string, membershipId: string, body: { role: string }) {
+    return this.http.patch<Membership>(
+      `${this.base}/competitions/${competitionId}/members/${membershipId}`,
+      body,
+    );
+  }
+
+  assignReferee(competitionId: string, fixtureId: string, userId: string) {
+    return this.http.post<FixtureDetail>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/referees`,
+      { user: userId },
+    );
+  }
+
+  removeReferee(competitionId: string, fixtureId: string, userId: string) {
+    return this.http.delete<FixtureDetail>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/referees`,
+      { params: toParams({ user: userId }) },
+    );
+  }
+
+  getPlayerProfile(competitionId: string, userId: string): Observable<PlayerLeagueProfile> {
+    return this.http.get<PlayerLeagueProfile>(
+      `${this.base}/competitions/${competitionId}/players/${userId}`,
+    );
+  }
+
   listProfiles(): Observable<Paginated<ProfileSummary>> {
-    return this.http.get<Paginated<ProfileSummary>>(`${this.base}/auth/profiles`, {
+    const first = this.http.get<Paginated<ProfileSummary>>(`${this.base}/auth/profiles`, {
       params: toParams({ page_size: 100 }),
     });
+    return first.pipe(
+      expand((page) =>
+        page.next ? this.http.get<Paginated<ProfileSummary>>(page.next) : EMPTY,
+      ),
+      reduce(
+        (all, page) => ({
+          count: page.count,
+          next: null,
+          previous: null,
+          results: all.results.concat(page.results),
+        }),
+        { count: 0, next: null, previous: null, results: [] as ProfileSummary[] },
+      ),
+    );
   }
 
   // --- Fixtures -------------------------------------------------------------

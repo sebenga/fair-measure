@@ -50,6 +50,11 @@ export const routes: Routes = [
           import('./pages/competitions/team-profile.page').then((m) => m.TeamProfilePage),
       },
       {
+        path: 'competitions/:id/players/:userId',
+        loadComponent: () =>
+          import('./pages/competitions/player-profile.page').then((m) => m.PlayerProfilePage),
+      },
+      {
         path: 'competitions/:competitionId/fixtures/:fixtureId',
         loadComponent: () =>
           import('./pages/fixtures/fixture-detail.page').then((m) => m.FixtureDetailPage),
@@ -88,6 +93,10 @@ export const routes: Routes = [
   {
     path: 'competitions/:id/teams/:participantId',
     redirectTo: 'tabs/competitions/:id/teams/:participantId',
+  },
+  {
+    path: 'competitions/:id/players/:userId',
+    redirectTo: 'tabs/competitions/:id/players/:userId',
   },
   {
     path: 'competitions/:competitionId/fixtures/:fixtureId',

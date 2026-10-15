@@ -4,6 +4,34 @@
   padding: 64px 0;
 }
 
+.entry-modes {
+  display: flex;
+  gap: 8px;
+  margin: 0 16px 12px;
+
+  button {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--ion-color-step-200, #d7d8da);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+
+    &.selected {
+      background: var(--ion-color-primary);
+      color: var(--ion-color-primary-contrast, #fff);
+      border-color: transparent;
+    }
+  }
+}
+
+.profiles {
+  max-height: 320px;
+  overflow: auto;
+}
+
 .hint {
   margin: 0 20px 12px;
   font-size: 0.82rem;
@@ -43,11 +71,42 @@
 
   .profiles {
     margin: 0;
+    max-height: 320px;
+    overflow: auto;
     background: transparent;
 
     ion-item {
       --background: transparent;
     }
+
+    .profile-open {
+      display: grid;
+      gap: 2px;
+      width: 100%;
+      margin: 0;
+      padding: 10px 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+
+      strong {
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      span {
+        color: var(--ion-color-medium);
+        font-size: 0.85rem;
+      }
+    }
+  }
+
+  ion-searchbar {
+    padding: 0;
+    --background: transparent;
   }
 }
 

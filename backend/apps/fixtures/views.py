@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -12,7 +13,8 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.competitions.models import Competition, Stage
+from apps.competitions.models import Competition, Membership, Stage
+from apps.competitions.serializers import MIN_TEAM_PLAYERS, team_entry_mode
 from apps.competitions.views import visible_competitions
 from apps.core.bus import (
     Queues,
@@ -23,7 +25,7 @@ from apps.core.bus import (
 )
 from apps.core.permissions import Role, has_at_least
 
-from .models import Fixture, ScoreEvent
+from .models import Fixture, FixtureReferee, PlayerMatchRating, ScoreEvent
 from .serializers import (
     BulkScoreEventSerializer,
     FixtureDetailSerializer,
@@ -34,6 +36,22 @@ from .serializers import (
     ScoreAssistSerializer,
     ScoreEventSerializer,
 )
+
+
+def user_can_score_fixture(fixture: Fixture, user) -> bool:
+    """Owners and admins can score any game. A named referee scores that game.
+
+    Until a game has a referee, a league scorer can still record it.
+    """
+    if has_at_least(fixture.competition, user, Role.ADMIN):
+        return True
+    if fixture.referees.filter(user=user).exists():
+        return True
+    if fixture.referees.exists():
+        return False
+    return has_at_least(fixture.competition, user, Role.SCORER)
+
+
 from .services import ScheduleOptions, award_criterion, generate_knockout, generate_round_robin, record_result
 
 
@@ -106,7 +124,10 @@ class FixtureViewSet(viewsets.ModelViewSet):
             )
         if self.action == "retrieve":
             queryset = queryset.prefetch_related(
-                "events__scoring_category", "events__player"
+                "events__scoring_category",
+                "events__player",
+                "ratings__player",
+                "referees__user",
             )
         return queryset.distinct()
 
@@ -118,8 +139,8 @@ class FixtureViewSet(viewsets.ModelViewSet):
         return FixtureListSerializer
 
     def _assert_can_score(self) -> None:
-        if not has_at_least(self.get_competition(), self.request.user, Role.SCORER):
-            raise PermissionDenied("You need scorer access to change fixtures here.")
+        if not user_can_score_fixture(self.get_object(), self.request.user):
+            raise PermissionDenied("You need to be an admin or this game's referee to score it.")
 
     def _assert_is_admin(self) -> None:
         if not has_at_least(self.get_competition(), self.request.user, Role.ADMIN):
@@ -188,6 +209,18 @@ class FixtureViewSet(viewsets.ModelViewSet):
 
         if len(participants) < 2:
             raise ValidationError("Add at least two participants before generating fixtures.")
+
+        if team_entry_mode(competition) in {"pick", "draft"}:
+            short = [
+                participant.name
+                for participant in participants
+                if participant.roster.filter(is_active=True).count() < MIN_TEAM_PLAYERS
+            ]
+            if short:
+                names = ", ".join(short)
+                raise ValidationError(
+                    f"Each team needs {MIN_TEAM_PLAYERS} accepted players before a schedule. Still short: {names}."
+                )
 
         stage = None
         if data.get("stage_id"):
@@ -293,8 +326,8 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
         )
 
     def _assert_can_score(self) -> None:
-        if not has_at_least(self.get_fixture().competition, self.request.user, Role.SCORER):
-            raise PermissionDenied("You need scorer access to record results.")
+        if not user_can_score_fixture(self.get_fixture(), self.request.user):
+            raise PermissionDenied("You need to be an admin or this game's referee to score it.")
 
     def _after_change(self, event_name: str, extra: dict | None = None) -> None:
         fixture = self.get_fixture()
@@ -351,13 +384,24 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
 
+        pending_ratings = []
+        rows = []
+        for item in serializer.validated_data["events"]:
+            rating = item.pop("rating", None)
+            event = ScoreEvent(fixture=fixture, recorded_by=request.user, **item)
+            rows.append(event)
+            pending_ratings.append((event, rating))
+
         with transaction.atomic():
-            created = ScoreEvent.objects.bulk_create(
-                [
-                    ScoreEvent(fixture=fixture, recorded_by=request.user, **item)
-                    for item in serializer.validated_data["events"]
-                ]
-            )
+            created = ScoreEvent.objects.bulk_create(rows)
+            for event, rating in pending_ratings:
+                if rating is None or event.player_id is None:
+                    continue
+                PlayerMatchRating.objects.update_or_create(
+                    fixture=fixture,
+                    player_id=event.player_id,
+                    defaults={"rating": rating},
+                )
             fixture.recalculate_scores()
 
         self._after_change("score.recorded", {"count": len(created)})
@@ -453,3 +497,45 @@ class ScoreAssistView(APIView):
             raise ValidationError(str(exc)) from exc
         self._publish_table(competition)
         return Response({"id": str(fixture.id), "label": fixture.label}, status=status.HTTP_201_CREATED)
+
+
+class FixtureRefereeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _fixture(self, request: Request, competition_pk, fixture_pk) -> Fixture:
+        return get_object_or_404(
+            Fixture.objects.select_related("competition"),
+            pk=fixture_pk,
+            competition_id=competition_pk,
+            competition__in=visible_competitions(request.user),
+        )
+
+    def post(self, request: Request, competition_pk, fixture_pk):
+        fixture = self._fixture(request, competition_pk, fixture_pk)
+        if not has_at_least(fixture.competition, request.user, Role.ADMIN):
+            raise PermissionDenied("Only an admin can choose the referee.")
+        user_id = request.data.get("user")
+        if not user_id:
+            raise ValidationError({"user": "Choose a profile."})
+        user = get_object_or_404(get_user_model(), pk=user_id)
+        if not Membership.objects.filter(competition=fixture.competition, user=user).exists():
+            Membership.objects.create(
+                competition=fixture.competition,
+                user=user,
+                role=Role.MEMBER,
+                invited_by=request.user,
+            )
+        FixtureReferee.objects.get_or_create(fixture=fixture, user=user)
+        fixture = Fixture.objects.prefetch_related("referees__user").get(pk=fixture.pk)
+        return Response(FixtureDetailSerializer(fixture).data, status=status.HTTP_201_CREATED)
+
+    def delete(self, request: Request, competition_pk, fixture_pk):
+        fixture = self._fixture(request, competition_pk, fixture_pk)
+        if not has_at_least(fixture.competition, request.user, Role.ADMIN):
+            raise PermissionDenied("Only an admin can change the referee.")
+        user_id = request.query_params.get("user")
+        if not user_id:
+            raise ValidationError({"user": "Choose a referee to remove."})
+        FixtureReferee.objects.filter(fixture=fixture, user_id=user_id).delete()
+        fixture = Fixture.objects.prefetch_related("referees__user").get(pk=fixture.pk)
+        return Response(FixtureDetailSerializer(fixture).data)
