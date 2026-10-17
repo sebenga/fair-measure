@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TypedDict
 
+from .catalog import OWN_GOAL, RED_CARD, YELLOW_CARD
+
 
 class Preset(TypedDict, total=False):
     label: str
@@ -79,7 +81,9 @@ SOCCER: Preset = {
     "label": "Soccer",
     "icon": "football-outline",
     "description": (
-        "Each goal is worth 1. A league match is two halves of 45 minutes. "
+        "Each goal is worth 1. An own goal scores 1 for the other side. "
+        "Yellow and red cards are recorded without points. "
+        "A league match is two halves of 45 minutes. "
         "A draw shares the points. In a knockout, a draw is played out with "
         "extra time and then a penalty shoot-out. The table ranks by points, "
         "then goal difference, then goals scored, then the head-to-head result."
@@ -92,6 +96,9 @@ SOCCER: Preset = {
     "formats_allowed": ["league", "knockout", "groups_knockout", "round_robin"],
     "score_types": [
         {"key": "goal", "label": "Goal", "value": 1, "affects_score": True},
+        OWN_GOAL,
+        YELLOW_CARD,
+        RED_CARD,
     ],
     "match_structure": [
         {"unit": "half", "count": 2, "minutes": 45, "affects_total": True},

@@ -614,11 +614,17 @@ class PlayerLeagueProfileView(APIView):
         ratings = PlayerMatchRating.objects.filter(
             fixture__competition=competition, player__user=person
         ).select_related("fixture")
-        totals: dict[str, dict[str, Decimal]] = {}
+        totals: dict[str, dict] = {}
         for event in events:
+            code = event.scoring_category.code
             bucket = totals.setdefault(
-                event.scoring_category.name,
-                {"count": Decimal("0"), "points": Decimal("0")},
+                code,
+                {
+                    "category": event.scoring_category.name,
+                    "count": Decimal("0"),
+                    "points": Decimal("0"),
+                    "affects_score": event.scoring_category.affects_score,
+                },
             )
             bucket["count"] += event.quantity
             bucket["points"] += event.points
@@ -644,11 +650,13 @@ class PlayerLeagueProfileView(APIView):
                 ),
                 "totals": [
                     {
-                        "category": name,
+                        "category": bucket["category"],
+                        "code": code,
                         "count": format(bucket["count"], "f"),
                         "points": format(bucket["points"], "f"),
+                        "affects_score": bucket["affects_score"],
                     }
-                    for name, bucket in totals.items()
+                    for code, bucket in totals.items()
                 ],
                 "timeline": [
                     {

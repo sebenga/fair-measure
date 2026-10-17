@@ -38,6 +38,42 @@ class FixtureSideSerializer(serializers.ModelSerializer):
         read_only_fields = ["score", "outcome"]
 
 
+_PROFILE_EVENT_CODES = {
+    "goal",
+    "own-goal",
+    "yellow-card",
+    "red-card",
+    "touchdown",
+    "extra-point",
+    "two-point",
+    "safety",
+    "defensive-conversion",
+    "home-run",
+}
+_PROFILE_EVENT_NAMES = {
+    "goal",
+    "own goal",
+    "yellow card",
+    "red card",
+    "touchdown",
+    "extra point",
+    "two-point conversion",
+    "safety",
+    "returned conversion",
+    "home run",
+}
+
+
+def _event_needs_profile(category) -> bool:
+    """Goals and cards belong to a person, so the event has to name their profile."""
+
+    if category is None:
+        return False
+    code = (getattr(category, "code", "") or "").strip().lower()
+    name = (getattr(category, "name", "") or "").strip().lower()
+    return code in _PROFILE_EVENT_CODES or name in _PROFILE_EVENT_NAMES
+
+
 class ScoreEventSerializer(serializers.ModelSerializer):
     scoring_category_name = serializers.CharField(
         source="scoring_category.name", read_only=True
@@ -105,13 +141,13 @@ class ScoreEventSerializer(serializers.ModelSerializer):
             )
 
         player = attrs.get("player", getattr(self.instance, "player", None))
-        if (
-            self.instance is None
-            and player is None
-            and side is not None
-            and side.participant.roster.filter(is_active=True).exists()
+        roster_exists = (
+            side is not None and side.participant.roster.filter(is_active=True).exists()
+        )
+        if self.instance is None and player is None and (
+            _event_needs_profile(category) or roster_exists
         ):
-            raise serializers.ValidationError({"player": "Choose the profile who scored."})
+            raise serializers.ValidationError({"player": "Choose the profile this applies to."})
         if player is not None and side is not None and player.participant_id != side.participant_id:
             raise serializers.ValidationError(
                 {"player": "That player is not on this side's roster."}

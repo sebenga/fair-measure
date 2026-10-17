@@ -109,7 +109,7 @@ def test_creating_a_competition_with_a_preset_seeds_scoring(api):
     detail = api.get(f"/api/v1/competitions/{response.data['id']}")
     codes = {item["code"] for item in detail.data["scoring_categories"]}
 
-    assert codes == {"goal"}
+    assert codes == {"goal", "own-goal", "yellow-card", "red-card"}
     by_code = {item["code"]: item for item in detail.data["scoring_categories"]}
     assert by_code["goal"]["points"] == "1.00"
     assert detail.data["points_policy"]["win_points"] == "3.00"
@@ -878,6 +878,73 @@ def test_scoring_names_the_player_and_rates_the_game(
     assert card.data["timeline"][0]["category"] == "Try"
     assert card.data["ratings"][0]["rating"] == "7.5"
     assert card.data["totals"][0]["category"] == "Try"
+
+
+def test_goals_and_cards_belong_to_a_profile_on_the_match_and_the_player(api):
+    from apps.accounts.models import User
+    from apps.competitions.models import Participant, RosterMember
+    from apps.fixtures.models import Fixture, FixtureSide
+
+    created = api.post(
+        "/api/v1/competitions",
+        {"name": "Profile events", "preset": "soccer"},
+        format="json",
+    )
+    assert created.status_code == 201
+    competition_id = created.data["id"]
+    categories = {
+        item["code"]: item["id"]
+        for item in api.get(f"/api/v1/competitions/{competition_id}").data["scoring_categories"]
+    }
+    player = User.objects.create_user(
+        email="striker@example.com", password="s3cret-password", display_name="Striker"
+    )
+    home = Participant.objects.create(
+        competition_id=competition_id, name="Home", kind="team"
+    )
+    away = Participant.objects.create(
+        competition_id=competition_id, name="Away", kind="team"
+    )
+    roster = RosterMember.objects.create(participant=home, user=player, name="Striker")
+    fixture = Fixture.objects.create(competition_id=competition_id, label="Match stats")
+    home_side = FixtureSide.objects.create(fixture=fixture, participant=home, position=0)
+    FixtureSide.objects.create(fixture=fixture, participant=away, position=1)
+
+    missing = api.post(
+        f"/api/v1/fixtures/{fixture.id}/events",
+        {"side": str(home_side.id), "scoring_category": categories["yellow-card"], "quantity": "1"},
+        format="json",
+    )
+    assert missing.status_code == 400
+
+    for code in ("goal", "own-goal", "yellow-card", "red-card"):
+        recorded = api.post(
+            f"/api/v1/fixtures/{fixture.id}/events",
+            {
+                "side": str(home_side.id),
+                "scoring_category": categories[code],
+                "quantity": "1",
+                "player": str(roster.id),
+            },
+            format="json",
+        )
+        assert recorded.status_code == 201, recorded.data
+        assert str(recorded.data["player_user_id"]) == str(player.id)
+
+    detail = api.get(f"/api/v1/competitions/{competition_id}/fixtures/{fixture.id}")
+    names = {event["scoring_category_name"] for event in detail.data["events"]}
+    assert names == {"Goal", "Own goal", "Yellow card", "Red card"}
+    assert all(event["player_name"] == "Striker" for event in detail.data["events"])
+    scores = {item["participant"]["name"]: item["score"] for item in detail.data["sides"]}
+    assert scores["Home"] == "1.00"
+    assert scores["Away"] == "1.00"
+
+    card = api.get(f"/api/v1/competitions/{competition_id}/players/{player.id}")
+    totals = {item["code"]: item for item in card.data["totals"]}
+    assert set(totals) == {"goal", "own-goal", "yellow-card", "red-card"}
+    assert totals["goal"]["count"] == "1.00"
+    assert totals["yellow-card"]["affects_score"] is False
+    assert card.data["timeline"][0]["category"] in names
 
 
 def test_an_event_cannot_reference_another_competitions_category(

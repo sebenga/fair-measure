@@ -93,7 +93,9 @@ import type { PlayerLeagueProfile } from '../../core/models';
               <div class="stat">
                 <span>{{ total.category }}</span>
                 <strong>{{ trim(total.count) }}</strong>
-                <em>{{ signed(total.points) }}</em>
+                @if (showPoints(total)) {
+                  <em>{{ signed(total.points) }}</em>
+                }
               </div>
             }
           </div>
@@ -210,6 +212,13 @@ export class PlayerProfilePage implements OnInit {
     const numeric = Number(value);
     if (Number.isNaN(numeric)) return value;
     return String(numeric);
+  }
+
+  showPoints(total: PlayerLeagueProfile['totals'][number]): boolean {
+    if (total.affects_score === false) return false;
+    if ((total.code || '').toLowerCase() === 'own-goal') return false;
+    const points = Number(total.points);
+    return Number.isFinite(points) && points !== 0;
   }
 
   signed(value: string): string {

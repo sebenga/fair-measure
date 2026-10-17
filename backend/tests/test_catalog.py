@@ -122,6 +122,20 @@ def _order(competition):
     return [row.name for row in compute_standings(competition)]
 
 
+def test_soccer_own_goal_counts_for_the_other_side(api):
+    competition, p = _open(api, "soccer", ["Home", "Away"])
+    fixture = _play(
+        competition,
+        [
+            (p["Home"], [("goal", 1, 0), ("own-goal", 1, 0), ("yellow-card", 1, 0), ("red-card", 1, 0)]),
+            (p["Away"], []),
+        ],
+    )
+    assert _score(fixture, "Home") == Decimal("1")
+    assert _score(fixture, "Away") == Decimal("1")
+    assert _outcome(fixture, "Home") == "draw"
+
+
 def test_rugby_union_tries_and_kicking(api):
     competition, p = _open(api, "rugby_union", ["Ada", "Bo", "Cy", "Dee"])
     league = _play(
@@ -179,6 +193,71 @@ def test_rugby_league_points_for_and_golden_point(api):
     )
     assert _score(decided, "Home") == Decimal("7")
     assert _score(decided, "Away") == Decimal("6")
+    assert _outcome(decided, "Home") == "win"
+
+
+def test_american_football_scores_a_tie_as_half_a_win(api):
+    competition, p = _open(api, "american_football", ["Ada", "Bo", "Cy", "Dee"])
+    played = _play(
+        competition,
+        [
+            (p["Ada"], [("touchdown", 1, 0), ("extra-point", 1, 0), ("penalty", 1, 0)]),
+            (p["Cy"], [("field-goal", 1, 1), ("safety", 1, 2)]),
+        ],
+    )
+    assert _score(played, "Ada") == Decimal("7")
+    assert _score(played, "Cy") == Decimal("5")
+    assert _outcome(played, "Ada") == "win"
+    _play(
+        competition,
+        [(p["Bo"], [("touchdown", 1, 0)]), (p["Dee"], [("touchdown", 1, 1)])],
+    )
+    rows = _table(competition)
+    assert rows["Ada"].points == Decimal("2")
+    assert rows["Bo"].points == rows["Dee"].points == Decimal("1")
+    assert _order(competition).index("Ada") < _order(competition).index("Bo")
+
+    knockout, k = _open(api, "american_football", ["Home", "Away"], fmt="knockout")
+    decided = _play(
+        knockout,
+        [
+            (k["Home"], [("touchdown", 1, 0), ("field-goal", 1, 4)]),
+            (k["Away"], [("touchdown", 1, 1)]),
+        ],
+    )
+    assert _score(decided, "Home") == Decimal("9")
+    assert _score(decided, "Away") == Decimal("6")
+    assert _outcome(decided, "Home") == "win"
+
+
+def test_baseball_runs_and_extra_innings(api):
+    competition, p = _open(api, "baseball", ["Ada", "Bo", "Cy", "Dee"])
+    played = _play(
+        competition,
+        [
+            (p["Ada"], [("run", 2, 0), ("home-run", 1, 3), ("hit", 2, 0), ("strikeout", 1, 1)]),
+            (p["Cy"], [("run", 1, 8)]),
+        ],
+    )
+    assert _score(played, "Ada") == Decimal("3")
+    assert _score(played, "Cy") == Decimal("1")
+    assert _outcome(played, "Ada") == "win"
+    _play(competition, [(p["Bo"], [("run", 6, 0)]), (p["Dee"], [("run", 2, 1)])])
+    rows = _table(competition)
+    assert rows["Ada"].points == rows["Bo"].points == Decimal("1")
+    assert rows["Bo"].score_difference > rows["Ada"].score_difference
+    assert _order(competition).index("Bo") < _order(competition).index("Ada")
+
+    extra, sides = _open(api, "baseball", ["Home", "Away"])
+    decided = _play(
+        extra,
+        [
+            (sides["Home"], [("run", 1, 0), ("run", 1, 9)]),
+            (sides["Away"], [("run", 1, 0)]),
+        ],
+    )
+    assert _score(decided, "Home") == Decimal("2")
+    assert _score(decided, "Away") == Decimal("1")
     assert _outcome(decided, "Home") == "win"
 
 

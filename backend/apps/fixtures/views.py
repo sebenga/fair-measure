@@ -350,6 +350,11 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
         fixture = self.get_fixture()
         with transaction.atomic():
             serializer.save(fixture=fixture, recorded_by=self.request.user)
+            if fixture.status == Fixture.Status.SCHEDULED:
+                fixture.status = Fixture.Status.LIVE
+                if fixture.started_at is None:
+                    fixture.started_at = timezone.now()
+                fixture.save(update_fields=["status", "started_at", "updated_at"])
             fixture.recalculate_scores()
         self._after_change("score.recorded", {"event_id": str(serializer.instance.id)})
 

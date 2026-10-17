@@ -103,11 +103,13 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
                 @if (inOvertime()) {
                   <span class="chip">Overtime</span>
                 }
-                <button type="button" (click)="toggleClock()">
-                  {{ clockRunning() ? 'Pause' : 'Start' }}
-                </button>
-                @if (showEndGame()) {
-                  <button type="button" class="end-game" (click)="endGame()">End game</button>
+                @if (canScore()) {
+                  <button type="button" (click)="startOrPause()">
+                    {{ clockButtonLabel() }}
+                  </button>
+                  @if (canEndGame()) {
+                    <button type="button" class="end-game" (click)="endGame()">End game</button>
+                  }
                 }
               </div>
             }
@@ -125,6 +127,30 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
             }
           </div>
         </section>
+
+        @if (matchStats().length) {
+          <h3 class="fm-section-title">Match stats</h3>
+          <div class="fm-card match-stats">
+            @for (row of matchStats(); track row.key) {
+              <button
+                type="button"
+                class="stat"
+                [disabled]="!row.userId"
+                (click)="openPlayer(row.userId)"
+              >
+                <span class="who">
+                  <strong>{{ row.name }}</strong>
+                  <em>{{ row.team }}</em>
+                </span>
+                <span class="figures">
+                  @for (figure of row.figures; track figure.label) {
+                    <span>{{ figure.count }} {{ figure.label }}</span>
+                  }
+                </span>
+              </button>
+            }
+          </div>
+        }
 
         @if (canManage()) {
           <h3 class="fm-section-title">Referee</h3>
@@ -179,9 +205,10 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
               <div class="fm-card scorer">
                 <h4>{{ side.participant.short_name || side.participant.name }}</h4>
                 @if (rosterFor(side).length) {
+                  <p class="score-hint">Choose the profile. It is added to this match and to that profile.</p>
                   <div class="who">
                     <label>
-                      Who scored
+                      Who
                       <select
                         [value]="scorerFor(side.id)"
                         (change)="setScorer(side.id, $any($event.target).value)"
@@ -211,11 +238,13 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
                     <button
                       type="button"
                       class="chip-button"
-                      [disabled]="saving() || needsScorer(side)"
+                      [disabled]="saving()"
                       (click)="record(side, category)"
                     >
                       <span class="label">{{ category.name }}</span>
-                      @if (category.affects_score) {
+                      @if (countsForOtherSide(category)) {
+                        <span class="points">other side</span>
+                      } @else if (category.affects_score) {
                         <span class="points">+{{ trim(category.points) }}</span>
                       }
                     </button>
@@ -376,7 +405,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     }
   }
 
-  /** Shown once this fixture has a kickoff, until the match is finished. */
+  /** Shown while a scorer can run the match, or once a kickoff / time limit is set. */
   showClock(): boolean {
     const fixture = this.fixture();
     if (!fixture) return false;
@@ -388,6 +417,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     ) {
       return false;
     }
+    if (this.canScore()) return true;
     return !!fixture.scheduled_at || this.timeLimits() !== null;
   }
 
@@ -407,20 +437,25 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     return elapsed >= limits.regulation * 60_000 && elapsed < (limits.regulation + limits.overtime) * 60_000;
   }
 
-  showEndGame(): boolean {
-    this.now();
-    const limits = this.timeLimits();
+  canEndGame(): boolean {
     const fixture = this.fixture();
-    if (!limits || !fixture || !this.canScore()) return false;
-    return this.displayedElapsed() >= (limits.regulation + limits.overtime) * 60_000;
+    if (!fixture || !this.canScore()) return false;
+    return fixture.status === 'live' || this.displayedElapsed() > 0 || this.clockRunning();
   }
 
   endGame(): void {
+    this.pauseClock();
     this.setStatus('completed');
   }
 
   clockRunning(): boolean {
     return this.clock().running;
+  }
+
+  clockButtonLabel(): string {
+    if (this.clockRunning()) return 'Pause';
+    if (this.fixture()?.status === 'live' || this.displayedElapsed() > 0) return 'Resume';
+    return 'Start';
   }
 
   clockLabel(): string {
@@ -433,11 +468,34 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     return Math.floor(this.displayedElapsed() / 60_000);
   }
 
-  toggleClock(): void {
+  startOrPause(): void {
+    if (this.clockRunning()) {
+      this.pauseClock();
+      return;
+    }
+    this.startClock();
+  }
+
+  private startClock(): void {
     const clock = this.clock();
-    const next: MatchClock = clock.running
-      ? { running: false, elapsedMs: this.displayedElapsed(), runStartedAt: null }
-      : { running: true, elapsedMs: clock.elapsedMs, runStartedAt: Date.now() };
+    const next: MatchClock = {
+      running: true,
+      elapsedMs: clock.elapsedMs,
+      runStartedAt: Date.now(),
+    };
+    this.clock.set(next);
+    writeMatchClock(this.fixtureId, next);
+    if (this.fixture()?.status === 'scheduled') {
+      this.setStatus('live');
+    }
+  }
+
+  private pauseClock(): void {
+    const next: MatchClock = {
+      running: false,
+      elapsedMs: this.displayedElapsed(),
+      runStartedAt: null,
+    };
     this.clock.set(next);
     writeMatchClock(this.fixtureId, next);
   }
@@ -481,6 +539,12 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
 
   categories(): ScoringCategory[] {
     return this.competition()?.scoring_categories ?? [];
+  }
+
+  countsForOtherSide(category: ScoringCategory): boolean {
+    const code = category.code.trim().toLowerCase();
+    const name = category.name.trim().toLowerCase();
+    return code === 'own-goal' || name === 'own goal';
   }
 
   units(): Array<{ index: number; label: string }> {
@@ -603,6 +667,70 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     return this.rosterFor(side).length > 0 && !this.scorerFor(side.id);
   }
 
+  requiresProfile(category: ScoringCategory): boolean {
+    const code = category.code.trim().toLowerCase();
+    const name = category.name.trim().toLowerCase();
+    return (
+      code === 'goal' ||
+      code === 'own-goal' ||
+      code === 'yellow-card' ||
+      code === 'red-card' ||
+      code === 'touchdown' ||
+      code === 'extra-point' ||
+      code === 'two-point' ||
+      code === 'safety' ||
+      code === 'defensive-conversion' ||
+      code === 'home-run' ||
+      name === 'goal' ||
+      name === 'own goal' ||
+      name === 'yellow card' ||
+      name === 'red card' ||
+      name === 'touchdown' ||
+      name === 'extra point' ||
+      name === 'two-point conversion' ||
+      name === 'safety' ||
+      name === 'returned conversion' ||
+      name === 'home run'
+    );
+  }
+
+  matchStats(): Array<{
+    key: string;
+    name: string;
+    team: string;
+    userId: string | null;
+    figures: Array<{ label: string; count: number }>;
+  }> {
+    const fixture = this.fixture();
+    if (!fixture) return [];
+    const grouped = new Map<
+      string,
+      { name: string; team: string; userId: string | null; counts: Map<string, number> }
+    >();
+    for (const event of fixture.events) {
+      const key = event.player || event.player_name || event.id;
+      const team = this.participantName(event);
+      const current = grouped.get(key) ?? {
+        name: event.player_name || team,
+        team,
+        userId: event.player_user_id,
+        counts: new Map<string, number>(),
+      };
+      const qty = Number(event.quantity);
+      const count = Number.isFinite(qty) ? qty : 1;
+      const label = event.scoring_category_name;
+      current.counts.set(label, (current.counts.get(label) ?? 0) + count);
+      grouped.set(key, current);
+    }
+    return [...grouped.entries()].map(([key, row]) => ({
+      key,
+      name: row.name,
+      team: row.team,
+      userId: row.userId,
+      figures: [...row.counts.entries()].map(([label, count]) => ({ label, count })),
+    }));
+  }
+
   openPlayer(userId: string | null): void {
     if (!userId) return;
     void this.router.navigate(['/tabs/competitions', this.competitionId, 'players', userId]);
@@ -612,8 +740,17 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     if (this.saving()) return;
     const roster = this.rosterFor(side);
     const playerId = this.scorerFor(side.id);
+    if (this.requiresProfile(category) && !playerId) {
+      await this.showToast(
+        roster.length
+          ? 'Choose the profile this applies to.'
+          : 'Add a profile to this team first.',
+        'danger',
+      );
+      return;
+    }
     if (roster.length && !playerId) {
-      await this.showToast('Choose who scored.', 'danger');
+      await this.showToast('Choose the player first.', 'danger');
       return;
     }
     const rating = this.ratingFor(side.id).trim();
@@ -797,10 +934,22 @@ function followsMatchClock(category: ScoringCategory): boolean {
     code === 'own-goal' ||
     code === 'yellow-card' ||
     code === 'red-card' ||
+    code === 'touchdown' ||
+    code === 'extra-point' ||
+    code === 'two-point' ||
+    code === 'safety' ||
+    code === 'defensive-conversion' ||
+    code === 'penalty' ||
     name === 'goal' ||
     name === 'own goal' ||
     name === 'yellow card' ||
-    name === 'red card'
+    name === 'red card' ||
+    name === 'touchdown' ||
+    name === 'extra point' ||
+    name === 'two-point conversion' ||
+    name === 'safety' ||
+    name === 'returned conversion' ||
+    name === 'penalty'
   );
 }
 

@@ -112,6 +112,15 @@
 .scorer {
   padding: 12px 14px;
 
+  .score-hint {
+    margin: 0 0 8px;
+    color: var(--ion-color-medium);
+    font-size: 0.85rem;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 500;
+  }
+
   .who {
     display: grid;
     gap: 10px;
@@ -319,6 +328,53 @@
   margin: 12px 20px 40px;
   font-size: 0.74rem;
   color: var(--ion-color-medium);
+}
+
+.match-stats {
+  padding: 4px 0;
+
+  .stat {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 14px;
+    border: 0;
+    border-bottom: 1px solid var(--ion-color-step-50, #f4f5f7);
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &:disabled {
+      cursor: default;
+    }
+  }
+
+  .who {
+    display: grid;
+    min-width: 0;
+
+    em {
+      color: var(--ion-color-medium);
+      font-style: normal;
+      font-size: 0.78rem;
+    }
+  }
+
+  .figures {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px 10px;
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 .hint {

@@ -289,7 +289,7 @@ export interface PlayerLeagueProfile {
     languages: string;
   };
   team: { id: string; name: string } | null;
-  totals: Array<{ category: string; count: string; points: string }>;
+  totals: Array<{ category: string; code?: string; count: string; points: string; affects_score?: boolean }>;
   timeline: Array<{
     id: string;
     fixture_id: string;

@@ -35,6 +35,17 @@ TENNIS_STRUCTURE = [
     }
 ]
 
+YELLOW_CARD = {"key": "yellow-card", "label": "Yellow card", "value": 0, "affects_score": False}
+RED_CARD = {"key": "red-card", "label": "Red card", "value": 0, "affects_score": False}
+OWN_GOAL = {
+    "key": "own-goal",
+    "label": "Own goal",
+    "value": 1,
+    "affects_score": True,
+    "awards": "opponent",
+    "description": "A goal in your own net. The other side scores 1.",
+}
+
 TENNIS_SCORES = [
     {"key": "game", "label": "Game", "value": 1, "affects_score": True},
     {
@@ -83,6 +94,7 @@ CATALOG: dict[str, dict] = {
         sport="rugby league",
         description=(
             "A try is 4, a conversion 2, a penalty goal 2, and a field goal 1. "
+            "Yellow and red cards are recorded without points. "
             "A match is two halves of 40 minutes. League points are 3, 1 and 0. "
             "A knockout that is level goes to golden point: the next score wins. "
             "The table uses points, then points difference, then points scored."
@@ -92,6 +104,8 @@ CATALOG: dict[str, dict] = {
             {"key": "conversion", "label": "Conversion", "value": 2, "affects_score": True},
             {"key": "penalty-goal", "label": "Penalty goal", "value": 2, "affects_score": True},
             {"key": "field-goal", "label": "Field goal", "value": 1, "affects_score": True},
+            YELLOW_CARD,
+            RED_CARD,
         ],
         match_structure=[
             {"unit": "half", "count": 2, "minutes": 40},
@@ -99,6 +113,68 @@ CATALOG: dict[str, dict] = {
         ],
         draw_resolution="sudden_death",
         tiebreakers=["points", "score_difference", "score_for"],
+    ),
+    "american_football": _sport(
+        label="American football",
+        icon="american-football-outline",
+        sport="american football",
+        formats_allowed=["league", "knockout", "groups_knockout", "round_robin"],
+        description=(
+            "A touchdown is 6, the extra-point kick is 1, a two-point conversion "
+            "is 2, a field goal is 3, and a safety is 2. A conversion returned by "
+            "the defence is also 2. Penalties are recorded and do not change the "
+            "score. Eleven play on each side. A game is four quarters of 15 minutes, "
+            "then a 10-minute overtime if the score is level. A league game can end "
+            "in a tie. A knockout plays on until one side leads. The table gives 2 "
+            "for a win and 1 for a tie, then uses the head-to-head result, points "
+            "difference, and points scored."
+        ),
+        score_types=[
+            {"key": "touchdown", "label": "Touchdown", "value": 6, "affects_score": True},
+            {
+                "key": "extra-point",
+                "label": "Extra point",
+                "value": 1,
+                "affects_score": True,
+                "description": "Kick after a touchdown.",
+            },
+            {
+                "key": "two-point",
+                "label": "Two-point conversion",
+                "value": 2,
+                "affects_score": True,
+                "description": "Run or pass after a touchdown.",
+            },
+            {"key": "field-goal", "label": "Field goal", "value": 3, "affects_score": True},
+            {
+                "key": "safety",
+                "label": "Safety",
+                "value": 2,
+                "affects_score": True,
+                "description": "The defence scores 2.",
+            },
+            {
+                "key": "defensive-conversion",
+                "label": "Returned conversion",
+                "value": 2,
+                "affects_score": True,
+                "description": "The defence returns an extra point or a two-point try.",
+            },
+            {
+                "key": "penalty",
+                "label": "Penalty",
+                "value": 0,
+                "affects_score": False,
+                "description": "Recorded only. It does not change the score.",
+            },
+        ],
+        match_structure=[
+            {"unit": "quarter", "count": 4, "minutes": 15},
+            {"unit": "overtime", "count": 1, "minutes": 10, "repeat": True},
+        ],
+        draw_resolution="sudden_death",
+        league_points={"win": 2, "draw": 1, "loss": 0},
+        tiebreakers=["points", "head_to_head", "score_difference", "score_for"],
     ),
     "basketball": _sport(
         label="Basketball",
@@ -150,7 +226,8 @@ CATALOG: dict[str, dict] = {
         sport="field hockey",
         description=(
             "A field goal, a penalty-corner goal, and a penalty-stroke goal are "
-            "each 1. Green, yellow, and red cards are recorded without points. "
+            "each 1. An own goal scores 1 for the other side. Green, yellow, and "
+            "red cards are recorded without points. "
             "A match is four quarters of 15 minutes. League points are 3, 1 and 0. "
             "A knockout that is level goes to a shoot-out. The table uses points, "
             "then goal difference, then goals scored, then the head-to-head result."
@@ -159,6 +236,7 @@ CATALOG: dict[str, dict] = {
             {"key": "field-goal", "label": "Field goal", "value": 1, "affects_score": True},
             {"key": "penalty-corner", "label": "Penalty corner", "value": 1, "affects_score": True},
             {"key": "penalty-stroke", "label": "Penalty stroke", "value": 1, "affects_score": True},
+            OWN_GOAL,
             {"key": "green-card", "label": "Green card", "value": 0, "affects_score": False},
             {"key": "yellow-card", "label": "Yellow card", "value": 0, "affects_score": False},
             {"key": "red-card", "label": "Red card", "value": 0, "affects_score": False},
@@ -177,13 +255,18 @@ CATALOG: dict[str, dict] = {
         description=(
             "A match is best of 5 sets. Sets 1 to 4 are first to 25 and must be "
             "won by 2. The fifth set is first to 15 and must be won by 2. The "
-            "side that wins the most sets wins the match. Draws are not a result. "
+            "side that wins the most sets wins the match. Yellow and red cards are "
+            "recorded without points. Draws are not a result. "
             "League points are 3 for a win and 0 for a loss. The table uses points, "
             "then wins, then set ratio, then point ratio."
         ),
         draw_allowed=False,
         win_condition="most_units_won",
-        score_types=[{"key": "point", "label": "Point", "value": 1, "affects_score": True}],
+        score_types=[
+            {"key": "point", "label": "Point", "value": 1, "affects_score": True},
+            YELLOW_CARD,
+            RED_CARD,
+        ],
         match_structure=[
             {"unit": "set", "count": 4, "best_of": 5, "first_to": 25, "win_by": 2},
             {"unit": "set", "count": 1, "first_to": 15, "win_by": 2},
@@ -226,6 +309,48 @@ CATALOG: dict[str, dict] = {
             "scale": 6,
         },
         tiebreakers=["points", "wins", "rate", "head_to_head"],
+    ),
+    "baseball": _sport(
+        label="Baseball",
+        icon="baseball-outline",
+        sport="baseball",
+        formats_allowed=["league", "knockout", "groups_knockout", "round_robin"],
+        draw_allowed=False,
+        description=(
+            "A run is 1. A home run scores 1 for the batter, and each other runner "
+            "who scores is another run. Hits, RBIs, walks, strikeouts, stolen bases, "
+            "errors, and hit-by-pitches are recorded and do not change the score. "
+            "Nine bat in order and nine play in the field. A game is 9 innings. The "
+            "visiting side bats first in each inning, and the home side bats last. "
+            "If the home side leads after the visitor has batted in the 9th, the "
+            "game ends. A level score goes to extra innings, and from the 10th each "
+            "half-inning starts with a runner on second. There is no draw. The table "
+            "uses wins, then the head-to-head result, then run difference, then runs scored."
+        ),
+        score_types=[
+            {"key": "run", "label": "Run", "value": 1, "affects_score": True},
+            {
+                "key": "home-run",
+                "label": "Home run",
+                "value": 1,
+                "affects_score": True,
+                "description": "Scores 1 for the batter. Record a run for each other runner who scores.",
+            },
+            {"key": "hit", "label": "Hit", "value": 0, "affects_score": False},
+            {"key": "rbi", "label": "RBI", "value": 0, "affects_score": False},
+            {"key": "walk", "label": "Walk", "value": 0, "affects_score": False},
+            {"key": "strikeout", "label": "Strikeout", "value": 0, "affects_score": False},
+            {"key": "stolen-base", "label": "Stolen base", "value": 0, "affects_score": False},
+            {"key": "error", "label": "Error", "value": 0, "affects_score": False},
+            {"key": "hit-by-pitch", "label": "Hit by pitch", "value": 0, "affects_score": False},
+        ],
+        match_structure=[
+            {"unit": "inning", "count": 9},
+            {"unit": "extra_inning", "count": 1, "repeat": True},
+        ],
+        draw_resolution="sudden_death",
+        league_points={"win": 1, "draw": 0, "loss": 0},
+        tiebreakers=["points", "head_to_head", "score_difference", "score_for"],
     ),
     "tennis": _sport(
         label="Tennis",
