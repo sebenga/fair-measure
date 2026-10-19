@@ -73,8 +73,104 @@ def _policy(preset: Preset) -> dict:
         "loss_points": league.get("loss", 0),
         "bonus_win_points": 0,
         "bonus_loss_points": 0,
+        "allow_draws": bool(preset.get("draw_allowed", True)),
         "tiebreakers": list(preset.get("tiebreakers") or ["points", "score_difference", "score_for"]),
     }
+
+
+# Keys that describe how a contest is scored or ranked. A locked competition
+# keeps the values it was created with. Other settings (who is entering, for
+# example) can still change.
+LOCKED_SETTING_KEYS = (
+    "preset",
+    "scoring_locked",
+    "locked",
+    "table_mode",
+    "scoring_basis",
+    "contest_type",
+    "participant_type",
+    "participant_types",
+    "formats_allowed",
+    "match_structure",
+    "win_condition",
+    "draw_allowed",
+    "draw_resolution",
+    "league_points",
+    "tiebreakers",
+    "accumulation_ranking",
+    "description",
+    "score_types",
+    "bonuses",
+    "rate_basis",
+    "countback_windows",
+    "placing_points",
+    "handicap",
+    "performance",
+    "lock_when_started",
+    "target",
+    "category_better",
+    "time_limit_minutes",
+    "overtime_minutes",
+    "scoring_sealed",
+    "unit_result_points",
+)
+
+# Turning the lock off, or renaming the preset, is ignored rather than stored.
+SILENT_LOCK_KEYS = frozenset({"scoring_locked", "locked", "preset"})
+
+
+def locked_settings_changed(current: dict, incoming: dict) -> list[str]:
+    """Protected keys the caller tried to change. Lock flags are not in the list."""
+
+    return [
+        key
+        for key in LOCKED_SETTING_KEYS
+        if key not in SILENT_LOCK_KEYS
+        and key in incoming
+        and incoming.get(key) != current.get(key)
+    ]
+
+
+def merge_locked_settings(current: dict, incoming: dict) -> dict:
+    """Keep official scoring, and still accept unrelated setting edits."""
+
+    merged = {**current, **incoming}
+    for key in LOCKED_SETTING_KEYS:
+        if key in current:
+            merged[key] = current[key]
+        else:
+            merged.pop(key, None)
+    if current.get("scoring_locked"):
+        merged["scoring_locked"] = True
+    if "locked" in current:
+        merged["locked"] = current["locked"]
+    return merged
+
+
+# These names are offered in data but have no fixture generator.
+UNIMPLEMENTED_FORMATS = frozenset({"groups_knockout", "group_knockout", "ladder"})
+
+
+def format_allowed(settings: dict, competition_format: str) -> bool:
+    """Whether this competition may use a format.
+
+    Freeform stays available so a custom points competition can be saved.
+    Groups-then-knockout and ladder have no fixture generator, so a preset
+    that lists formats cannot select them.
+    """
+
+    if competition_format == "freeform":
+        return True
+    allowed = [
+        item
+        for item in (settings.get("formats_allowed") or [])
+        if item not in UNIMPLEMENTED_FORMATS
+    ]
+    if not settings.get("formats_allowed"):
+        return True
+    model_allowed = {FORMAT_TO_MODEL.get(item, item) for item in allowed}
+    model_allowed -= UNIMPLEMENTED_FORMATS
+    return competition_format in model_allowed
 
 
 SOCCER: Preset = {
@@ -93,7 +189,7 @@ SOCCER: Preset = {
     "format": "league",
     "contest_type": "head_to_head",
     "participant_type": "team",
-    "formats_allowed": ["league", "knockout", "groups_knockout", "round_robin"],
+    "formats_allowed": ["league", "knockout", "round_robin"],
     "score_types": [
         {"key": "goal", "label": "Goal", "value": 1, "affects_score": True},
         OWN_GOAL,
@@ -173,7 +269,7 @@ CUSTOM: Preset = {
     "format": "freeform",
     "contest_type": "accumulation",
     "participant_type": "team",
-    "formats_allowed": ["league", "knockout", "ladder"],
+    "formats_allowed": ["league", "knockout"],
     "score_types": [],
     "match_structure": [],
     "win_condition": "highest_total",
@@ -200,18 +296,49 @@ PRESET_CHOICES = [(key, value["label"]) for key, value in PRESETS.items()]
 
 
 def scoring_is_locked(competition) -> bool:
+    """Whether scoring and the rules that drive it can still be edited.
+
+    A preset that is locked from the start stays locked. Putting
+    ``lock_when_started`` into its settings does not open it. A preset that
+    locks when play begins stays locked after that, including if the status
+    is later set back to draft.
+    """
+
     settings = competition.settings_json or {}
-    if settings.get("lock_when_started"):
+    if settings.get("scoring_sealed"):
+        return True
+    preset = PRESETS.get(settings.get("preset") or "")
+    if preset is not None and preset.get("locked") and not preset.get("lock_when_started"):
+        return True
+    start_lock = bool(
+        settings.get("lock_when_started") or (preset and preset.get("lock_when_started"))
+    )
+    if start_lock:
         status = getattr(competition, "status", None)
         return status not in {None, "", "draft"}
     if "scoring_locked" in settings:
         return bool(settings["scoring_locked"])
     if "locked" in settings:
         return bool(settings["locked"])
-    preset = PRESETS.get(settings.get("preset") or "")
     if preset is None:
         return False
-    return bool(preset.get("locked", preset.get("key") != "custom"))
+    return bool(preset.get("locked"))
+
+
+def seal_if_started(status: str | None, settings: dict) -> dict:
+    """Remember that a start-locked competition has left draft."""
+
+    if status in {None, "", "draft"} or settings.get("scoring_sealed"):
+        return settings
+    preset = PRESETS.get(settings.get("preset") or "")
+    start_lock = bool(
+        settings.get("lock_when_started") or (preset and preset.get("lock_when_started"))
+    )
+    if not start_lock:
+        return settings
+    sealed = dict(settings)
+    sealed["scoring_sealed"] = True
+    return sealed
 
 
 def public_preset(key: str, preset: Preset) -> dict:
@@ -368,6 +495,7 @@ def apply_preset(competition, preset_key: str) -> None:
             "handicap": bool(preset.get("handicap")),
             "performance": preset.get("performance"),
             "lock_when_started": bool(preset.get("lock_when_started")),
+            "unit_result_points": dict(preset.get("unit_result_points") or {}),
             "target": preset.get("target"),
             "category_better": {
                 item["key"]: item["better"]

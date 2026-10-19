@@ -32,7 +32,7 @@ import { forkJoin } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail, TeamPick } from '../../core/models';
-import { isPointsTable } from '../../core/models';
+import { isPointsTable, isScoringLocked } from '../../core/models';
 import { RealtimeService, competitionRoom } from '../../core/realtime.service';
 import { CompetitionFeedComponent } from './tabs/competition-feed.component';
 import { CompetitionFixturesComponent } from './tabs/competition-fixtures.component';
@@ -136,6 +136,16 @@ type Tab = 'feed' | 'fixtures' | 'standings';
         @if (howItScores()) {
           <p class="how-points">{{ howItScores() }}</p>
         }
+        @if (comp.rules.length) {
+          <ul class="how-points rules">
+            @for (rule of comp.rules; track rule.id) {
+              <li><strong>{{ rule.name }}.</strong> {{ rule.description }}</li>
+            }
+          </ul>
+        }
+        @if (scoringLocked()) {
+          <p class="how-points locked-note">Official scoring is fixed. It cannot be edited.</p>
+        }
         @switch (tab()) {
           @case ('feed') {
             <fm-competition-feed [competition]="comp" />
@@ -174,6 +184,19 @@ type Tab = 'feed' | 'fixtures' | 'standings';
         color: var(--ion-color-medium);
         font-size: 0.95rem;
         line-height: 1.45;
+      }
+
+      .rules {
+        padding-left: 1.1rem;
+      }
+
+      .rules li + li {
+        margin-top: 6px;
+      }
+
+      .locked-note {
+        margin-top: 8px;
+        font-size: 0.85rem;
       }
 
       .pick-banner {
@@ -315,6 +338,11 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   howItScores(): string {
     const value = this.competition()?.settings_json?.['description'];
     return typeof value === 'string' ? value : '';
+  }
+
+  scoringLocked(): boolean {
+    const competition = this.competition();
+    return competition ? isScoringLocked(competition) : false;
   }
 
   showsFixtures(): boolean {

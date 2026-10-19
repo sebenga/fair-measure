@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import uuid
+
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .services import COMPETITIONS_INDEX, PARTICIPANTS_INDEX, POSTS_INDEX, search
+from .services import (
+    COMPETITIONS_INDEX,
+    PARTICIPANTS_INDEX,
+    POSTS_INDEX,
+    only_public_hits,
+    search,
+)
 
 INDEXES = {
     "competitions": COMPETITIONS_INDEX,
@@ -49,8 +57,13 @@ class SearchView(APIView):
         )
 
         filters = ""
-        if competition_id := request.query_params.get("competition"):
-            filters = f'competition_id = "{competition_id}"'
+        if raw_competition_id := request.query_params.get("competition"):
+            try:
+                competition_id = str(uuid.UUID(str(raw_competition_id)))
+            except (ValueError, TypeError, AttributeError):
+                competition_id = ""
+            if competition_id:
+                filters = f'competition_id = "{competition_id}"'
 
         results = {}
         for label, index_name in targets.items():
@@ -58,4 +71,4 @@ class SearchView(APIView):
             index_filter = "" if index_name == COMPETITIONS_INDEX else filters
             results[label] = search(index_name, query, filters=index_filter, limit=limit)
 
-        return Response({"query": query, "results": results})
+        return Response({"query": query, "results": only_public_hits(results)})

@@ -8,7 +8,9 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+from apps.core.throttling import AuthRateThrottle
 
 from .serializers import (
     ChangePasswordSerializer,
@@ -40,6 +42,7 @@ def _token_payload(user) -> dict:
 class LoginView(TokenObtainPairView):
     serializer_class = FairMeasureTokenObtainPairSerializer
     permission_classes = [AllowAny]
+    throttle_classes = [AuthRateThrottle]
 
 
 @extend_schema_view(
@@ -52,6 +55,7 @@ class LoginView(TokenObtainPairView):
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
+    throttle_classes = [AuthRateThrottle]
 
     def create(self, request: Request, *args, **kwargs) -> Response:
         serializer = self.get_serializer(data=request.data)
@@ -72,6 +76,7 @@ class RegisterView(generics.CreateAPIView):
 )
 class GoogleLoginView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [AuthRateThrottle]
 
     def post(self, request: Request) -> Response:
         serializer = GoogleAuthSerializer(data=request.data)
@@ -84,6 +89,10 @@ class GoogleLoginView(APIView):
             _token_payload(user),
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+
+class ThrottledTokenRefreshView(TokenRefreshView):
+    throttle_classes = [AuthRateThrottle]
 
 
 @extend_schema_view(

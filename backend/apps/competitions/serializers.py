@@ -8,7 +8,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from apps.accounts.serializers import UserSummarySerializer
-from apps.core.permissions import Role, role_in
+from apps.core.permissions import Role, has_at_least, role_in
 
 User = get_user_model()
 
@@ -23,7 +23,16 @@ from .models import (
     ScoringCategory,
     Stage,
 )
-from .presets import PRESETS, SCORING_LOCKED_MESSAGE, apply_preset, scoring_is_locked
+from .presets import (
+    PRESETS,
+    SCORING_LOCKED_MESSAGE,
+    apply_preset,
+    format_allowed,
+    locked_settings_changed,
+    merge_locked_settings,
+    scoring_is_locked,
+    seal_if_started,
+)
 
 
 def _validate_game_time(settings: dict, instance) -> None:
@@ -654,6 +663,31 @@ class MembershipSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def _can_see_member_emails(self, competition) -> bool:
+        cached = getattr(self, "_email_visibility", None)
+        if cached is not None and cached[0] == competition.id:
+            return cached[1]
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        allowed = bool(
+            user
+            and user.is_authenticated
+            and has_at_least(competition, user, Role.ADMIN)
+        )
+        self._email_visibility = (competition.id, allowed)
+        return allowed
+
+    def to_representation(self, instance: Membership) -> dict:
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is not None and user.is_authenticated and user.id == instance.user_id:
+            return data
+        if self._can_see_member_emails(instance.competition):
+            return data
+        data["member_email"] = ""
+        return data
+
 
 class CompetitionListSerializer(serializers.ModelSerializer):
     owner = UserSummarySerializer(read_only=True)
@@ -685,7 +719,14 @@ class CompetitionListSerializer(serializers.ModelSerializer):
 
     def get_my_role(self, obj: Competition) -> str | None:
         request = self.context.get("request")
-        return role_in(obj, request.user) if request else None
+        if request is None or not request.user.is_authenticated:
+            return None
+        if obj.owner_id == request.user.id:
+            return Role.OWNER
+        cached = getattr(obj, "my_memberships", None)
+        if cached is not None:
+            return cached[0].role if cached else None
+        return role_in(obj, request.user)
 
     def get_scoring_basis(self, obj: Competition) -> str:
         settings = obj.settings_json or {}
@@ -822,6 +863,29 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         settings = attrs.get("settings_json")
         if isinstance(settings, dict):
             _validate_game_time(settings, self.instance)
+            if self.instance is not None and scoring_is_locked(self.instance):
+                changed = locked_settings_changed(self.instance.settings_json or {}, settings)
+                if changed:
+                    raise PermissionDenied(SCORING_LOCKED_MESSAGE)
+        chosen_format = attrs.get("format")
+        if self.instance is None and chosen_format:
+            preset = PRESETS.get(attrs.get("preset") or "")
+            allowed = {"formats_allowed": list((preset or {}).get("formats_allowed") or [])}
+            if preset and not format_allowed(allowed, chosen_format):
+                raise serializers.ValidationError(
+                    {"format": "This preset does not use that format."}
+                )
+        if (
+            self.instance is not None
+            and "format" in attrs
+            and attrs["format"] != self.instance.format
+            and not format_allowed(self.instance.settings_json or {}, attrs["format"])
+        ):
+            if scoring_is_locked(self.instance):
+                raise PermissionDenied(SCORING_LOCKED_MESSAGE)
+            raise serializers.ValidationError(
+                {"format": "This competition does not use that format."}
+            )
         return attrs
 
     def update(self, instance: Competition, validated_data: dict) -> Competition:
@@ -839,27 +903,12 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         if scoring_is_locked(instance) and "settings_json" in validated_data:
             current = dict(instance.settings_json or {})
             incoming = dict(validated_data.get("settings_json") or {})
-            for key in (
-                "preset",
-                "scoring_locked",
-                "locked",
-                "table_mode",
-                "scoring_basis",
-                "contest_type",
-                "participant_type",
-                "match_structure",
-                "win_condition",
-                "draw_allowed",
-                "draw_resolution",
-                "league_points",
-                "tiebreakers",
-                "accumulation_ranking",
-                "description",
-            ):
-                if key in current:
-                    incoming[key] = current[key]
-            incoming["scoring_locked"] = True
-            validated_data["settings_json"] = incoming
+            validated_data["settings_json"] = merge_locked_settings(current, incoming)
+        new_status = validated_data.get("status", instance.status)
+        current_settings = dict(validated_data.get("settings_json") or instance.settings_json or {})
+        sealed = seal_if_started(new_status, current_settings)
+        if sealed.get("scoring_sealed") and not (instance.settings_json or {}).get("scoring_sealed"):
+            validated_data["settings_json"] = sealed
         return super().update(instance, validated_data)
 
     @transaction.atomic
@@ -931,7 +980,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
                 if settings["participant_type"] == "individual":
                     settings["profile_entrants"] = True
                 settings["league_points"] = {key: float(value) for key, value in points.items()}
-                settings["formats_allowed"] = ["league", "knockout", "groups_knockout", "ladder"]
+                settings["formats_allowed"] = ["league", "knockout"]
                 PointsPolicy.objects.update_or_create(
                     competition=competition,
                     defaults={

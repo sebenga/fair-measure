@@ -66,7 +66,9 @@ import { isPointsTable } from '../../core/models';
           {{
             criteriaLeague()
               ? 'Award a scoring criterion. The table adds what was achieved, and the note explains how those points were accumulated.'
-              : 'Record a finished fixture as a win, draw, or loss. Scoring criteria still describe what a point means.'
+              : drawsAllowed()
+                ? 'Record a finished fixture as a win, draw, or loss. Open the fixture to enter each period live.'
+                : 'Record a finished fixture as a win or a loss. This competition does not allow draws. Open the fixture to enter each period live.'
           }}
         </p>
 
@@ -137,7 +139,9 @@ import { isPointsTable } from '../../core/models';
             <ion-item>
               <ion-select label="Result" labelPlacement="stacked" [(ngModel)]="outcome" name="outcome">
                 <ion-select-option value="home">Home win</ion-select-option>
-                <ion-select-option value="draw">Draw</ion-select-option>
+                @if (drawsAllowed()) {
+                  <ion-select-option value="draw">Draw</ion-select-option>
+                }
                 <ion-select-option value="away">Away win</ion-select-option>
               </ion-select>
             </ion-item>
@@ -255,6 +259,15 @@ export class CompetitionScorePage implements OnInit {
     const competition = this.competition();
     return competition ? isPointsTable(competition) : false;
   });
+
+  drawsAllowed(): boolean {
+    const competition = this.competition();
+    if (!competition || competition.format === 'knockout') return false;
+    const settings = competition.settings_json ?? {};
+    if (settings['draw_allowed'] === false) return false;
+    if (competition.points_policy?.allow_draws === false) return false;
+    return true;
+  }
 
   selectedCategory() {
     const competition = this.competition();

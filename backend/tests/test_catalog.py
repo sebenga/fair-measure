@@ -213,7 +213,7 @@ def test_american_football_scores_a_tie_as_half_a_win(api):
         [(p["Bo"], [("touchdown", 1, 0)]), (p["Dee"], [("touchdown", 1, 1)])],
     )
     rows = _table(competition)
-    assert rows["Ada"].points == Decimal("2")
+    assert rows["Ada"].points == Decimal("3")
     assert rows["Bo"].points == rows["Dee"].points == Decimal("1")
     assert _order(competition).index("Ada") < _order(competition).index("Bo")
 
@@ -244,7 +244,7 @@ def test_baseball_runs_and_extra_innings(api):
     assert _outcome(played, "Ada") == "win"
     _play(competition, [(p["Bo"], [("run", 6, 0)]), (p["Dee"], [("run", 2, 1)])])
     rows = _table(competition)
-    assert rows["Ada"].points == rows["Bo"].points == Decimal("1")
+    assert rows["Ada"].points == rows["Bo"].points == Decimal("3")
     assert rows["Bo"].score_difference > rows["Ada"].score_difference
     assert _order(competition).index("Bo") < _order(competition).index("Ada")
 
@@ -359,6 +359,28 @@ def test_volleyball_set_and_point_ratio(api):
     assert rows["Ada"].units_for == rows["Bo"].units_for == Decimal("3")
     assert _order(competition).index("Ada") < _order(competition).index("Bo")
 
+    five = _play(
+        competition,
+        [
+            (
+                p["Ada"],
+                [("point", 25, 0), ("point", 25, 1), ("point", 20, 2), ("point", 23, 3), ("point", 15, 4)],
+            ),
+            (
+                p["Cy"],
+                [("point", 20, 0), ("point", 23, 1), ("point", 25, 2), ("point", 25, 3), ("point", 13, 4)],
+            ),
+        ],
+    )
+    assert _outcome(five, "Ada") == "win"
+    rows = _table(competition)
+    assert rows["Ada"].points == Decimal("5")
+    assert rows["Cy"].points == Decimal("1")
+    from apps.competitions.engine import expand_units
+
+    labels = [slot["label"] for slot in expand_units(competition.settings_json["match_structure"])]
+    assert labels == ["set 1", "set 2", "set 3", "set 4", "set 5"]
+
 
 def test_cricket_t20_rate_super_over_and_no_result(api):
     competition, p = _open(api, "cricket_t20", ["Ada", "Bo", "Cy", "Dee", "Eve", "Fay", "Gus", "Hal"])
@@ -394,6 +416,26 @@ def test_cricket_t20_rate_super_over_and_no_result(api):
     assert rows["Eve"].rate == Decimal("0")
     assert rows["Gus"].points == rows["Hal"].points == Decimal("1")
     assert _order(competition).index("Ada") < _order(competition).index("Bo")
+
+
+def test_cricket_all_out_uses_the_full_over_quota(api):
+    competition, p = _open(api, "cricket_t20", ["Ada", "Bo", "Cy", "Dee"])
+    _play(
+        competition,
+        [
+            (p["Ada"], [("run", 60, 0), ("ball", 30, 0), ("wicket", 10, 0)]),
+            (p["Cy"], [("run", 0, 1), ("ball", 6, 1)]),
+        ],
+    )
+    _play(
+        competition,
+        [
+            (p["Bo"], [("run", 60, 0), ("ball", 30, 0), ("wicket", 2, 0)]),
+            (p["Dee"], [("run", 0, 1), ("ball", 6, 1)]),
+        ],
+    )
+    rows = _table(competition)
+    assert rows["Bo"].rate > rows["Ada"].rate
 
 
 def test_tennis_tiebreak_and_games_difference(api):
@@ -514,13 +556,12 @@ def test_darts_countdown_bust_and_legs(api):
                     ("visit", 500, 0),
                     ("bust", 1, 0),
                     ("one-eighty", 1, 0),
-                    ("visit", 501, 0),
-                    ("visit", 501, 1),
-                    ("visit", 501, 2),
-                    ("checkout", 1, 2),
+                    ("checkout", 501, 0),
+                    ("checkout", 501, 1),
+                    ("checkout", 501, 2),
                 ],
             ),
-            (p["Bo"], [("visit", 501, 3)]),
+            (p["Bo"], [("checkout", 501, 3)]),
         ],
     )
     assert _outcome(match, "Ada") == "win"
@@ -541,7 +582,7 @@ def test_snooker_frames_foul_and_respotted_black(api):
                 p["Ada"],
                 [("red", 8, 0), ("century", 1, 0), ("black", 1, 1), ("red", 10, 2), ("respotted-black", 1, 2), ("blue", 1, 3)],
             ),
-            (p["Bo"], [("foul", 1, 0), ("red", 10, 2)]),
+            (p["Bo"], [("foul", 4, 0), ("red", 10, 2)]),
         ],
     )
     assert _outcome(match, "Ada") == "win"
@@ -595,6 +636,16 @@ def test_chess_sonneborn_and_armageddon(api):
     )
     assert _score(decided, "Home") == Decimal("0.5")
     assert _outcome(decided, "Home") == "win"
+
+    level, sides = _open(api, "chess", ["Home", "Away"], fmt="knockout")
+    drawn_black = _play(
+        level,
+        [
+            (sides["Home"], [("draw-point", 1, 0), ("draw-point", 1, 2)]),
+            (sides["Away"], [("draw-point", 1, 0), ("draw-point", 1, 2)]),
+        ],
+    )
+    assert _outcome(drawn_black, "Away") == "win"
 
 
 def test_scrabble_spread(api):
@@ -675,6 +726,22 @@ def test_bowling_bonus_balls_and_best_game(api):
     assert _score(game, "Ada") == Decimal("24")
     assert _outcome(game, "Ada") == "win" or _score(game, "Ada") > _score(game, "Bo")
 
+    mixed = Fixture.objects.create(competition=strike, status=Fixture.Status.COMPLETED)
+    ada_side = FixtureSide.objects.create(fixture=mixed, participant=p["Ada"], position=0, is_home=True)
+    bo_side = FixtureSide.objects.create(fixture=mixed, participant=p["Bo"], position=1, is_home=False)
+    categories = {item.code: item for item in strike.scoring_categories.all()}
+    ScoreEvent.objects.create(fixture=mixed, side=ada_side, scoring_category=categories["strike"], quantity=1, unit_index=0)
+    ScoreEvent.objects.create(fixture=mixed, side=bo_side, scoring_category=categories["pins"], quantity=10, unit_index=0)
+    ScoreEvent.objects.create(fixture=mixed, side=ada_side, scoring_category=categories["pins"], quantity=3, unit_index=1)
+    ScoreEvent.objects.create(fixture=mixed, side=ada_side, scoring_category=categories["pins"], quantity=4, unit_index=2)
+    mixed.recalculate_scores()
+    assert _score(mixed, "Ada") == Decimal("24")
+
+    perfect, bowlers = _open(api, "bowling", ["Ada"])
+    balls = [("strike", 1, frame) for frame in range(10)] + [("fill", 10, 9), ("fill", 10, 9)]
+    game_300 = _play(perfect, [(bowlers["Ada"], balls)])
+    assert _score(game_300, "Ada") == Decimal("300")
+
     competition, people = _open(api, "bowling", ["Ada", "Bo"])
     _play(competition, [(people["Ada"], [("pins", 100, 0)]), (people["Bo"], [("pins", 80, 0)])])
     _play(competition, [(people["Ada"], [("pins", 90, 0)]), (people["Bo"], [("pins", 90, 0)])])
@@ -699,7 +766,7 @@ def test_archery_tens_then_xs(api):
     rows = _table(competition)
     assert rows["Bo"].category_totals["ring-10"] == Decimal("1")
     assert rows["Ada"].category_totals["x"] == Decimal("1")
-    assert _order(competition)[0] == "Bo"
+    assert _order(competition)[0] == "Ada"
 
 
 def test_athletics_track_and_field_directions(api):

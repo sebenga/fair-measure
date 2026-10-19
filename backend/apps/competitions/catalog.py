@@ -118,16 +118,16 @@ CATALOG: dict[str, dict] = {
         label="American football",
         icon="american-football-outline",
         sport="american football",
-        formats_allowed=["league", "knockout", "groups_knockout", "round_robin"],
+        formats_allowed=["league", "knockout", "round_robin"],
         description=(
             "A touchdown is 6, the extra-point kick is 1, a two-point conversion "
             "is 2, a field goal is 3, and a safety is 2. A conversion returned by "
             "the defence is also 2. Penalties are recorded and do not change the "
             "score. Eleven play on each side. A game is four quarters of 15 minutes, "
             "then a 10-minute overtime if the score is level. A league game can end "
-            "in a tie. A knockout plays on until one side leads. The table gives 2 "
-            "for a win and 1 for a tie, then uses the head-to-head result, points "
-            "difference, and points scored."
+            "in a tie. A knockout plays on until one side leads. The table gives 3 "
+            "for a win, 1 for a tie, and 0 for a loss, then uses the head-to-head "
+            "result, points difference, and points scored."
         ),
         score_types=[
             {"key": "touchdown", "label": "Touchdown", "value": 6, "affects_score": True},
@@ -173,7 +173,7 @@ CATALOG: dict[str, dict] = {
             {"unit": "overtime", "count": 1, "minutes": 10, "repeat": True},
         ],
         draw_resolution="sudden_death",
-        league_points={"win": 2, "draw": 1, "loss": 0},
+        league_points={"win": 3, "draw": 1, "loss": 0},
         tiebreakers=["points", "head_to_head", "score_difference", "score_for"],
     ),
     "basketball": _sport(
@@ -257,8 +257,9 @@ CATALOG: dict[str, dict] = {
             "won by 2. The fifth set is first to 15 and must be won by 2. The "
             "side that wins the most sets wins the match. Yellow and red cards are "
             "recorded without points. Draws are not a result. "
-            "League points are 3 for a win and 0 for a loss. The table uses points, "
-            "then wins, then set ratio, then point ratio."
+            "League points follow the set score: 3 for a 3-0 or 3-1 win, 2 for a "
+            "3-2 win, 1 for a 3-2 loss, and 0 for a 3-0 or 3-1 loss. The table uses "
+            "points, then wins, then set ratio, then point ratio."
         ),
         draw_allowed=False,
         win_condition="most_units_won",
@@ -271,6 +272,14 @@ CATALOG: dict[str, dict] = {
             {"unit": "set", "count": 4, "best_of": 5, "first_to": 25, "win_by": 2},
             {"unit": "set", "count": 1, "first_to": 15, "win_by": 2},
         ],
+        unit_result_points={
+            "3-0": 3,
+            "3-1": 3,
+            "3-2": 2,
+            "2-3": 1,
+            "1-3": 0,
+            "0-3": 0,
+        },
         tiebreakers=["points", "wins", "units_ratio", "score_ratio"],
     ),
     "cricket_t20": _sport(
@@ -283,8 +292,9 @@ CATALOG: dict[str, dict] = {
             "runs that are not credited to a batter. Wickets are recorded. The "
             "side with more runs wins: the side batting second can win with wickets "
             "in hand. A tie is decided by a super over. A match with no result is "
-            "1 point each. The table uses points, then wins, then net run rate, "
-            "then the head-to-head result."
+            "1 point each. A side that is bowled out is treated as having faced "
+            "the full 20 overs when net run rate is calculated. The table uses "
+            "points, then wins, then net run rate, then the head-to-head result."
         ),
         draw_allowed=False,
         draw_resolution="tiebreak",
@@ -307,6 +317,9 @@ CATALOG: dict[str, dict] = {
             "for": ["run", "wide", "no-ball", "bye", "leg-bye"],
             "balls": "ball",
             "scale": 6,
+            "all_out_wickets": "wicket",
+            "all_out_at": 10,
+            "all_out_balls": 120,
         },
         tiebreakers=["points", "wins", "rate", "head_to_head"],
     ),
@@ -314,7 +327,7 @@ CATALOG: dict[str, dict] = {
         label="Baseball",
         icon="baseball-outline",
         sport="baseball",
-        formats_allowed=["league", "knockout", "groups_knockout", "round_robin"],
+        formats_allowed=["league", "knockout", "round_robin"],
         draw_allowed=False,
         description=(
             "A run is 1. A home run scores 1 for the batter, and each other runner "
@@ -324,8 +337,9 @@ CATALOG: dict[str, dict] = {
             "visiting side bats first in each inning, and the home side bats last. "
             "If the home side leads after the visitor has batted in the 9th, the "
             "game ends. A level score goes to extra innings, and from the 10th each "
-            "half-inning starts with a runner on second. There is no draw. The table "
-            "uses wins, then the head-to-head result, then run difference, then runs scored."
+            "half-inning starts with a runner on second. There is no draw. League "
+            "points are 3 for a win, 1 for a draw, and 0 for a loss. The table uses "
+            "points, then the head-to-head result, then run difference, then runs scored."
         ),
         score_types=[
             {"key": "run", "label": "Run", "value": 1, "affects_score": True},
@@ -349,7 +363,7 @@ CATALOG: dict[str, dict] = {
             {"unit": "extra_inning", "count": 1, "repeat": True},
         ],
         draw_resolution="sudden_death",
-        league_points={"win": 1, "draw": 0, "loss": 0},
+        league_points={"win": 3, "draw": 1, "loss": 0},
         tiebreakers=["points", "head_to_head", "score_difference", "score_for"],
     ),
     "tennis": _sport(
@@ -465,10 +479,23 @@ CATALOG: dict[str, dict] = {
         draw_allowed=False,
         win_condition="count_down_to_zero",
         score_types=[
-            {"key": "visit", "label": "Visit", "value": 1, "affects_score": True},
+            {
+                "key": "visit",
+                "label": "Visit",
+                "value": 1,
+                "affects_score": True,
+                "maximum": 180,
+            },
             {"key": "bust", "label": "Bust", "value": 0, "affects_score": False},
             {"key": "one-eighty", "label": "180", "value": 0, "affects_score": False},
-            {"key": "checkout", "label": "Checkout", "value": 0, "affects_score": False},
+            {
+                "key": "checkout",
+                "label": "Checkout",
+                "value": 1,
+                "affects_score": True,
+                "role": "checkout",
+                "description": "The finishing dart. A leg only ends on a checkout.",
+            },
         ],
         match_structure=[
             {
@@ -477,6 +504,7 @@ CATALOG: dict[str, dict] = {
                 "best_of": 5,
                 "start": 501,
                 "illegal_remaining": [1],
+                "finish": "marked",
             }
         ],
         tiebreakers=["points", "units_difference", "units_for", "head_to_head"],
@@ -488,7 +516,7 @@ CATALOG: dict[str, dict] = {
         participant_type="individual",
         description=(
             "Reds are 1, yellow 2, green 3, brown 4, blue 5, pink 6, and black 7. "
-            "A foul gives the opponent at least 4. A frame is won by the higher "
+            "A foul is 4, 5, 6, or 7 and is given to the opponent. A frame is won by the higher "
             "score. If the frame is tied after the final black, the black is "
             "re-spotted. A match is best of 7 frames. The table uses points, then "
             "frames difference, then the head-to-head result. Highest break and "
@@ -504,7 +532,16 @@ CATALOG: dict[str, dict] = {
             {"key": "blue", "label": "Blue", "value": 5, "affects_score": True},
             {"key": "pink", "label": "Pink", "value": 6, "affects_score": True},
             {"key": "black", "label": "Black", "value": 7, "affects_score": True},
-            {"key": "foul", "label": "Foul", "value": 4, "affects_score": True, "awards": "opponent"},
+            {
+                "key": "foul",
+                "label": "Foul",
+                "value": 1,
+                "affects_score": True,
+                "awards": "opponent",
+                "minimum": 4,
+                "maximum": 7,
+                "description": "Enter 4, 5, 6, or 7. The points go to the opponent.",
+            },
             {"key": "respotted-black", "label": "Re-spotted black", "value": 7, "affects_score": True},
             {"key": "century", "label": "Century break", "value": 0, "affects_score": False},
         ],
@@ -536,7 +573,8 @@ CATALOG: dict[str, dict] = {
             "A won game scores 1, a draw scores 0.5, and a loss scores 0. The "
             "league table also awards 3 for a win, 1 for a draw, and 0 for a loss, "
             "and shows the game score beside it. A knockout draw goes to rapid "
-            "games, then an Armageddon game. The table uses points, then the "
+            "games, then an Armageddon game. A drawn Armageddon game is awarded "
+            "to Black. The table uses points, then the "
             "head-to-head result, then Sonneborn-Berger, then the number of wins."
         ),
         score_types=[
@@ -546,7 +584,13 @@ CATALOG: dict[str, dict] = {
         match_structure=[
             {"unit": "game", "count": 1},
             {"unit": "rapid", "count": 1, "affects_total": False, "resolves_draw": True},
-            {"unit": "armageddon", "count": 1, "affects_total": False, "resolves_draw": True},
+            {
+                "unit": "armageddon",
+                "count": 1,
+                "affects_total": False,
+                "resolves_draw": True,
+                "tied_winner": "away",
+            },
         ],
         draw_resolution="tiebreak",
         tiebreakers=["points", "head_to_head", "sonneborn_berger", "wins"],
@@ -653,8 +697,9 @@ CATALOG: dict[str, dict] = {
         formats_allowed=["league"],
         description=(
             "A game is 10 frames. A strike is 10 plus the next two balls. A spare "
-            "is 10 plus the next ball. The tenth frame allows bonus balls. The "
-            "highest score is 300. Ranking is the total of 3 games, and a tie "
+            "is 10 plus the next ball. In the tenth frame the extra balls are "
+            "fill balls: they complete a strike or spare and are not added again. "
+            "The highest score is 300. Ranking is the total of 3 games, and a tie "
             "uses the highest single game."
         ),
         win_condition="highest_total",
@@ -663,6 +708,14 @@ CATALOG: dict[str, dict] = {
             {"key": "strike", "label": "Strike", "value": 10, "affects_score": True, "bonus_next": 2},
             {"key": "spare", "label": "Spare", "value": 10, "affects_score": True, "bonus_next": 1},
             {"key": "pins", "label": "Pins", "value": 1, "affects_score": True},
+            {
+                "key": "fill",
+                "label": "Fill ball",
+                "value": 1,
+                "affects_score": True,
+                "role": "fill",
+                "description": "A tenth-frame bonus ball. It completes a strike or spare and is not scored twice.",
+            },
         ],
         match_structure=[{"unit": "frame", "count": 10}],
         league_points={"win": 0, "draw": 0, "loss": 0},
@@ -678,7 +731,7 @@ CATALOG: dict[str, dict] = {
         description=(
             "Rings score 10 down to 1. A miss is 0. An X counts as 10. An end is "
             "6 arrows, and a round is 72 arrows. The highest total ranks first. "
-            "A tie uses the number of 10s, then the number of Xs."
+            "A tie uses the number of 10s, counting each X as a 10, then the number of Xs."
         ),
         win_condition="highest_total",
         accumulation_ranking="highest_first",
@@ -698,7 +751,7 @@ CATALOG: dict[str, dict] = {
         ],
         match_structure=[{"unit": "end", "count": 12}],
         league_points={"win": 0, "draw": 0, "loss": 0},
-        tiebreakers=["category:ring-10", "category:x"],
+        tiebreakers=["category:ring-10,x", "category:x"],
     ),
     "athletics": _sport(
         label="Athletics",
