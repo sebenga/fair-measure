@@ -22,6 +22,8 @@ api_v1 = [
     path("", include("apps.notifications.urls")),
     path("", include("apps.search.urls")),
     path("", include("apps.scouting.urls")),
+    path("", include("apps.horses.urls")),
+    path("", include("apps.results.urls")),
 ]
 
 urlpatterns = [
@@ -43,3 +45,4 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

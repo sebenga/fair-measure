@@ -15,12 +15,14 @@ import {
 } from '@ionic/angular/standalone';
 import { Observable } from 'rxjs';
 
+import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type {
   CatalogSport,
   ConsentRecord,
   PlayerProfile,
   PlayerSport,
+  ProfileTeam,
   ScoutingCatalog,
   Visibility,
 } from '../../core/scouting.models';
@@ -36,7 +38,6 @@ type Identity = Pick<
   | 'gender_category'
   | 'nationality'
   | 'region'
-  | 'school_or_club'
   | 'bio'
   | 'availability'
   | 'availability_note'
@@ -50,7 +51,6 @@ const EMPTY_IDENTITY: Identity = {
   gender_category: '',
   nationality: '',
   region: '',
-  school_or_club: '',
   bio: '',
   availability: 'available',
   availability_note: '',
@@ -113,7 +113,8 @@ const EMPTY_IDENTITY: Identity = {
         } @else {
           <p class="lede">
             Your talent profile is what scouts see. You decide how visible it is, and phone numbers and
-            email addresses are never shown to anyone.
+            email addresses are never shown to anyone. Your name, date of birth, photo and teams are filled in
+            from your main profile; change anything before you save.
           </p>
         }
 
@@ -147,7 +148,49 @@ const EMPTY_IDENTITY: Identity = {
               </select>
             </label>
           </div>
-          <label class="field">School or club<input [value]="draft().school_or_club" (input)="set('school_or_club', $event)" /></label>
+          <div class="field picker">
+            <span>School or club</span>
+            <p class="hint">Pick sides that already compete on Fair Measure. You can belong to several, including in different competitions.</p>
+            @if (selectedTeams().length) {
+              <div class="chips">
+                @for (team of selectedTeams(); track team.id) {
+                  <span class="chip on" [class.locked]="team.from_roster">
+                    {{ team.name }}
+                    <small>{{ team.competition }}</small>
+                    @if (team.from_roster) {
+                      <em>On roster</em>
+                    } @else {
+                      <button type="button" (click)="dropTeam(team)" [attr.aria-label]="'Remove ' + team.name">
+                        <ion-icon name="close-outline" />
+                      </button>
+                    }
+                  </span>
+                }
+              </div>
+            }
+            <input
+              type="search"
+              placeholder="Search teams on Fair Measure"
+              [value]="teamQuery()"
+              (input)="onTeamQuery($event)"
+              (focus)="onTeamFocus()"
+              autocomplete="off"
+            />
+            @if (teamOpen() && teamHits().length) {
+              <ul class="hits" role="listbox">
+                @for (team of teamHits(); track team.id) {
+                  <li>
+                    <button type="button" (click)="addTeam(team)">
+                      <strong>{{ team.name }}</strong>
+                      <small>{{ team.competition }}</small>
+                    </button>
+                  </li>
+                }
+              </ul>
+            } @else if (teamOpen() && teamQuery().trim() && !teamSearching()) {
+              <p class="hint">No teams match that name. Ask your coach to add the side to a competition first.</p>
+            }
+          </div>
           <label class="field">Photo link<input type="url" placeholder="https://" [value]="draft().photo_url" (input)="set('photo_url', $event)" /></label>
           <label class="field">About me<textarea maxlength="1000" [value]="draft().bio" (input)="set('bio', $event)"></textarea></label>
           <div class="row">
@@ -437,6 +480,88 @@ const EMPTY_IDENTITY: Identity = {
         margin-bottom: 12px;
       }
 
+      .picker {
+        position: relative;
+
+        .hint,
+        .chips,
+        .chip,
+        .hits {
+          text-transform: none;
+          letter-spacing: 0;
+          font-weight: 500;
+        }
+
+        .chip {
+          max-width: 100%;
+
+          small,
+          em {
+            font-style: normal;
+            font-weight: 500;
+            opacity: 0.75;
+            text-transform: none;
+            letter-spacing: 0;
+          }
+
+          button {
+            display: grid;
+            place-items: center;
+            width: 22px;
+            height: 22px;
+            margin-left: 2px;
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+            color: inherit;
+            cursor: pointer;
+          }
+        }
+
+        .hits {
+          position: absolute;
+          z-index: 4;
+          left: 0;
+          right: 0;
+          margin: 4px 0 0;
+          padding: 6px;
+          list-style: none;
+          border: 1px solid var(--ion-color-step-150, #dfe2e6);
+          border-radius: 12px;
+          background: var(--ion-background-color, #fff);
+          box-shadow: var(--fm-shadow, 0 8px 24px rgb(0 0 0 / 0.12));
+          max-height: 240px;
+          overflow: auto;
+
+          button {
+            display: grid;
+            width: 100%;
+            padding: 10px 12px;
+            border: 0;
+            border-radius: 10px;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+
+            strong {
+              font-size: 0.95rem;
+            }
+
+            small {
+              color: var(--ion-color-medium);
+            }
+
+            &:hover,
+            &:focus {
+              background: color-mix(in srgb, var(--ion-color-primary) 10%, transparent);
+            }
+          }
+        }
+      }
+
       .upload {
         margin-bottom: 12px;
       }
@@ -448,6 +573,7 @@ export class TalentProfilePage {
   private readonly uploads = inject(UploadService);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastController);
+  private readonly auth = inject(AuthService);
 
   readonly catalog = signal<ScoutingCatalog | null>(null);
   readonly profile = signal<PlayerProfile | null>(null);
@@ -466,6 +592,12 @@ export class TalentProfilePage {
   readonly injuryDate = signal('');
   readonly guardianEmail = signal('');
   readonly guardianRelationship = signal('');
+  readonly selectedTeams = signal<ProfileTeam[]>([]);
+  readonly teamQuery = signal('');
+  readonly teamHits = signal<ProfileTeam[]>([]);
+  readonly teamOpen = signal(false);
+  readonly teamSearching = signal(false);
+  private teamTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly visibilityOptions: Array<{ key: Visibility; label: string }> = [
     { key: 'private', label: 'Only me' },
@@ -484,13 +616,63 @@ export class TalentProfilePage {
 
   ionViewWillEnter(): void {
     this.scouting.catalog().subscribe((catalog) => this.catalog.set(catalog));
-    this.scouting.myProfile().subscribe({
-      next: (profile) => this.applyProfile(profile),
+    // "me" says whether a profile exists, so creating one never starts with a 404.
+    this.scouting.loadMe().subscribe({
+      next: (me) => {
+        if (!me.profile_id) {
+          this.loading.set(false);
+          this.prefillFromAccount();
+          return;
+        }
+        this.scouting.myProfile().subscribe({
+          next: (profile) => this.applyProfile(profile),
+          error: (err: unknown) => {
+            this.loading.set(false);
+            if (err instanceof HttpErrorResponse && err.status === 404) {
+              this.prefillFromAccount();
+              return;
+            }
+            void this.toast(extractErrorMessage(err, 'Could not load your profile.'), 'danger');
+          },
+        });
+      },
       error: (err: unknown) => {
         this.loading.set(false);
-        if (err instanceof HttpErrorResponse && err.status === 404) return;
         void this.toast(extractErrorMessage(err, 'Could not load your profile.'), 'danger');
       },
+    });
+  }
+
+  /** A new talent profile starts from the main profile, so nothing is typed twice. */
+  private prefillFromAccount(): void {
+    const user = this.auth.user();
+    if (!user || this.draft().first_name) return;
+    const [first, ...rest] = (user.display_name || '').trim().split(/\s+/);
+    this.draft.update((current) => ({
+      ...current,
+      first_name: user.given_name || first || '',
+      last_name: user.family_name || rest.join(' '),
+      date_of_birth: user.date_of_birth || null,
+      photo_url: user.avatar_url || '',
+      bio: current.bio || user.bio || '',
+    }));
+    this.teamsFromRoster();
+  }
+
+  /** Teams the player already joined (accepted invites) are listed before they save. */
+  private teamsFromRoster(): void {
+    this.scouting.teamMemberships().subscribe({
+      next: (result) =>
+        this.selectedTeams.set(
+          result.teams.map((team) => ({
+            id: team.id,
+            name: team.name,
+            competition_id: team.competition_id,
+            competition: team.competition,
+            sport: team.sport,
+            from_roster: true,
+          })),
+        ),
     });
   }
 
@@ -504,11 +686,11 @@ export class TalentProfilePage {
       gender_category: profile.gender_category,
       nationality: profile.nationality,
       region: profile.region,
-      school_or_club: profile.school_or_club,
       bio: profile.bio,
       availability: profile.availability,
       availability_note: profile.availability_note,
     });
+    this.selectedTeams.set(profile.teams ?? []);
     this.loading.set(false);
     this.scouting.myConsents().subscribe((rows) => this.consents.set(rows));
   }
@@ -520,9 +702,47 @@ export class TalentProfilePage {
 
   saveIdentity(event: Event): void {
     event.preventDefault();
-    const body = this.draft();
+    const body = { ...this.draft(), team_ids: this.selectedTeams().map((team) => team.id) };
     const request = this.profile() ? this.scouting.updateProfile(body) : this.scouting.createProfile(body);
     this.run(request, this.profile() ? 'Saved.' : 'Profile created. Add your sports next.');
+  }
+
+  onTeamFocus(): void {
+    this.teamOpen.set(true);
+    if (!this.teamHits().length) this.lookupTeams(this.teamQuery());
+  }
+
+  onTeamQuery(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.teamQuery.set(value);
+    this.teamOpen.set(true);
+    if (this.teamTimer) clearTimeout(this.teamTimer);
+    this.teamTimer = setTimeout(() => this.lookupTeams(value), 220);
+  }
+
+  addTeam(team: ProfileTeam): void {
+    if (this.selectedTeams().some((row) => row.id === team.id)) return;
+    this.selectedTeams.update((current) => [...current, team]);
+    this.teamQuery.set('');
+    this.teamHits.set([]);
+    this.teamOpen.set(false);
+  }
+
+  dropTeam(team: ProfileTeam): void {
+    if (team.from_roster) return;
+    this.selectedTeams.update((current) => current.filter((row) => row.id !== team.id));
+  }
+
+  private lookupTeams(query: string): void {
+    this.teamSearching.set(true);
+    this.scouting.searchTeams(query).subscribe({
+      next: (rows) => {
+        const taken = new Set(this.selectedTeams().map((team) => team.id));
+        this.teamHits.set(rows.filter((row) => !taken.has(row.id)));
+        this.teamSearching.set(false);
+      },
+      error: () => this.teamSearching.set(false),
+    });
   }
 
   setVisibility(visibility: Visibility): void {

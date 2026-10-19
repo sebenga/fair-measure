@@ -15,11 +15,15 @@ from .models import (
     ScoutingRole,
 )
 from .services import (
+    MAX_PROFILE_TEAMS,
     active_consent,
+    affiliated_teams,
     age_group,
     age_on,
     effective_visibility,
     is_minor,
+    roster_team_ids,
+    school_or_club_label,
     shared_sections,
     today,
 )
@@ -340,6 +344,16 @@ class PlayerProfileSerializer(serializers.ModelSerializer):
     effective_visibility = serializers.SerializerMethodField()
     consent_status = serializers.SerializerMethodField()
     sports = PlayerSportSerializer(many=True, read_only=True)
+    teams = serializers.SerializerMethodField()
+    team_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        write_only=True,
+        required=False,
+        help_text=(
+            "School or club sides on Fair Measure. A player can list several, "
+            "including in different competitions."
+        ),
+    )
     measurements = serializers.SerializerMethodField()
     measurement_history = MeasurementSerializer(source="measurements", many=True, read_only=True)
     injuries = InjurySerializer(many=True, read_only=True)
@@ -362,6 +376,8 @@ class PlayerProfileSerializer(serializers.ModelSerializer):
             "nationality",
             "region",
             "school_or_club",
+            "teams",
+            "team_ids",
             "bio",
             "availability",
             "availability_note",
@@ -382,6 +398,8 @@ class PlayerProfileSerializer(serializers.ModelSerializer):
             "age",
             "age_group",
             "is_minor",
+            "school_or_club",
+            "teams",
             "effective_visibility",
             "consent_status",
             "sports",
@@ -408,6 +426,67 @@ class PlayerProfileSerializer(serializers.ModelSerializer):
         if value and value > today():
             raise serializers.ValidationError("The date of birth cannot be in the future.")
         return value
+
+    def validate_team_ids(self, value: list) -> list:
+        if len(value) > MAX_PROFILE_TEAMS:
+            raise serializers.ValidationError(
+                f"A profile can list up to {MAX_PROFILE_TEAMS} teams."
+            )
+        if len(set(value)) != len(value):
+            raise serializers.ValidationError("The same team is listed twice.")
+        if not value:
+            return value
+
+        from apps.competitions.models import Participant
+        from apps.competitions.views import visible_competitions
+
+        teams = {
+            team.id: team
+            for team in Participant.objects.filter(
+                pk__in=value, kind=Participant.Kind.TEAM, is_active=True
+            ).select_related("competition")
+        }
+        missing = [str(item) for item in value if item not in teams]
+        if missing:
+            raise serializers.ValidationError(
+                "Choose school or club sides that exist on Fair Measure."
+            )
+
+        request = self.context.get("request")
+        user = request.user if request else None
+        visible = set(visible_competitions(user).values_list("id", flat=True)) if user else set()
+        roster = roster_team_ids(user)
+        blocked = [
+            team.name
+            for team in teams.values()
+            if team.competition_id not in visible and team.id not in roster
+        ]
+        if blocked:
+            raise serializers.ValidationError(
+                f"These teams are not available to you: {', '.join(blocked)}."
+            )
+        return value
+
+    def get_teams(self, obj: PlayerProfile) -> list[dict]:
+        return affiliated_teams(obj)
+
+    def create(self, validated_data: dict) -> PlayerProfile:
+        team_ids = validated_data.pop("team_ids", [])
+        profile = super().create(validated_data)
+        self._set_teams(profile, team_ids)
+        return profile
+
+    def update(self, instance: PlayerProfile, validated_data: dict) -> PlayerProfile:
+        team_ids = validated_data.pop("team_ids", None)
+        profile = super().update(instance, validated_data)
+        if team_ids is not None:
+            self._set_teams(profile, team_ids)
+        return profile
+
+    def _set_teams(self, profile: PlayerProfile, team_ids: list) -> None:
+        profile.teams.set(team_ids)
+        profile.school_or_club = school_or_club_label(affiliated_teams(profile))
+        profile.save(update_fields=["school_or_club", "updated_at"])
 
     def get_age(self, obj: PlayerProfile) -> int | None:
         return age_on(obj.date_of_birth, today())
@@ -447,6 +526,7 @@ class ScoutProfileSerializer(serializers.Serializer):
         access = self.context.get("access", "public")
         sections = shared_sections(profile)
         group = age_group(profile.date_of_birth)
+        teams = affiliated_teams(profile)
         data: dict = {
             "id": str(profile.id),
             "first_name": profile.first_name,
@@ -456,7 +536,8 @@ class ScoutProfileSerializer(serializers.Serializer):
             "gender_category": profile.gender_category,
             "nationality": profile.nationality,
             "region": profile.region,
-            "school_or_club": profile.school_or_club,
+            "teams": teams,
+            "school_or_club": school_or_club_label(teams, profile.school_or_club),
             "bio": profile.bio,
             "access": access,
             "contact": "Contact this player through Fair Measure; details are never shared.",
@@ -494,12 +575,14 @@ class ProfileCardSerializer(serializers.Serializer):
     def to_representation(self, profile: PlayerProfile) -> dict:
         primary = next(iter(profile.sports.all()), None)
         group = age_group(profile.date_of_birth)
+        teams = affiliated_teams(profile)
         return {
             "id": str(profile.id),
             "name": profile.full_name,
             "photo_url": profile.photo_url,
             "age_group": group["label"] if group else None,
             "region": profile.region,
-            "school_or_club": profile.school_or_club,
+            "teams": teams,
+            "school_or_club": school_or_club_label(teams, profile.school_or_club),
             "sport": PlayerSportSerializer(primary).data if primary else None,
         }

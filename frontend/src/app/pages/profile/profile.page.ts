@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, inject, signal, viewChild } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
   AlertController,
@@ -24,6 +24,7 @@ import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
 import { PushService } from '../../core/push.service';
 import { RealtimeService } from '../../core/realtime.service';
+import { ProfileTalentComponent } from './profile-talent.component';
 
 @Component({
   selector: 'fm-profile',
@@ -45,6 +46,7 @@ import { RealtimeService } from '../../core/realtime.service';
     IonIcon,
     IonNote,
     IonSpinner,
+    ProfileTalentComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -76,6 +78,10 @@ import { RealtimeService } from '../../core/realtime.service';
           }
           <p>{{ user.email }}</p>
         </div>
+
+        <fm-profile-talent />
+
+        <h3 class="fm-section-title">Account</h3>
 
         <form [formGroup]="form" (ngSubmit)="save()">
           <ion-list inset="true">
@@ -291,6 +297,8 @@ export class ProfilePage implements OnInit {
   readonly realtime = inject(RealtimeService);
   readonly push = inject(PushService);
 
+  private readonly talent = viewChild(ProfileTalentComponent);
+
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
 
@@ -322,6 +330,11 @@ export class ProfilePage implements OnInit {
       next: (fresh) => this.form.patchValue(this.profileValue(fresh), { emitEvent: false }),
       error: () => undefined,
     });
+  }
+
+  ionViewDidEnter(): void {
+    // Runs on every visit, so a team joined through an invite elsewhere shows at once.
+    this.talent()?.refresh();
   }
 
   save(): void {

@@ -33,6 +33,17 @@ class Preset(TypedDict, total=False):
     locked: bool
     table_mode: str
     rules: list[dict]
+    # Performance results (one event, many entrants), read by apps.results.
+    result_type: str
+    result_config: dict
+    statuses: list[dict]
+    official_results: bool
+    placing_points: list
+    dead_heat_points: str
+    # Who governs the sport, shown on the competition page.
+    governing_body: str
+    rulebook: str
+    local_body: str
 
 
 POINTS_TABLE = "points"
@@ -230,6 +241,13 @@ def scoring_is_locked(competition) -> bool:
     return bool(preset.get("locked", preset.get("key") != "custom"))
 
 
+GOVERNANCE_KEYS = ("governing_body", "rulebook", "local_body")
+
+
+def governance(preset: Preset) -> dict:
+    return {key: preset.get(key, "") for key in GOVERNANCE_KEYS}
+
+
 def public_preset(key: str, preset: Preset) -> dict:
     categories = _categories(preset.get("score_types") or [])
     contest = preset.get("contest_type", HEAD_TO_HEAD)
@@ -270,6 +288,9 @@ def public_preset(key: str, preset: Preset) -> dict:
             for item in categories
         ],
         "rules": list(preset.get("rules") or []),
+        "result_type": preset.get("result_type"),
+        "official_results": bool(preset.get("official_results")),
+        **governance(preset),
     }
 
 
@@ -388,6 +409,12 @@ def apply_preset(competition, preset_key: str) -> None:
             "performance": preset.get("performance"),
             "lock_when_started": bool(preset.get("lock_when_started")),
             "target": preset.get("target"),
+            "result_type": preset.get("result_type"),
+            "result_config": dict(preset.get("result_config") or {}),
+            "statuses": list(preset.get("statuses") or []),
+            "official_results": bool(preset.get("official_results")),
+            "dead_heat_points": preset.get("dead_heat_points") or "full",
+            **governance(preset),
             "category_better": {
                 item["key"]: item["better"]
                 for item in (preset.get("score_types") or [])

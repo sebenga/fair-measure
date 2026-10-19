@@ -27,6 +27,8 @@ export interface ScoutingCatalog {
   regions: CatalogItem[];
   measurements: MeasurementSpec[];
   consent_sections: Array<CatalogItem & { required: boolean }>;
+  /** Catalogue sport key → the competition sport names that count as it. */
+  competition_sports?: Record<string, string[]>;
 }
 
 export interface ScoutingRole {
@@ -125,6 +127,15 @@ export interface ConsentRecord {
   created_at: string;
 }
 
+export interface ProfileTeam {
+  id: string;
+  name: string;
+  competition_id: string;
+  competition: string;
+  sport: string;
+  from_roster: boolean;
+}
+
 export interface ConsentStatus {
   needed: boolean;
   granted: boolean;
@@ -147,6 +158,7 @@ export interface PlayerProfile {
   nationality: string;
   region: string;
   school_or_club: string;
+  teams: ProfileTeam[];
   bio: string;
   availability: 'available' | 'limited' | 'unavailable' | 'injured';
   availability_note: string;
@@ -175,6 +187,7 @@ export interface ScoutProfileView {
   nationality: string;
   region: string;
   school_or_club: string;
+  teams: ProfileTeam[];
   bio: string;
   access: ProfileAccess;
   contact: string;
@@ -189,6 +202,154 @@ export interface ScoutProfileView {
   effective_visibility?: Visibility;
 }
 
+export interface ReportRating {
+  fixture: string;
+  date: string;
+  rating: string;
+}
+
+export interface ReportStat {
+  key: string;
+  label: string;
+  count: string;
+  points: string;
+  first: string;
+  last: string;
+}
+
+export interface ReportSelection {
+  squad: string;
+  status: 'draft' | 'published';
+  group: string;
+  position: string;
+  score: string | null;
+  summary: string[];
+  published_at: string | null;
+}
+
+export interface ReportLeague {
+  competition_id: string;
+  competition: string;
+  sport: string;
+  team: string;
+  position: string;
+  number: number | null;
+  games: number;
+  record: { won: number; drawn: number; lost: number };
+  avg_rating: string | null;
+  ratings: ReportRating[];
+  stats: ReportStat[];
+  selection: ReportSelection | null;
+}
+
+export interface ScoutingReport {
+  kind: 'player_scouting_report';
+  generated_at: string;
+  access: ProfileAccess;
+  shaped_as: ProfileAccess;
+  profile: ScoutProfileView;
+  headline: string[];
+  leagues: ReportLeague[];
+  coverage: Array<{ key: string; label: string; available: boolean; note?: string }>;
+}
+
+export type EvidenceConfidence = 'strong' | 'some' | 'thin' | 'none';
+
+export interface SquadPick {
+  id: string;
+  user_id: string;
+  name: string;
+  team: string;
+  position: string;
+  group_key: string;
+  score: string | null;
+  confidence: EvidenceConfidence;
+  basis: string[];
+  summary: string[];
+  locked: boolean;
+  profile_id: string | null;
+  photo_url: string;
+}
+
+export interface SquadGroup {
+  key: string;
+  label: string;
+  min: number;
+  max: number | null;
+  picks: SquadPick[];
+}
+
+export interface LeagueSquad {
+  id: string;
+  competition_id: string;
+  competition: string;
+  sport: string;
+  name: string;
+  size: number;
+  status: 'draft' | 'published';
+  notes: string;
+  filled: number;
+  generated_at: string | null;
+  published_at: string | null;
+  groups: SquadGroup[];
+  warnings: string[];
+  excluded: string[];
+  can_edit: boolean;
+}
+
+export interface LeagueSquadResponse {
+  squad: LeagueSquad | null;
+  can_edit?: boolean;
+  competition?: string;
+}
+
+export interface LeagueSummary {
+  id: string;
+  name: string;
+  sport: string;
+  sport_key: string | null;
+  teams: number;
+  open_to_scouts: boolean;
+  scouts: number;
+  i_scout_it: boolean;
+  can_select: boolean;
+  can_manage: boolean;
+  squad_status: 'draft' | 'published' | null;
+  squad_filled: number;
+  squad_size: number;
+}
+
+export interface LeagueCandidate {
+  user_id: string;
+  name: string;
+  team: string;
+  position: string;
+  group_key: string | null;
+  score: string | null;
+  available: boolean;
+  availability: string;
+  in_squad: boolean;
+  excluded: boolean;
+  profile_id: string | null;
+  photo_url: string;
+  basis: string[];
+  components: Record<string, string>;
+  ratings: number;
+  avg_rating: string | null;
+  points: string;
+  games: number;
+  record: { won: number; drawn: number; lost: number };
+  confidence: EvidenceConfidence;
+  summary: string[];
+}
+
+export interface LeagueCandidates {
+  counts: { rostered: number; no_profile: number; private: number; eligible: number };
+  groups: Array<{ key: string; label: string }>;
+  weights: Record<string, number>;
+  results: LeagueCandidate[];
+}
+
 export interface ProfileCard {
   id: string;
   name: string;
@@ -196,5 +357,51 @@ export interface ProfileCard {
   age_group: string | null;
   region: string;
   school_or_club: string;
+  teams: ProfileTeam[];
   sport: PlayerSport | null;
+}
+
+export interface LeagueScout {
+  id: string;
+  user_id: string;
+  name: string;
+  organisation: string | null;
+  added_at: string;
+}
+
+export interface LeagueScouts {
+  scouts: LeagueScout[];
+  can_manage: boolean;
+}
+
+export interface TeamMembership {
+  id: string;
+  name: string;
+  competition_id: string;
+  competition: string;
+  sport: string;
+  sport_key: string | null;
+  sport_label: string;
+  position: string;
+  number: number | null;
+  active: boolean;
+  open_to_scouts: boolean;
+  joined_at: string;
+}
+
+export interface TeamMemberships {
+  teams: TeamMembership[];
+  pending_invites: number;
+}
+
+export type IdentityDocumentKind = 'passport' | 'national_id';
+
+export interface IdentityDocument {
+  id: string;
+  kind: IdentityDocumentKind;
+  kind_label: string;
+  original_name: string;
+  content_type: string;
+  size_bytes: number;
+  uploaded_at: string;
 }

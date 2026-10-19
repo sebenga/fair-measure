@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import {
   IonBackButton,
@@ -12,7 +12,7 @@ import {
 } from '@ionic/angular/standalone';
 
 import type { ProfileCard, ScoutingCatalog } from '../../core/scouting.models';
-import { ScoutingService } from '../../core/scouting.service';
+import { ScoutingService, groupBySport } from '../../core/scouting.service';
 
 @Component({
   selector: 'fm-scouting-players',
@@ -51,36 +51,44 @@ import { ScoutingService } from '../../core/scouting.service';
           <div class="fm-card card"><span class="fm-skeleton" style="width: 60%; height: 18px"></span></div>
         }
       } @else {
-        <div class="fm-stagger">
-          @for (player of players(); track player.id) {
-            <button type="button" class="fm-card card fm-lift" (click)="open(player.id)">
-              <span class="avatar">
-                @if (player.photo_url) {
-                  <img [src]="player.photo_url" alt="" />
-                } @else {
-                  {{ player.name.charAt(0) }}
-                }
-              </span>
-              <span class="grow">
-                <strong>{{ player.name }}</strong>
-                <small>
-                  {{ player.sport?.sport_label ?? 'No sport yet' }}
-                  @if (player.sport?.primary_position_label) {
-                    · {{ player.sport?.primary_position_label }}
-                  }
-                </small>
-                <small>{{ player.age_group ?? '' }} {{ regionLabel(player.region) ? '· ' + regionLabel(player.region) : '' }}</small>
-              </span>
-              <ion-icon name="chevron-forward-outline" aria-hidden="true" />
-            </button>
-          } @empty {
-            <div class="fm-empty">
-              <ion-icon name="search-outline" aria-hidden="true" />
-              <h3>No players found</h3>
-              <p>Try another sport or name.</p>
-            </div>
-          }
-        </div>
+        @for (group of groups(); track group.key) {
+          <h3 class="fm-section-title sport-title">
+            {{ group.label }} <span class="count">{{ group.rows.length }}</span>
+          </h3>
+          <div class="fm-stagger">
+            @for (player of group.rows; track player.id) {
+                <button type="button" class="fm-card card fm-lift" (click)="open(player.id)">
+                  <span class="avatar">
+                    @if (player.photo_url) {
+                      <img [src]="player.photo_url" alt="" />
+                    } @else {
+                      {{ player.name.charAt(0) }}
+                    }
+                  </span>
+                  <span class="grow">
+                    <strong>{{ player.name }}</strong>
+                    <small>
+                      {{ player.sport?.sport_label ?? 'No sport yet' }}
+                      @if (player.sport?.primary_position_label) {
+                        · {{ player.sport?.primary_position_label }}
+                      }
+                    </small>
+                    <small>{{ player.age_group ?? '' }} {{ regionLabel(player.region) ? '· ' + regionLabel(player.region) : '' }}</small>
+                    @if (teamLabel(player)) {
+                      <small>{{ teamLabel(player) }}</small>
+                    }
+                  </span>
+                  <ion-icon name="chevron-forward-outline" aria-hidden="true" />
+                </button>
+            }
+          </div>
+        } @empty {
+          <div class="fm-empty">
+            <ion-icon name="search-outline" aria-hidden="true" />
+            <h3>No players found</h3>
+            <p>Try another sport or name.</p>
+          </div>
+        }
       }
       <div style="height: 32px"></div>
     </ion-content>
@@ -97,6 +105,12 @@ import { ScoutingService } from '../../core/scouting.service';
 
       .filters .chip {
         flex: 0 0 auto;
+      }
+
+      .sport-title .count {
+        margin-left: 4px;
+        color: var(--ion-color-medium);
+        font-weight: 600;
       }
 
       .card {
@@ -133,6 +147,15 @@ export class ScoutingPlayersPage {
   readonly count = signal(0);
   readonly loading = signal(true);
   readonly sport = signal('');
+
+  /** Players grouped by sport code, in catalogue order. */
+  readonly groups = computed(() =>
+    groupBySport(
+      this.players(),
+      (player) => ({ key: player.sport?.sport ?? null, label: player.sport?.sport_label ?? 'No sport yet' }),
+      this.catalog(),
+    ),
+  );
   private query = '';
 
   ionViewWillEnter(): void {
@@ -152,6 +175,13 @@ export class ScoutingPlayersPage {
 
   regionLabel(key: string): string {
     return (this.catalog()?.regions ?? []).find((region) => region.key === key)?.label ?? '';
+  }
+
+  teamLabel(player: ProfileCard): string {
+    if (player.teams.length) {
+      return player.teams.map((team) => team.name).join(' · ');
+    }
+    return player.school_or_club;
   }
 
   open(id: string): void {

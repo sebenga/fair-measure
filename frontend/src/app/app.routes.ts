@@ -108,6 +108,30 @@ export const routes: Routes = [
           import('./pages/scouting/player-view.page').then((m) => m.ScoutingPlayerViewPage),
       },
       {
+        path: 'scouting/players/:id/report',
+        loadComponent: () =>
+          import('./pages/scouting/scouting-report.page').then((m) => m.ScoutingReportPage),
+      },
+      {
+        path: 'competitions/:competitionId/events/:fixtureId',
+        loadComponent: () =>
+          import('./pages/results/event-results.page').then((m) => m.EventResultsPage),
+      },
+      {
+        path: 'horses',
+        loadComponent: () => import('./pages/horses/horses.page').then((m) => m.HorsesPage),
+      },
+      {
+        path: 'scouting/leagues',
+        loadComponent: () =>
+          import('./pages/scouting/leagues.page').then((m) => m.ScoutingLeaguesPage),
+      },
+      {
+        path: 'scouting/leagues/:id',
+        loadComponent: () =>
+          import('./pages/scouting/league-squad.page').then((m) => m.LeagueSquadPage),
+      },
+      {
         path: 'scouting/organisations/:id',
         loadComponent: () =>
           import('./pages/scouting/organisation.page').then((m) => m.ScoutingOrganisationPage),

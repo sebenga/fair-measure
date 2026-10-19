@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models import UUIDModel
+
+from .storage import private_storage
 
 
 class UserManager(BaseUserManager):
@@ -96,9 +100,7 @@ class SocialAccount(UUIDModel):
         FIREBASE = "firebase", "Firebase"
         AUTH0 = "auth0", "Auth0"
 
-    user = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="social_accounts"
-    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="social_accounts")
     provider = models.CharField(max_length=32, choices=Provider.choices)
     provider_user_id = models.CharField(max_length=255)
     raw_profile = models.JSONField(default=dict, blank=True)
@@ -116,3 +118,46 @@ class SocialAccount(UUIDModel):
 
 
 SOCIAL_PROVIDER_CHOICES = SocialAccount.Provider.choices
+
+
+def _document_path(instance: IdentityDocument, filename: str) -> str:
+    import uuid
+
+    suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    return f"identity/{instance.user_id}/{uuid.uuid4().hex}.{suffix[:5]}"
+
+
+class IdentityDocument(UUIDModel):
+    """An optional passport or ID scan. Only its owner can ever download it.
+
+    Scouts, other players and competition admins never see these, nor that one
+    exists. A new upload of the same kind replaces the old file.
+    """
+
+    class Kind(models.TextChoices):
+        PASSPORT = "passport", _("Passport")
+        NATIONAL_ID = "national_id", _("ID document")
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="identity_documents")
+    kind = models.CharField(max_length=16, choices=Kind.choices)
+    file = models.FileField(upload_to=_document_path, storage=private_storage, max_length=255)
+    original_name = models.CharField(max_length=255, blank=True)
+    content_type = models.CharField(max_length=80)
+    size_bytes = models.PositiveIntegerField()
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["kind"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "kind"], name="uniq_document_kind_per_user")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} {self.kind}"
+
+
+@receiver(post_delete, sender=IdentityDocument)
+def _remove_document_file(sender, instance: IdentityDocument, **kwargs) -> None:
+    # Deleting an account cascades here; the scan must not outlive the row.
+    if instance.file:
+        instance.file.delete(save=False)

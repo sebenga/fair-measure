@@ -5,11 +5,15 @@ from .models import (
     GuardianLink,
     HighlightVideo,
     InjuryRecord,
+    LeagueScout,
+    LeagueSquad,
     Measurement,
     Organisation,
     PlayerProfile,
     PlayerSport,
+    ReportExport,
     ScoutingRole,
+    SquadPick,
 )
 
 
@@ -39,7 +43,8 @@ class MeasurementInline(admin.TabularInline):
 class PlayerProfileAdmin(admin.ModelAdmin):
     list_display = ["first_name", "last_name", "date_of_birth", "visibility", "region"]
     list_filter = ["visibility", "gender_category", "region"]
-    search_fields = ["first_name", "last_name"]
+    search_fields = ["first_name", "last_name", "school_or_club"]
+    filter_horizontal = ["teams"]
     inlines = [PlayerSportInline, MeasurementInline]
 
 
@@ -62,3 +67,29 @@ class ConsentRecordAdmin(admin.ModelAdmin):
 
 admin.site.register(InjuryRecord)
 admin.site.register(HighlightVideo)
+
+
+class SquadPickInline(admin.TabularInline):
+    model = SquadPick
+    extra = 0
+    fields = ["user", "group_key", "position_label", "score", "locked", "order"]
+    readonly_fields = ["score"]
+
+
+@admin.register(LeagueSquad)
+class LeagueSquadAdmin(admin.ModelAdmin):
+    list_display = ["competition", "name", "status", "size", "published_at"]
+    list_filter = ["status"]
+    inlines = [SquadPickInline]
+
+
+@admin.register(LeagueScout)
+class LeagueScoutAdmin(admin.ModelAdmin):
+    list_display = ["competition", "user", "organisation", "created_at"]
+
+
+@admin.register(ReportExport)
+class ReportExportAdmin(admin.ModelAdmin):
+    list_display = ["kind", "viewer", "profile", "competition", "access", "created_at"]
+    list_filter = ["kind"]
+    readonly_fields = [field.name for field in ReportExport._meta.fields]

@@ -62,6 +62,13 @@ class Competition(BaseModel):
     is_private = models.BooleanField(
         default=False, help_text=_("Private competitions are only visible to members.")
     )
+    open_to_scouts = models.BooleanField(
+        default=False,
+        help_text=_(
+            "Sport competitions only. Scouts can follow the league, its data feeds scouting "
+            "reports, and it can name its own squad. Players still choose their own visibility."
+        ),
+    )
     starts_on = models.DateField(null=True, blank=True)
     ends_on = models.DateField(null=True, blank=True)
     timezone = models.CharField(max_length=64, default="UTC")
@@ -149,9 +156,7 @@ class ScoringCategory(BaseModel):
 
 
 class Rule(BaseModel):
-    competition = models.ForeignKey(
-        Competition, on_delete=models.CASCADE, related_name="rules"
-    )
+    competition = models.ForeignKey(Competition, on_delete=models.CASCADE, related_name="rules")
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     display_order = models.PositiveIntegerField(default=0)
@@ -184,6 +189,9 @@ class PointsPolicy(BaseModel):
         NEXT_ATTEMPT = "next_attempt", _("Next-best attempt")
         RECENT = "recent", _("Most recent scoring activity")
         COUNTBACK = "countback", _("Countback from the last unit")
+        SECONDS = "seconds", _("Second places")
+        THIRDS = "thirds", _("Third places")
+        PLACINGS = "placings", _("Wins, then seconds, then thirds")
         NAME = "name", _("Alphabetical")
 
     competition = models.OneToOneField(
@@ -221,11 +229,7 @@ class PointsPolicy(BaseModel):
     @property
     def effective_tiebreakers(self) -> list[str]:
         valid = {choice.value for choice in self.Tiebreaker}
-        ordered = [
-            t
-            for t in self.tiebreakers
-            if t in valid or str(t).startswith("category:")
-        ]
+        ordered = [t for t in self.tiebreakers if t in valid or str(t).startswith("category:")]
         return ordered or [
             self.Tiebreaker.POINTS,
             self.Tiebreaker.SCORE_DIFFERENCE,
@@ -242,9 +246,7 @@ class Stage(BaseModel):
         GROUP = "group", _("Group")
         KNOCKOUT = "knockout", _("Knockout")
 
-    competition = models.ForeignKey(
-        Competition, on_delete=models.CASCADE, related_name="stages"
-    )
+    competition = models.ForeignKey(Competition, on_delete=models.CASCADE, related_name="stages")
     name = models.CharField(max_length=120)
     kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.LEAGUE)
     display_order = models.PositiveIntegerField(default=0)
@@ -343,9 +345,7 @@ class TeamPick(BaseModel):
         ACCEPTED = "accepted", _("Accepted")
         DECLINED = "declined", _("Declined")
 
-    participant = models.ForeignKey(
-        Participant, on_delete=models.CASCADE, related_name="picks"
-    )
+    participant = models.ForeignKey(Participant, on_delete=models.CASCADE, related_name="picks")
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="team_picks"
     )
@@ -378,9 +378,7 @@ class TeamPick(BaseModel):
 class RosterMember(BaseModel):
     """An individual within a participant, so events can name a scorer."""
 
-    participant = models.ForeignKey(
-        Participant, on_delete=models.CASCADE, related_name="roster"
-    )
+    participant = models.ForeignKey(Participant, on_delete=models.CASCADE, related_name="roster")
     name = models.CharField(max_length=160)
     number = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(0)])
     position = models.CharField(max_length=60, blank=True)

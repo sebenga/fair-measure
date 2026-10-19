@@ -23,5 +23,6 @@ class StandingRowSerializer(serializers.ModelSerializer):
             "points",
             "bonus_points",
             "form",
+            "detail",
             "computed_at",
         ]

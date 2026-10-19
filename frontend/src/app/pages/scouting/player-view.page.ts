@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   IonBackButton,
   IonButtons,
@@ -17,6 +17,7 @@ import { extractErrorMessage } from '../../core/error-message';
 import type {
   Measurement,
   PlayerProfile,
+  ProfileTeam,
   ScoutProfileView,
   ScoutingCatalog,
 } from '../../core/scouting.models';
@@ -68,7 +69,16 @@ type Viewable = PlayerProfile | ScoutProfileView;
             {{ p.age_group?.label ?? '' }}
             {{ regionLabel(p.region) ? '· ' + regionLabel(p.region) : '' }}
           </p>
-          <p class="sub">{{ p.school_or_club }}{{ p.nationality ? ' · ' + p.nationality : '' }}</p>
+          @if (teamsOf(p).length) {
+            <div class="chips centre">
+              @for (team of teamsOf(p); track team.id) {
+                <span class="badge">{{ team.name }} · {{ team.competition }}</span>
+              }
+            </div>
+          } @else if (p.school_or_club) {
+            <p class="sub">{{ p.school_or_club }}</p>
+          }
+          <p class="sub">{{ p.nationality }}</p>
           <div class="chips centre">
             @for (sport of p.sports; track sport.id) {
               <span class="badge info">{{ sport.sport_label }}{{ sport.primary_position_label ? ' · ' + sport.primary_position_label : '' }}</span>
@@ -79,6 +89,13 @@ type Viewable = PlayerProfile | ScoutProfileView;
         <div class="notice">
           <ion-icon name="lock-closed-outline" aria-hidden="true" />
           {{ contactNote(p) }}
+        </div>
+
+        <div class="section">
+          <button type="button" class="btn block" (click)="openReport(p.id)">
+            <ion-icon name="document-text-outline" aria-hidden="true" />
+            Scouting report
+          </button>
         </div>
 
         @if (p.bio) {
@@ -249,6 +266,7 @@ type Viewable = PlayerProfile | ScoutProfileView;
 export class ScoutingPlayerViewPage {
   private readonly scouting = inject(ScoutingService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly toasts = inject(ToastController);
 
   readonly catalog = signal<ScoutingCatalog | null>(null);
@@ -341,6 +359,14 @@ export class ScoutingPlayerViewPage {
     }
     if (access === 'guardian') return 'You are viewing as this player\u2019s guardian.';
     return '';
+  }
+
+  openReport(id: string): void {
+    void this.router.navigateByUrl(`/tabs/scouting/players/${id}/report`);
+  }
+
+  teamsOf(player: Viewable): ProfileTeam[] {
+    return player.teams ?? [];
   }
 
   showAge(player: Viewable): boolean {

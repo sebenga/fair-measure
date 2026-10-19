@@ -4,86 +4,67 @@ import { IonButton, IonIcon, IonSpinner, IonTextarea } from '@ionic/angular/stan
 
 import { ApiService } from '../core/api.service';
 import { extractErrorMessage } from '../core/error-message';
-import type { MediaAsset, Post } from '../core/models';
+import type { Post } from '../core/models';
 import { UploadService } from '../core/upload.service';
-
-interface PendingMedia {
-  file: File;
-  previewUrl: string;
-  asset: MediaAsset | null;
-  failed: boolean;
-}
-
-const MAX_ATTACHMENTS = 4;
+import { AttachmentQueue } from './attachment-queue';
+import { AttachmentTrayComponent } from './attachment-tray.component';
 
 @Component({
   selector: 'fm-post-composer',
   standalone: true,
-  imports: [FormsModule, IonTextarea, IonButton, IonIcon, IonSpinner],
+  imports: [FormsModule, IonTextarea, IonButton, IonIcon, IonSpinner, AttachmentTrayComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fm-card composer">
       <ion-textarea
         [(ngModel)]="body"
-        placeholder="Share a result, a clip, or some trash talk…"
+        placeholder="Share a result, a photo, a clip, or some trash talk…"
         autoGrow="true"
         rows="2"
         maxlength="5000"
         [disabled]="posting()"
       />
 
-      @if (pending().length) {
-        <div class="attachments">
-          @for (item of pending(); track item.previewUrl) {
-            <div class="thumb" [class.failed]="item.failed">
-              @if (item.file.type.startsWith('video/')) {
-                <video [src]="item.previewUrl" muted playsinline></video>
-                <ion-icon name="videocam" class="kind" aria-hidden="true" />
-              } @else {
-                <img [src]="item.previewUrl" alt="" />
-              }
+      <fm-attachment-tray [queue]="attachments" />
 
-              @if (!item.asset && !item.failed) {
-                <div class="veil"><ion-spinner name="crescent" /></div>
-              }
-              @if (item.failed) {
-                <div class="veil"><ion-icon name="alert-circle" /></div>
-              }
-
-              <button
-                type="button"
-                class="remove"
-                (click)="removeAttachment(item)"
-                aria-label="Remove attachment"
-              >
-                <ion-icon name="close" />
-              </button>
-            </div>
-          }
-        </div>
-      }
-
-      @if (error()) {
-        <p class="fm-form-error" role="alert">{{ error() }}</p>
+      @if (error() || attachments.error()) {
+        <p class="fm-form-error" role="alert">{{ error() || attachments.error() }}</p>
       }
 
       <div class="actions">
         <input
-          #fileInput
+          #photoInput
           type="file"
-          accept="image/*,video/*"
+          accept="image/*"
           multiple
           hidden
-          (change)="onFilesPicked($event)"
+          (change)="pick($event)"
+        />
+        <input
+          #videoInput
+          type="file"
+          accept="video/*"
+          hidden
+          (change)="pick($event)"
         />
 
         <ion-button
           fill="clear"
           size="small"
-          [disabled]="posting() || pending().length >= maxAttachments"
-          (click)="fileInput.click()"
+          [disabled]="posting() || attachments.full()"
+          (click)="photoInput.click()"
         >
-          <ion-icon slot="icon-only" name="image-outline" aria-label="Add photo or video" />
+          <ion-icon slot="start" name="image-outline" aria-hidden="true" />
+          Photo
+        </ion-button>
+        <ion-button
+          fill="clear"
+          size="small"
+          [disabled]="posting() || attachments.full()"
+          (click)="videoInput.click()"
+        >
+          <ion-icon slot="start" name="videocam-outline" aria-hidden="true" />
+          Video
         </ion-button>
 
         <span class="spacer"></span>
@@ -102,63 +83,26 @@ const MAX_ATTACHMENTS = 4;
 })
 export class PostComposerComponent {
   private readonly api = inject(ApiService);
-  private readonly uploads = inject(UploadService);
 
   readonly competitionId = input.required<string>();
   readonly fixtureId = input<string | null>(null);
   readonly posted = output<Post>();
 
-  readonly maxAttachments = MAX_ATTACHMENTS;
-  readonly pending = signal<PendingMedia[]>([]);
+  readonly attachments = new AttachmentQueue(inject(UploadService), () => this.competitionId());
   readonly posting = signal(false);
   readonly error = signal<string | null>(null);
 
   body = '';
 
   canSubmit(): boolean {
-    if (this.posting()) return false;
-    const hasReadyMedia = this.pending().some((item) => item.asset);
-    const stillUploading = this.pending().some((item) => !item.asset && !item.failed);
-    return (this.body.trim().length > 0 || hasReadyMedia) && !stillUploading;
+    if (this.posting() || this.attachments.uploading()) return false;
+    return this.body.trim().length > 0 || this.attachments.readyIds().length > 0;
   }
 
-  onFilesPicked(event: Event): void {
+  pick(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []).slice(
-      0,
-      MAX_ATTACHMENTS - this.pending().length,
-    );
+    this.attachments.add(input.files);
     input.value = '';
-
-    for (const file of files) {
-      const item: PendingMedia = {
-        file,
-        previewUrl: URL.createObjectURL(file),
-        asset: null,
-        failed: false,
-      };
-      this.pending.update((current) => [...current, item]);
-
-      // Upload as soon as the file is chosen so posting feels instant later.
-      this.uploads.upload({ file, competitionId: this.competitionId() }).subscribe({
-        next: (asset) => this.updateItem(item, { asset }),
-        error: (err: unknown) => {
-          this.updateItem(item, { failed: true });
-          this.error.set(extractErrorMessage(err, `Could not upload ${file.name}.`));
-        },
-      });
-    }
-  }
-
-  private updateItem(target: PendingMedia, patch: Partial<PendingMedia>): void {
-    this.pending.update((current) =>
-      current.map((item) => (item === target ? { ...item, ...patch } : item)),
-    );
-  }
-
-  removeAttachment(target: PendingMedia): void {
-    URL.revokeObjectURL(target.previewUrl);
-    this.pending.update((current) => current.filter((item) => item !== target));
   }
 
   submit(): void {
@@ -167,34 +111,23 @@ export class PostComposerComponent {
     this.posting.set(true);
     this.error.set(null);
 
-    const mediaIds = this.pending()
-      .map((item) => item.asset?.id)
-      .filter((id): id is string => Boolean(id));
-
     this.api
       .createPost(this.competitionId(), {
         body: this.body.trim(),
-        media_ids: mediaIds,
+        media_asset_ids: this.attachments.readyIds(),
         ...(this.fixtureId() ? { fixture: this.fixtureId() } : {}),
       })
       .subscribe({
         next: (post) => {
           this.posted.emit(post);
-          this.reset();
+          this.attachments.clear();
+          this.body = '';
+          this.posting.set(false);
         },
         error: (err: unknown) => {
           this.posting.set(false);
           this.error.set(extractErrorMessage(err, 'Could not publish that post.'));
         },
       });
-  }
-
-  private reset(): void {
-    for (const item of this.pending()) {
-      URL.revokeObjectURL(item.previewUrl);
-    }
-    this.pending.set([]);
-    this.body = '';
-    this.posting.set(false);
   }
 }

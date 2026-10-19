@@ -47,6 +47,9 @@ class Row:
     category_points: dict = field(default_factory=dict)
     drawn: set[str] = field(default_factory=set)
     countback: tuple = ()
+    seconds: int = 0
+    thirds: int = 0
+    statuses: int = 0
 
     @property
     def score_difference(self) -> Decimal:
@@ -155,6 +158,12 @@ def _sort_key(row: Row, tiebreakers: list[str], settings: dict | None = None) ->
             key.append(total if better == "lower" else -total)
         elif rule == PointsPolicy.Tiebreaker.COUNTBACK:
             key.append(row.countback)
+        elif rule == PointsPolicy.Tiebreaker.SECONDS:
+            key.append(-row.seconds)
+        elif rule == PointsPolicy.Tiebreaker.THIRDS:
+            key.append(-row.thirds)
+        elif rule == PointsPolicy.Tiebreaker.PLACINGS:
+            key.extend([-row.wins, -row.seconds, -row.thirds])
         elif rule == PointsPolicy.Tiebreaker.NAME:
             key.append(row.name.lower())
         # HEAD_TO_HEAD needs the whole tied group, so it is applied afterwards.
@@ -313,7 +322,9 @@ def _attach_sonneborn(rows: dict[str, Row]) -> None:
         row.sonneborn = total
 
 
-def _apply_head_to_head(rows: list[Row], tiebreakers: list[str], settings: dict | None = None) -> list[Row]:
+def _apply_head_to_head(
+    rows: list[Row], tiebreakers: list[str], settings: dict | None = None
+) -> list[Row]:
     """Reorder groups that are level on every earlier tiebreaker by head-to-head.
 
     Only pairs are resolved. Circular results among three or more participants
@@ -344,6 +355,38 @@ def _apply_head_to_head(rows: list[Row], tiebreakers: list[str], settings: dict 
             bucket.append(row)
 
     return result
+
+
+def _series_from_results(competition: Competition, rows: dict[str, Row], settings: dict) -> None:
+    """A season across many events: placing points, and counts of 1st, 2nd and 3rd.
+
+    Entrants with a status (eliminated, disqualified, withdrawn...) are counted as
+    having started but never earn points.
+    """
+
+    from apps.results.services import counted_entries, placing_points_for
+
+    for entry, tied in counted_entries(competition):
+        row = rows.get(str(entry.side.participant_id))
+        if row is None:
+            continue
+        row.played += 1
+        if entry.rank is None:
+            row.statuses += 1
+            continue
+        if entry.rank == 1:
+            row.wins += 1
+        elif entry.rank == 2:
+            row.seconds += 1
+        elif entry.rank == 3:
+            row.thirds += 1
+        else:
+            row.losses += 1
+        row.points += placing_points_for(settings, entry.rank, tied)
+        if entry.primary is not None:
+            row.score_for += entry.primary
+            if row.best_single == 0 or entry.primary > row.best_single:
+                row.best_single = entry.primary
 
 
 def scoring_basis(competition: Competition) -> str:
@@ -408,8 +451,7 @@ def criteria_breakdown(competition: Competition) -> dict[str, list[dict]]:
 
     return {
         participant_id: [
-            {**bucket, "total": str(bucket["total"])}
-            for bucket in categories.values()
+            {**bucket, "total": str(bucket["total"])} for bucket in categories.values()
         ]
         for participant_id, categories in grouped.items()
     }
@@ -427,9 +469,7 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
     if stage is not None:
         participants = participants.filter(stages=stage)
     for participant in participants:
-        rows[str(participant.id)] = Row(
-            participant_id=str(participant.id), name=participant.name
-        )
+        rows[str(participant.id)] = Row(participant_id=str(participant.id), name=participant.name)
 
     fixtures = (
         Fixture.objects.filter(
@@ -460,6 +500,10 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
         )
     no_result_points = Decimal(str((settings.get("league_points") or {}).get("no_result", 1)))
 
+    if settings.get("result_type"):
+        _series_from_results(competition, rows, settings)
+        fixtures = []
+
     for fixture in fixtures:
         sides = list(fixture.sides.all())
         if not sides:
@@ -478,9 +522,7 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
             continue
         if placing and len(sides) >= 2:
             lower = _performance_is_lower(settings, fixture)
-            attempts = {
-                side.id: _attempts(side, fixture, settings) for side in sides
-            }
+            attempts = {side.id: _attempts(side, fixture, settings) for side in sides}
             ordered_sides = sorted(sides, key=lambda side: _attempt_sort(attempts[side.id], lower))
             for index, side in enumerate(ordered_sides):
                 row = rows.get(str(side.participant_id))
@@ -557,9 +599,7 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
 
             # Optional margin bonus. Margin is measured against the best
             # of the other sides, which also works for multi-way fixtures.
-            best_other = max(
-                (other.score for other in sides if other.id != side.id), default=ZERO
-            )
+            best_other = max((other.score for other in sides if other.id != side.id), default=ZERO)
             margin = side.score - best_other
 
             if (
@@ -590,10 +630,13 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
                 row.points += adjustment
                 row.score_for += adjustment
 
-    _attach_unit_tiebreakers(rows, competition)
-    _attach_sonneborn(rows)
+    if not settings.get("result_type"):
+        _attach_unit_tiebreakers(rows, competition)
+        _attach_sonneborn(rows)
     tiebreakers = policy.effective_tiebreakers
-    if settings.get("placing_points"):
+    if settings.get("result_type"):
+        ordered = sorted(rows.values(), key=lambda row: _sort_key(row, tiebreakers, settings))
+    elif settings.get("placing_points"):
         ordered = sorted(rows.values(), key=lambda row: _sort_key(row, tiebreakers, settings))
     elif settings.get("contest_type") == "accumulation":
         lowest = settings.get("accumulation_ranking") == "lowest_first"
@@ -641,6 +684,11 @@ def refresh_standings(competition: Competition, stage: Stage | None = None) -> l
                 points=row.points,
                 bonus_points=row.bonus_points,
                 form=row.form,
+                detail=(
+                    {"seconds": row.seconds, "thirds": row.thirds, "statuses": row.statuses}
+                    if (competition.settings_json or {}).get("result_type")
+                    else {}
+                ),
             )
             for index, row in enumerate(computed)
         ]

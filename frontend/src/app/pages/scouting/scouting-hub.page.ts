@@ -75,9 +75,14 @@ import { ROLE_GUIDE, ScoutingService } from '../../core/scouting.service';
             <button type="button" class="tile" (click)="go('players')">
               <ion-icon name="search-outline" aria-hidden="true" />
               <strong>Browse players</strong>
-              <small>Profiles visible to you</small>
+              <small>Profiles and scouting reports</small>
             </button>
           }
+          <button type="button" class="tile" (click)="go('leagues')">
+            <ion-icon name="shirt-outline" aria-hidden="true" />
+            <strong>League squads</strong>
+            <small>Each league's best 23</small>
+          </button>
           @for (organisation of me()?.organisations ?? []; track organisation.id) {
             <button type="button" class="tile" (click)="go('organisations/' + organisation.id)">
               <ion-icon name="business-outline" aria-hidden="true" />

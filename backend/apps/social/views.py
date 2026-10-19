@@ -15,8 +15,9 @@ from apps.competitions.models import Competition
 from apps.competitions.views import visible_competitions
 from apps.core.bus import Queues, competition_room, enqueue_job, publish_event
 from apps.core.pagination import FeedPagination
-from apps.core.permissions import Role, has_at_least, role_in
+from apps.core.permissions import Role, has_at_least
 
+from .access import takes_part
 from .models import Comment, Post, Reaction
 from .serializers import (
     CommentSerializer,
@@ -132,9 +133,8 @@ class PostViewSet(ReactionMixin, viewsets.ModelViewSet):
         return PostSerializer
 
     def _assert_member(self) -> None:
-        competition = self.get_competition()
-        if role_in(competition, self.request.user) is None:
-            raise PermissionDenied("Join this competition before posting.")
+        if not takes_part(self.get_competition(), self.request.user):
+            raise PermissionDenied("Only people in this competition can post and react.")
 
     def perform_create(self, serializer) -> None:
         self._assert_member()
@@ -225,7 +225,10 @@ class CommentViewSet(ReactionMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = (
-            Comment.objects.filter(post=self.get_post()).alive().select_related("author")
+            Comment.objects.filter(post=self.get_post())
+            .alive()
+            .select_related("author")
+            .prefetch_related("media__media_asset")
         )
 
         # Top-level only by default; replies are fetched per comment.
@@ -241,8 +244,8 @@ class CommentViewSet(ReactionMixin, viewsets.ModelViewSet):
         return queryset
 
     def _assert_member(self) -> None:
-        if role_in(self.get_post().competition, self.request.user) is None:
-            raise PermissionDenied("Join this competition before commenting.")
+        if not takes_part(self.get_post().competition, self.request.user):
+            raise PermissionDenied("Only people in this competition can comment and react.")
 
     def perform_create(self, serializer) -> None:
         self._assert_member()
@@ -263,6 +266,8 @@ class CommentViewSet(ReactionMixin, viewsets.ModelViewSet):
                 "competition_id": str(post.competition_id),
                 "post_id": str(post.id),
                 "comment_id": str(comment.id),
+                "parent_id": str(comment.parent_id) if comment.parent_id else None,
+                "author_id": str(self.request.user.id),
             },
             [competition_room(post.competition_id)],
         )
@@ -298,6 +303,17 @@ class CommentViewSet(ReactionMixin, viewsets.ModelViewSet):
                 Comment.objects.filter(pk=instance.parent_id, reply_count__gt=0).update(
                     reply_count=F("reply_count") - 1
                 )
+
+        publish_event(
+            "comment.deleted",
+            {
+                "competition_id": str(post.competition_id),
+                "post_id": str(post.id),
+                "comment_id": str(instance.id),
+                "parent_id": str(instance.parent_id) if instance.parent_id else None,
+            },
+            [competition_room(post.competition_id)],
+        )
 
     @extend_schema(
         tags=["Feed"],

@@ -12,18 +12,21 @@ import { DatePipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import {
+  AlertController,
   IonBadge,
   IonButton,
   IonIcon,
   IonSegment,
   IonSegmentButton,
   IonLabel,
+  ToastController,
 } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../../core/api.service';
 import { extractErrorMessage } from '../../../core/error-message';
 import type { CompetitionDetail, Fixture, FixtureHighlight } from '../../../core/models';
 import { RealtimeService } from '../../../core/realtime.service';
+import { ResultsService } from '../../../core/results.service';
 
 type Filter = 'upcoming' | 'results' | 'all';
 
@@ -49,6 +52,15 @@ interface FixtureGroup {
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    @if (resultType() && canManage()) {
+      <div class="event-bar">
+        <button type="button" class="new-event" (click)="newEvent()">
+          <ion-icon name="add-outline" aria-hidden="true" />
+          New event
+        </button>
+        <span>Every active entrant is entered. Results are recorded on the event's page.</span>
+      </div>
+    }
     <div class="filter">
       <ion-segment [value]="filter()" (ionChange)="setFilter($any($event).detail.value)">
         <ion-segment-button value="upcoming"><ion-label>Upcoming</ion-label></ion-segment-button>
@@ -206,6 +218,31 @@ interface FixtureGroup {
   `,
   styles: [
     `
+      .event-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 12px 16px 0;
+        font-size: 0.8rem;
+        color: var(--ion-color-medium);
+      }
+
+      .new-event {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        flex: 0 0 auto;
+        min-height: 40px;
+        padding: 8px 16px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--ion-color-primary);
+        color: var(--ion-color-primary-contrast);
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
       .filter {
         padding: 12px 16px 4px;
       }
@@ -452,6 +489,9 @@ export class CompetitionFixturesComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly realtime = inject(RealtimeService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly results = inject(ResultsService);
+  private readonly alerts = inject(AlertController);
+  private readonly toasts = inject(ToastController);
 
   readonly competition = input.required<CompetitionDetail>();
 
@@ -638,9 +678,46 @@ export class CompetitionFixturesComponent implements OnInit {
     void this.router.navigate([
       '/tabs/competitions',
       this.competition().id,
-      'fixtures',
+      this.resultType() ? 'events' : 'fixtures',
       fixture.id,
     ]);
+  }
+
+  /** Performance-result competitions run events (races, classes, rides) instead of matches. */
+  resultType(): string | null {
+    return (this.competition().settings_json?.['result_type'] as string | undefined) ?? null;
+  }
+
+  async newEvent(): Promise<void> {
+    const alert = await this.alerts.create({
+      header: 'New event',
+      inputs: [{ name: 'label', type: 'text', placeholder: 'e.g. Race 3 or Class 1' }],
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Create',
+          handler: (values: { label?: string }) => {
+            const label = (values?.label ?? '').trim();
+            if (!label) return false;
+            this.results.createEvent(this.competition().id, { label }).subscribe({
+              next: (sheet) =>
+                void this.router.navigate(['/tabs/competitions', this.competition().id, 'events', sheet.fixture.id]),
+              error: async (err: unknown) => {
+                const toast = await this.toasts.create({
+                  message: extractErrorMessage(err, 'Could not create the event.'),
+                  color: 'danger',
+                  duration: 2600,
+                  position: 'top',
+                });
+                await toast.present();
+              },
+            });
+            return true;
+          },
+        },
+      ],
+    });
+    await alert.present();
   }
 
   openSetup(): void {

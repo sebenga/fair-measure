@@ -23,12 +23,17 @@ import {
   IonSpinner,
   IonTextarea,
   IonTitle,
+  IonToggle,
   IonToolbar,
   ToastController,
 } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
+import type { CompetitionOfficial, Horse } from '../../core/results.models';
+import { ResultsService } from '../../core/results.service';
+import type { LeagueScout } from '../../core/scouting.models';
+import { ScoutingService } from '../../core/scouting.service';
 import type {
   CompetitionDetail,
   DraftBoard,
@@ -41,7 +46,7 @@ import type {
 } from '../../core/models';
 import { isPointsTable, isScoringLocked } from '../../core/models';
 
-type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
+type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
 
 @Component({
   selector: 'fm-competition-setup',
@@ -69,6 +74,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
     IonNote,
     IonSearchbar,
     IonSpinner,
+    IonToggle,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -89,6 +95,9 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
             </ion-segment-button>
           }
           <ion-segment-button value="officials"><ion-label>Officials</ion-label></ion-segment-button>
+          @if (competition()?.scouting_eligible) {
+            <ion-segment-button value="scouting"><ion-label>Scouting</ion-label></ion-segment-button>
+          }
         </ion-segment>
       </ion-toolbar>
     </ion-header>
@@ -101,7 +110,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
           @case ('entrants') {
             <h3 class="fm-section-title">Entrants ({{ participants().length }})</h3>
 
-            @if (entrantKind() === 'team') {
+            @if (entrantKind() === 'team' && !isCombination()) {
               <p class="hint">
                 Choose how teams are filled. A team needs 14 players, and each player accepts before they count.
               </p>
@@ -125,7 +134,53 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
               </div>
             }
 
-            @if (entrantKind() !== 'team' || teamEntry()) {
+            @if (isCombination()) {
+              <form class="add-row combo-form" (submit)="addCombination($event)">
+                <p class="hint">
+                  Each entrant is a horse with its rider. Results belong to the pair; the table also keeps
+                  separate records for each horse, rider and trainer.
+                </p>
+                <label class="combo-field">
+                  Horse
+                  <select [value]="comboHorse()" (change)="comboHorse.set($any($event.target).value)">
+                    <option value="">Choose a horse</option>
+                    @for (horse of horseChoices(); track horse.id) {
+                      <option [value]="horse.id" [selected]="horse.id === comboHorse()">
+                        {{ horse.name }}{{ horse.registration_number ? ' · ' + horse.registration_number : '' }}
+                      </option>
+                    }
+                  </select>
+                </label>
+                <ion-searchbar
+                  placeholder="Search the horse registry"
+                  [debounce]="250"
+                  (ionInput)="searchHorses($any($event.detail.value) ?? '')"
+                />
+                <label class="combo-field">
+                  Rider (or jockey)
+                  <input [(ngModel)]="comboRiderName" name="comboRider" placeholder="Name" maxlength="120" />
+                </label>
+                <label class="combo-field">
+                  Link a Fair Measure profile (optional)
+                  <select [value]="comboRiderId()" (change)="comboRiderId.set($any($event.target).value)">
+                    <option value="">No profile</option>
+                    @for (profile of riderChoices(); track profile.id) {
+                      <option [value]="profile.id" [selected]="profile.id === comboRiderId()">{{ profile.display_name || profile.email }}</option>
+                    }
+                  </select>
+                </label>
+                <label class="combo-field">
+                  Trainer (optional)
+                  <input [(ngModel)]="comboTrainerName" name="comboTrainer" placeholder="Name" maxlength="120" />
+                </label>
+                <div class="combo-actions">
+                  <ion-button type="submit" size="small" [disabled]="busy() || !comboHorse() || (!comboRiderName.trim() && !comboRiderId())">
+                    Enter the combination
+                  </ion-button>
+                  <ion-button type="button" size="small" fill="clear" (click)="openHorses()">Register a horse</ion-button>
+                </div>
+              </form>
+            } @else if (entrantKind() !== 'team' || teamEntry()) {
               <form class="add-row" (submit)="addParticipant($event)">
                 <p class="hint">
                   @if (profileEntrants() && pointsTable()) {
@@ -668,6 +723,63 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
               }
             </form>
 
+            <h3 class="fm-section-title">Stewards, judges and ground jury</h3>
+            <p class="hint">
+              @if (officialsRequired()) {
+                This competition's results are official: only these people can confirm or amend a result,
+                disqualify an entrant or record a vet elimination. Every change is logged with a reason.
+              } @else {
+                Officials can confirm and amend results, and record eliminations. Every change is logged.
+              }
+            </p>
+            <ion-list inset="true">
+              @for (official of officials(); track official.id) {
+                <ion-item>
+                  <ion-label>
+                    <h2>{{ official.name }}</h2>
+                    <p>{{ official.title_label }}</p>
+                  </ion-label>
+                  @if (canManage()) {
+                    <ion-button slot="end" fill="clear" size="small" [disabled]="busy()" (click)="removeOfficial(official.id)">
+                      Remove
+                    </ion-button>
+                  }
+                </ion-item>
+              } @empty {
+                <ion-item><ion-label><p>No officials appointed yet.</p></ion-label></ion-item>
+              }
+            </ion-list>
+            @if (canManage()) {
+              <div class="add-row">
+                <label class="combo-field">
+                  Role
+                  <select [value]="officialTitle()" (change)="officialTitle.set($any($event.target).value)">
+                    @for (title of officialTitles(); track title.key) {
+                      <option [value]="title.key" [selected]="title.key === officialTitle()">{{ title.label }}</option>
+                    }
+                  </select>
+                </label>
+              </div>
+              <ion-searchbar
+                placeholder="Search profiles to appoint"
+                [debounce]="150"
+                (ionInput)="stewardQuery.set($any($event.detail.value) ?? '')"
+              />
+              <ion-list class="profiles" lines="none">
+                @for (profile of stewardChoices(); track profile.id) {
+                  <ion-item>
+                    <ion-label>
+                      <h2>{{ profile.display_name || profile.email }}</h2>
+                      <p>{{ profile.email }}</p>
+                    </ion-label>
+                    <ion-button slot="end" size="small" [disabled]="busy()" (click)="appointOfficial(profile)">
+                      Appoint
+                    </ion-button>
+                  </ion-item>
+                }
+              </ion-list>
+            }
+
             <h3 class="fm-section-title">Admins</h3>
             <p class="hint">
               The creator and admins choose who else can run this competition. Referees are chosen on each game and score only that game.
@@ -708,6 +820,71 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
               </ion-list>
             }
           }
+          @case ('scouting') {
+            <h3 class="fm-section-title">Open to scouts</h3>
+            <p class="hint">
+              Opening the league lets scouts follow it. Its results feed scouting reports, and it can name its
+              own squad of the best players, picked by position like a national team. Players still decide who
+              sees their talent profile, and under-18s stay hidden until a guardian agrees. The feed and table
+              stay as private or public as they are now.
+            </p>
+            <ion-list inset="true">
+              <ion-item>
+                <ion-toggle
+                  [checked]="!!comp.open_to_scouts"
+                  [disabled]="busy() || !canManage()"
+                  (ionChange)="setOpenToScouts($any($event).detail.checked)"
+                >
+                  {{ comp.open_to_scouts ? 'Open to scouts' : 'Closed to scouts' }}
+                </ion-toggle>
+              </ion-item>
+            </ion-list>
+
+            @if (comp.open_to_scouts) {
+              <div class="add-row">
+                <ion-button size="small" (click)="openSquad()">
+                  <ion-icon slot="start" name="shirt-outline" aria-hidden="true" />
+                  League squad
+                </ion-button>
+              </div>
+
+              <h3 class="fm-section-title">League scouts</h3>
+              <p class="hint">
+                League scouts follow this league and help pick its squad with you. They need a scout role in a
+                scouting organisation; add them with the email they sign in with.
+              </p>
+              <ion-list inset="true">
+                @for (scout of leagueScouts(); track scout.id) {
+                  <ion-item>
+                    <ion-label>
+                      <h2>{{ scout.name }}</h2>
+                      <p>{{ scout.organisation ?? 'Independent scout' }}</p>
+                    </ion-label>
+                    @if (canManage()) {
+                      <ion-button slot="end" fill="clear" size="small" [disabled]="busy()" (click)="removeScout(scout.id)">
+                        Remove
+                      </ion-button>
+                    }
+                  </ion-item>
+                } @empty {
+                  <ion-item><ion-label><p>No scouts attached yet.</p></ion-label></ion-item>
+                }
+              </ion-list>
+              @if (canManage()) {
+                <form class="add-row" (submit)="addScout($event)">
+                  <ion-input
+                    type="email"
+                    label="Scout's email"
+                    labelPlacement="stacked"
+                    [(ngModel)]="scoutEmail"
+                    name="scoutEmail"
+                    placeholder="scout@club.org"
+                  />
+                  <ion-button type="submit" size="small" [disabled]="busy() || !scoutEmail.trim()">Add scout</ion-button>
+                </form>
+              }
+            }
+          }
         }
       }
     </ion-content>
@@ -716,6 +893,8 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
 })
 export class CompetitionSetupPage implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly scouting = inject(ScoutingService);
+  private readonly results = inject(ResultsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly alerts = inject(AlertController);
@@ -737,6 +916,8 @@ export class CompetitionSetupPage implements OnInit {
   readonly busy = signal(false);
   readonly error = signal<string | null>(null);
   readonly section = signal<Section>('entrants');
+  readonly leagueScouts = signal<LeagueScout[]>([]);
+  scoutEmail = '';
   readonly selectedWeekdays = signal<number[]>([5]);
 
   readonly pointsTable = computed(() => {
@@ -813,6 +994,7 @@ export class CompetitionSetupPage implements OnInit {
         this.participants.set(competition.participants);
         this.categories.set(competition.scoring_categories);
         this.policy.set(competition.points_policy);
+        if (this.isCombination() && this.section() === 'entrants') this.loadHorses();
         if (isPointsTable(competition) && this.section() === 'schedule') {
           this.section.set('entrants');
         }
@@ -844,10 +1026,93 @@ export class CompetitionSetupPage implements OnInit {
 
   setSection(value: string | undefined): void {
     if (value === 'schedule' && this.pointsTable()) return;
-    if (value === 'entrants' || value === 'scoring' || value === 'schedule' || value === 'officials') {
+    if (
+      value === 'entrants' ||
+      value === 'scoring' ||
+      value === 'schedule' ||
+      value === 'officials' ||
+      value === 'scouting'
+    ) {
       this.section.set(value);
-      if (value === 'officials') this.ensureProfiles();
+      if (value === 'officials') {
+        this.ensureProfiles();
+        this.loadOfficials();
+      }
+      if (value === 'entrants' && this.isCombination()) this.loadHorses();
+      if (value === 'scouting') this.loadScouts();
     }
+  }
+
+  setOpenToScouts(open: boolean): void {
+    const competition = this.competition();
+    if (!competition || !!competition.open_to_scouts === open || this.busy()) return;
+    this.busy.set(true);
+    this.api.updateCompetition(this.competitionId, { open_to_scouts: open }).subscribe({
+      next: async (updated) => {
+        this.competition.set({ ...competition, ...updated });
+        this.busy.set(false);
+        if (open) this.loadScouts();
+        await this.toast(
+          open ? 'Open to scouts. The league can now name its own squad.' : 'Closed to scouts.',
+          'success',
+        );
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        // Re-render so the toggle springs back to the saved value.
+        this.competition.set({ ...competition });
+        await this.toast(extractErrorMessage(err, 'Could not change the scouting setting.'), 'danger');
+      },
+    });
+  }
+
+  loadScouts(): void {
+    if (!this.competition()?.open_to_scouts) {
+      this.leagueScouts.set([]);
+      return;
+    }
+    this.scouting.leagueScouts(this.competitionId).subscribe({
+      next: (result) => this.leagueScouts.set(result.scouts),
+      error: () => this.leagueScouts.set([]),
+    });
+  }
+
+  addScout(event: Event): void {
+    event.preventDefault();
+    const email = this.scoutEmail.trim();
+    if (!email || this.busy()) return;
+    this.busy.set(true);
+    this.scouting.addLeagueScout(this.competitionId, email).subscribe({
+      next: async (result) => {
+        this.leagueScouts.set(result.scouts);
+        this.scoutEmail = '';
+        this.busy.set(false);
+        await this.toast('Scout added. They can now help pick the squad.', 'success');
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not add that scout.'), 'danger');
+      },
+    });
+  }
+
+  removeScout(scoutId: string): void {
+    if (this.busy()) return;
+    this.busy.set(true);
+    this.scouting.removeLeagueScout(this.competitionId, scoutId).subscribe({
+      next: (result) => {
+        this.leagueScouts.set(result.scouts);
+        this.busy.set(false);
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not remove that scout.'), 'danger');
+      },
+    });
+  }
+
+  openSquad(): void {
+    void this.router.navigateByUrl(`/tabs/scouting/leagues/${this.competitionId}`);
   }
 
   backHref(): string {
@@ -902,6 +1167,127 @@ export class CompetitionSetupPage implements OnInit {
   readonly admins = computed(() =>
     this.memberships().filter((membership) => membership.role === 'owner' || membership.role === 'admin'),
   );
+
+  readonly officials = signal<CompetitionOfficial[]>([]);
+  readonly officialTitles = signal<Array<{ key: string; label: string }>>([]);
+  readonly officialsRequired = signal(false);
+  readonly officialTitle = signal('steward');
+  readonly stewardQuery = signal('');
+  readonly horses = signal<Horse[]>([]);
+  readonly horseHits = signal<Horse[]>([]);
+  readonly comboHorse = signal('');
+  readonly comboRiderId = signal('');
+  comboRiderName = '';
+  comboTrainerName = '';
+
+  readonly stewardChoices = computed(() => {
+    const query = this.stewardQuery().trim().toLowerCase();
+    if (!query) return [];
+    return this.profiles()
+      .filter((profile) => {
+        const name = (profile.display_name || '').toLowerCase();
+        return name.includes(query) || profile.email.toLowerCase().includes(query);
+      })
+      .slice(0, 12);
+  });
+
+  readonly horseChoices = computed(() => {
+    const seen = new Set<string>();
+    return [...this.horses(), ...this.horseHits()].filter((horse) => {
+      if (seen.has(horse.id) || horse.status !== 'active') return false;
+      seen.add(horse.id);
+      return true;
+    });
+  });
+
+  readonly riderChoices = computed(() => this.profiles().slice(0, 300));
+
+  isCombination(): boolean {
+    return this.competition()?.settings_json?.['participant_type'] === 'combination';
+  }
+
+  loadOfficials(): void {
+    this.results.officials(this.competitionId).subscribe({
+      next: (response) => {
+        this.officials.set(response.officials);
+        this.officialTitles.set(response.titles);
+        this.officialsRequired.set(response.required);
+      },
+    });
+  }
+
+  appointOfficial(profile: ProfileSummary): void {
+    if (this.busy()) return;
+    this.busy.set(true);
+    this.results.appointOfficial(this.competitionId, profile.id, this.officialTitle()).subscribe({
+      next: async (response) => {
+        this.officials.set(response.officials);
+        this.busy.set(false);
+        this.stewardQuery.set('');
+        await this.toast(`${profile.display_name || profile.email} appointed.`, 'success');
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not appoint that official.'), 'danger');
+      },
+    });
+  }
+
+  removeOfficial(officialId: string): void {
+    if (this.busy()) return;
+    this.busy.set(true);
+    this.results.removeOfficial(this.competitionId, officialId).subscribe({
+      next: (response) => {
+        this.officials.set(response.officials);
+        this.busy.set(false);
+      },
+      error: () => this.busy.set(false),
+    });
+  }
+
+  loadHorses(): void {
+    this.results.horses().subscribe({ next: (rows) => this.horses.set(rows) });
+    this.ensureProfiles();
+  }
+
+  searchHorses(query: string): void {
+    if (!query.trim()) {
+      this.horseHits.set([]);
+      return;
+    }
+    this.results.horses(query).subscribe({ next: (rows) => this.horseHits.set(rows) });
+  }
+
+  openHorses(): void {
+    void this.router.navigateByUrl('/tabs/horses');
+  }
+
+  addCombination(event: Event): void {
+    event.preventDefault();
+    if (this.busy() || !this.comboHorse()) return;
+    this.busy.set(true);
+    this.results
+      .addCombination(this.competitionId, {
+        horse: this.comboHorse(),
+        ...(this.comboRiderId() ? { rider: this.comboRiderId() } : { rider_name: this.comboRiderName.trim() }),
+        ...(this.comboTrainerName.trim() ? { trainer_name: this.comboTrainerName.trim() } : {}),
+      })
+      .subscribe({
+        next: async (created) => {
+          this.busy.set(false);
+          this.comboHorse.set('');
+          this.comboRiderId.set('');
+          this.comboRiderName = '';
+          this.comboTrainerName = '';
+          await this.toast(`${created.name} entered.`, 'success');
+          this.load();
+        },
+        error: async (err: unknown) => {
+          this.busy.set(false);
+          await this.toast(extractErrorMessage(err, 'Could not enter that combination.'), 'danger');
+        },
+      });
+  }
 
   readonly officialChoices = computed(() => {
     const taken = new Set(this.admins().map((membership) => membership.user.id));

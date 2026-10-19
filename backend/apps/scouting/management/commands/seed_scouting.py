@@ -16,13 +16,14 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from apps.competitions.models import Participant
+from apps.competitions.models import Competition, Participant
 from apps.scouting import catalog
 from apps.scouting.models import (
     ConsentRecord,
     GuardianLink,
     HighlightVideo,
     InjuryRecord,
+    LeagueScout,
     Measurement,
     Organisation,
     PlayerProfile,
@@ -53,17 +54,6 @@ SPREAD = [
     ("cricket", 4),
     ("volleyball", 2),
     ("swimming", 2),
-]
-
-SCHOOLS = [
-    "Pretoria Boys High",
-    "Grey College",
-    "Westville Girls' High",
-    "Jeppe High School",
-    "Rondebosch Boys'",
-    "Hoërskool Waterkloof",
-    "Highveld Lions Academy",
-    "Soweto FC Juniors",
 ]
 
 
@@ -123,6 +113,23 @@ class Command(BaseCommand):
         coach = self._person("coach")
         if teams:
             grant_role(coach, "coach", team=teams[0], granted_by=coach)
+
+        # The demo leagues with rostered teams are opened to scouts, and the scout
+        # follows the first one, so league squads can be tried straight away.
+        demo_leagues = [
+            league
+            for league in Competition.objects.filter(participants__in=teams).distinct()
+            if catalog.sport_for_competition(league.sport)
+        ]
+        Competition.objects.filter(pk__in=[league.pk for league in demo_leagues]).update(
+            open_to_scouts=True
+        )
+        if demo_leagues:
+            LeagueScout.objects.get_or_create(
+                competition=demo_leagues[0],
+                user=self._person("scout"),
+                defaults={"organisation": lions, "added_by": admin},
+            )
         team_users = []
         for team in teams:
             for member in team.roster.filter(user__isnull=False, is_active=True):
@@ -226,6 +233,8 @@ class Command(BaseCommand):
     def _profile(self, user, *, age: int, index: int, visibility: str | None = None):
         existing = PlayerProfile.objects.filter(user=user).first()
         if existing:
+            if not existing.teams.exists():
+                self._attach_teams(existing, index)
             return existing, False
         today = date.today()
         born = date(today.year - age, 1 + index % 12, 1 + index % 27)
@@ -237,7 +246,6 @@ class Command(BaseCommand):
             gender_category=catalog.GENDER_CATEGORIES[index % 2]["key"],
             nationality="South African",
             region=catalog.REGIONS[index % 9]["key"],
-            school_or_club=SCHOOLS[index % len(SCHOOLS)],
             bio="Demo player profile.",
             visibility=visibility or ("public" if index % 3 == 0 else "scouts"),
         )
@@ -252,7 +260,28 @@ class Command(BaseCommand):
                 note="Demo profile made visible.",
             )
         grant_role(user, "player")
+        self._attach_teams(profile, index)
         return profile, True
+
+    @staticmethod
+    def _attach_teams(profile, index: int) -> None:
+        """Link demo profiles to real competition teams, possibly more than one."""
+
+        from apps.scouting.services import affiliated_teams, school_or_club_label
+
+        sides = list(
+            Participant.objects.filter(kind="team", is_active=True).select_related("competition")
+        )
+        if not sides:
+            return
+        chosen = [sides[index % len(sides)]]
+        if len(sides) > 1:
+            extra = sides[(index + 3) % len(sides)]
+            if extra.id != chosen[0].id:
+                chosen.append(extra)
+        profile.teams.set(chosen)
+        profile.school_or_club = school_or_club_label(affiliated_teams(profile))
+        profile.save(update_fields=["school_or_club"])
 
     @staticmethod
     def _sport(profile, sport_key: str, primary: str, secondary: list[str] | None = None) -> None:

@@ -118,7 +118,16 @@ class PlayerProfile(BaseModel):
     gender_category = models.CharField(max_length=12, blank=True)
     nationality = models.CharField(max_length=80, blank=True)
     region = models.CharField(max_length=40, blank=True)
+    # Kept in sync with `teams` so list cards can show a short label without extra joins.
     school_or_club = models.CharField(max_length=160, blank=True)
+    teams = models.ManyToManyField(
+        "competitions.Participant",
+        blank=True,
+        related_name="player_profiles",
+        help_text=_(
+            "School or club sides this player lists. One profile can sit on several competitions."
+        ),
+    )
     bio = models.TextField(blank=True)
     availability = models.CharField(
         max_length=12, choices=Availability.choices, default=Availability.AVAILABLE
@@ -271,3 +280,113 @@ class ConsentRecord(BaseModel):
         if not self._state.adding:
             raise ValueError("Consent records are an audit trail and cannot be changed.")
         super().save(*args, **kwargs)
+
+
+class LeagueSquad(BaseModel):
+    """A national-team style selection of the best players in one competition.
+
+    Selectors are the competition's owner and admins. Drafts are theirs alone;
+    a published squad is visible to anyone who can see the competition.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", _("Draft")
+        PUBLISHED = "published", _("Published")
+
+    competition = models.OneToOneField(
+        "competitions.Competition", on_delete=models.CASCADE, related_name="league_squad"
+    )
+    name = models.CharField(max_length=120, blank=True)
+    size = models.PositiveIntegerField(default=23)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.DRAFT)
+    notes = models.TextField(blank=True)
+    # Players a selector dropped; regenerating never brings them back.
+    excluded_users = models.JSONField(default=list, blank=True)
+    # Players already told they were selected, so republishing does not repeat it.
+    notified_users = models.JSONField(default=list, blank=True)
+    generated_at = models.DateTimeField(null=True, blank=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    selected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="league_squads_selected",
+    )
+
+    def __str__(self) -> str:
+        return self.name or f"Squad for {self.competition_id}"
+
+
+class SquadPick(BaseModel):
+    """One player in a league squad, with the evidence the pick was made on."""
+
+    squad = models.ForeignKey(LeagueSquad, on_delete=models.CASCADE, related_name="picks")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    roster_member = models.ForeignKey(
+        "competitions.RosterMember", on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+    group_key = models.CharField(max_length=40)
+    position_label = models.CharField(max_length=80, blank=True)
+    score = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
+    # A snapshot of the numbers behind the pick, so the squad explains itself later.
+    evidence = models.JSONField(default=dict, blank=True)
+    # Picked by hand: regenerating keeps a locked pick where it is.
+    locked = models.BooleanField(default=False)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "-score"]
+        constraints = [
+            models.UniqueConstraint(fields=["squad", "user"], name="uniq_player_per_squad")
+        ]
+
+
+class ReportExport(BaseModel):
+    """Every exported report is logged: who exported what, and when."""
+
+    viewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+    kind = models.CharField(max_length=30)
+    profile = models.ForeignKey(
+        PlayerProfile, on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    competition = models.ForeignKey(
+        "competitions.Competition",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    access = models.CharField(max_length=12, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class LeagueScout(BaseModel):
+    """A scout attached to one league that is open to scouts.
+
+    The league's owner or admins add them. A league scout follows the league and
+    helps pick its squad, alongside the league's own admins.
+    """
+
+    competition = models.ForeignKey(
+        "competitions.Competition", on_delete=models.CASCADE, related_name="league_scouts"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="scouted_leagues"
+    )
+    organisation = models.ForeignKey(
+        Organisation, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["competition", "user"], name="uniq_scout_per_league")
+        ]

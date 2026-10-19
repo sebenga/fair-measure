@@ -374,10 +374,72 @@ def test_catalogue_is_served_and_scouting_code_does_not_name_a_sport():
     assert {item["key"] for item in response.data["sports"]} == set(catalog.SPORTS)
     for sport in catalog.SPORTS.values():
         assert sport["positions"], sport["label"]
-    for name in ("views.py", "services.py", "serializers.py", "models.py"):
+    for name in (
+        "views.py",
+        "services.py",
+        "serializers.py",
+        "models.py",
+        "selection.py",
+        "reports.py",
+    ):
         text = (Path("apps/scouting") / name).read_text().lower()
         for key in catalog.SPORTS:
             assert f'"{key}"' not in text, f"{name} names {key}"
+
+
+def _team(owner, name: str, competition_name: str, *, private: bool = False) -> Participant:
+    competition = Competition.objects.create(
+        name=competition_name, owner=owner, sport="rugby", is_private=private
+    )
+    return Participant.objects.create(competition=competition, name=name, kind="team")
+
+
+def test_profile_teams_come_from_the_platform_and_can_span_competitions():
+    player, person = _client("sides@player.test")
+    hawks = _team(person, "Harbour Hawks", "Coastal Cup")
+    lions = _team(person, "Highveld Lions", "Winter League")
+    listed = player.get("/api/v1/scouting/teams", {"q": "Hawks"})
+    assert listed.status_code == 200
+    assert any(row["id"] == str(hawks.id) for row in listed.data)
+
+    profile = _make_profile(
+        player, date_of_birth=_years_ago(20), team_ids=[str(hawks.id), str(lions.id)]
+    )
+    names = {row["name"] for row in profile["teams"]}
+    competitions = {row["competition"] for row in profile["teams"]}
+    assert names == {"Harbour Hawks", "Highveld Lions"}
+    assert competitions == {"Coastal Cup", "Winter League"}
+    assert "Harbour Hawks" in profile["school_or_club"]
+    assert "Highveld Lions" in profile["school_or_club"]
+
+
+def test_an_individual_entrant_cannot_be_listed_as_a_school_or_club():
+    player, person = _client("solo@player.test")
+    competition = Competition.objects.create(name="Singles", owner=person, sport="tennis")
+    solo = Participant.objects.create(competition=competition, name="Solo Ace", kind="individual")
+    created = player.post(
+        "/api/v1/scouting/profile",
+        {"first_name": "Solo", "team_ids": [str(solo.id)]},
+        format="json",
+    )
+    assert created.status_code == 400
+
+
+def test_rostered_teams_appear_on_the_profile_even_when_not_claimed():
+    player, person = _client("roster@player.test")
+    team = _team(person, "Owls", "City Shield")
+    RosterMember.objects.create(participant=team, name="Roster", user=person)
+    profile = _make_profile(player, date_of_birth=_years_ago(21), team_ids=[])
+    assert [row["name"] for row in profile["teams"]] == ["Owls"]
+    assert profile["teams"][0]["from_roster"] is True
+
+
+def test_private_teams_are_hidden_from_people_outside_the_competition():
+    _, owner = _client("owner.sides@test")
+    _team(owner, "Secret FC", "Closed League", private=True)
+    outsider, _ = _client("outsider.sides@test")
+    hits = outsider.get("/api/v1/scouting/teams", {"q": "Secret"})
+    assert hits.data == []
 
 
 def test_seed_scouting_is_repeatable_and_respects_consent():

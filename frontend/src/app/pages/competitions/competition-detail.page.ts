@@ -135,8 +135,34 @@ type Tab = 'feed' | 'fixtures' | 'standings';
             </ion-button>
           </div>
         }
-        @if (howItScores()) {
+        @if (governance(); as g) {
+          <section class="governance fm-card fm-enter">
+            <ion-icon name="ribbon-outline" aria-hidden="true" />
+            <div>
+              <strong>{{ g.body }}</strong>
+              @if (g.rulebook) {
+                <small>Rules: {{ g.rulebook }}</small>
+              }
+              @if (g.local) {
+                <small>Locally: {{ g.local }}</small>
+              }
+              @if (howItScores()) {
+                <p>{{ howItScores() }}</p>
+              }
+            </div>
+          </section>
+        } @else if (howItScores()) {
           <p class="how-points fm-enter">{{ howItScores() }}</p>
+        }
+        @if (comp.open_to_scouts) {
+          <button type="button" class="scouted fm-enter" (click)="openSquad()">
+            <ion-icon name="ribbon-outline" aria-hidden="true" />
+            <span>
+              <strong>Open to scouts</strong>
+              <small>See the league squad: its best players, picked by position.</small>
+            </span>
+            <ion-icon name="chevron-forward-outline" aria-hidden="true" />
+          </button>
         }
         @if (comp.rules.length) {
           <details class="rules fm-card fm-enter">
@@ -195,6 +221,65 @@ type Tab = 'feed' | 'fixtures' | 'standings';
         color: var(--ion-color-medium);
         font-size: 0.95rem;
         line-height: 1.45;
+      }
+
+      .governance {
+        display: flex;
+        gap: 12px;
+        margin: 12px 16px 0;
+        padding: 14px 16px;
+
+        > ion-icon {
+          flex: 0 0 auto;
+          font-size: 1.4rem;
+          color: var(--ion-color-primary);
+        }
+
+        div {
+          display: grid;
+          gap: 2px;
+        }
+
+        small {
+          color: var(--ion-color-medium);
+        }
+
+        p {
+          margin: 6px 0 0;
+          color: var(--ion-color-medium);
+          font-size: 0.9rem;
+          line-height: 1.45;
+        }
+      }
+
+      .scouted {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: calc(100% - 32px);
+        margin: 12px 16px 0;
+        padding: 12px 14px;
+        border: 0;
+        border-radius: 16px;
+        background: color-mix(in srgb, var(--ion-color-primary) 10%, transparent);
+        color: var(--ion-text-color);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+
+        > ion-icon:first-child {
+          font-size: 1.4rem;
+          color: var(--ion-color-primary);
+        }
+
+        span {
+          flex: 1 1 auto;
+          display: grid;
+        }
+
+        small {
+          color: var(--ion-color-medium);
+        }
       }
 
       .rules {
@@ -395,6 +480,18 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
     return competition ? isPointsTable(competition) : false;
   }
 
+  /** Governing body and rulebook, for presets that follow one. */
+  governance(): { body: string; rulebook: string; local: string } | null {
+    const settings = this.competition()?.settings_json ?? {};
+    const body = String(settings['governing_body'] ?? '').trim();
+    if (!body) return null;
+    return {
+      body,
+      rulebook: String(settings['rulebook'] ?? '').trim(),
+      local: String(settings['local_body'] ?? '').trim(),
+    };
+  }
+
   howItScores(): string {
     const value = this.competition()?.settings_json?.['description'];
     return typeof value === 'string' ? value : '';
@@ -433,6 +530,10 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
 
   openSetup(): void {
     void this.router.navigate(['/tabs/competitions', this.competitionId, 'setup']);
+  }
+
+  openSquad(): void {
+    void this.router.navigateByUrl(`/tabs/scouting/leagues/${this.competitionId}`);
   }
 
   async confirmDelete(): Promise<void> {

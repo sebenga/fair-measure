@@ -73,6 +73,10 @@ class MediaAsset(BaseModel):
     def url(self) -> str:
         if self.kind == self.Kind.VIDEO:
             return self.playback_url
+        if self.storage_provider == "local" and self.storage_key:
+            from .storage import local_url
+
+            return local_url(self.storage_key)
         if self.storage_key and settings.STORAGE_PUBLIC_BASE_URL:
             return f"{settings.STORAGE_PUBLIC_BASE_URL.rstrip('/')}/{self.storage_key}"
         return ""

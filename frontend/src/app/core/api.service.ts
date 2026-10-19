@@ -405,11 +405,28 @@ export class ApiService {
     });
   }
 
-  createComment(postId: string, body: string, parent?: string): Observable<Comment> {
+  createComment(
+    postId: string,
+    body: string,
+    parent?: string | null,
+    mediaAssetIds: string[] = [],
+  ): Observable<Comment> {
     return this.http.post<Comment>(`${this.base}/posts/${postId}/comments`, {
       body,
       ...(parent ? { parent } : {}),
+      ...(mediaAssetIds.length ? { media_asset_ids: mediaAssetIds } : {}),
     });
+  }
+
+  deleteComment(postId: string, commentId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/posts/${postId}/comments/${commentId}`);
+  }
+
+  reactToComment(postId: string, commentId: string, kind: ReactionKind): Observable<ReactionResult> {
+    return this.http.post<ReactionResult>(
+      `${this.base}/posts/${postId}/comments/${commentId}/react`,
+      { kind },
+    );
   }
 
   // --- Media ----------------------------------------------------------------

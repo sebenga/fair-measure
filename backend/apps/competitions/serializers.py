@@ -200,7 +200,9 @@ class RosterMemberSerializer(serializers.ModelSerializer):
         return obj.user.get_full_name()
 
 
-def add_profile_to_team(participant: Participant, user, actor, field: str = "member_ids") -> RosterMember:
+def add_profile_to_team(
+    participant: Participant, user, actor, field: str = "member_ids"
+) -> RosterMember:
     """Put a profile on a team.
 
     Members can be added by an admin. An owner or admin can add only their own
@@ -265,8 +267,7 @@ def squad_counts(participant: Participant) -> tuple[int, int]:
 
 def draft_teams(competition) -> list[Participant]:
     return list(
-        competition.participants.filter(kind=Participant.Kind.TEAM, is_active=True)
-        .order_by("name")
+        competition.participants.filter(kind=Participant.Kind.TEAM, is_active=True).order_by("name")
     )
 
 
@@ -315,9 +316,7 @@ def offer_team_pick(participant: Participant, user, actor) -> TeamPick:
     if participant.kind != Participant.Kind.TEAM:
         raise serializers.ValidationError({"user": "Pick profiles onto a team."})
 
-    membership = Membership.objects.filter(
-        competition=participant.competition, user=user
-    ).first()
+    membership = Membership.objects.filter(competition=participant.competition, user=user).first()
     if membership is None:
         invited_by = actor if getattr(actor, "is_authenticated", False) else None
         Membership.objects.create(
@@ -537,11 +536,7 @@ class ParticipantSerializer(serializers.ModelSerializer):
             if mode == "pick" and creating_team:
                 if len(member_ids) < MIN_TEAM_PLAYERS:
                     raise serializers.ValidationError(
-                        {
-                            "member_ids": (
-                                f"A team needs at least {MIN_TEAM_PLAYERS} players."
-                            )
-                        }
+                        {"member_ids": (f"A team needs at least {MIN_TEAM_PLAYERS} players.")}
                     )
                 attrs["member_ids"] = member_ids
             elif mode == "draft" and member_ids:
@@ -566,9 +561,7 @@ class ParticipantSerializer(serializers.ModelSerializer):
                 actor = self.context["request"].user
                 users = {str(user.id): user for user in User.objects.filter(id__in=member_ids)}
                 if len(users) != len(set(member_ids)):
-                    raise serializers.ValidationError(
-                        {"member_ids": "Choose profiles that exist."}
-                    )
+                    raise serializers.ValidationError({"member_ids": "Choose profiles that exist."})
                 for user_id in member_ids:
                     offer_team_pick(participant, users[user_id], actor)
         return participant
@@ -591,13 +584,16 @@ def _profile_entrant(competition, user_id):
     """The profile entering an individual competition, once per competition."""
 
     if not user_id:
-        raise serializers.ValidationError({"user": "Search for a profile and choose who is entering."})
+        raise serializers.ValidationError(
+            {"user": "Search for a profile and choose who is entering."}
+        )
     user = User.objects.filter(pk=user_id, is_active=True).first()
     if user is None:
         raise serializers.ValidationError({"user": "Choose a profile that exists."})
-    entered = RosterMember.objects.filter(
-        participant__competition=competition, user=user
-    ).exists() or competition.participants.filter(managed_by=user).exists()
+    entered = (
+        RosterMember.objects.filter(participant__competition=competition, user=user).exists()
+        or competition.participants.filter(managed_by=user).exists()
+    )
     if entered:
         raise serializers.ValidationError({"user": "That profile is already in this competition."})
     return user
@@ -624,9 +620,7 @@ def _enter_profile(participant: Participant, user, actor) -> RosterMember:
         )
     elif membership.role in (Role.OWNER, Role.ADMIN):
         if getattr(actor, "id", None) != user.id:
-            raise serializers.ValidationError(
-                {"user": "An admin can only enter themselves."}
-            )
+            raise serializers.ValidationError({"user": "An admin can only enter themselves."})
     elif membership.role != Role.MEMBER:
         raise serializers.ValidationError(
             {"user": f"{user.get_full_name()} scores this competition and cannot enter it."}
@@ -680,6 +674,7 @@ class CompetitionListSerializer(serializers.ModelSerializer):
             "format",
             "status",
             "is_private",
+            "open_to_scouts",
             "starts_on",
             "ends_on",
             "owner",
@@ -709,10 +704,16 @@ class CompetitionDetailSerializer(CompetitionListSerializer):
     points_policy = PointsPolicySerializer(read_only=True)
     stages = StageSerializer(many=True, read_only=True)
     participants = ParticipantSerializer(many=True, read_only=True)
+    can_post = serializers.SerializerMethodField()
+    scouting_eligible = serializers.SerializerMethodField(
+        help_text="Whether this is a sport that can be opened to scouts."
+    )
 
     class Meta(CompetitionListSerializer.Meta):
         fields = [
             *CompetitionListSerializer.Meta.fields,
+            "can_post",
+            "scouting_eligible",
             "timezone",
             "match_weekdays",
             "settings_json",
@@ -723,6 +724,17 @@ class CompetitionDetailSerializer(CompetitionListSerializer):
             "participants",
             "updated_at",
         ]
+
+    def get_can_post(self, obj: Competition) -> bool:
+        from apps.social.access import takes_part
+
+        request = self.context.get("request")
+        return takes_part(obj, request.user) if request else False
+
+    def get_scouting_eligible(self, obj: Competition) -> bool:
+        from apps.scouting.catalog import sport_for_competition
+
+        return sport_for_competition(obj.sport) is not None
 
 
 class CompetitionWriteSerializer(serializers.ModelSerializer):
@@ -783,6 +795,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
             "format",
             "status",
             "is_private",
+            "open_to_scouts",
             "starts_on",
             "ends_on",
             "timezone",
@@ -810,6 +823,20 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         ends_on = attrs.get("ends_on", getattr(self.instance, "ends_on", None))
         if starts_on and ends_on and ends_on < starts_on:
             raise serializers.ValidationError({"ends_on": "End date is before the start date."})
+        if attrs.get("open_to_scouts"):
+            from apps.scouting.catalog import sport_for_competition
+
+            preset_sport = (PRESETS.get(attrs.get("preset") or "") or {}).get("sport", "")
+            sport = attrs.get("sport") or preset_sport or getattr(self.instance, "sport", "")
+            if sport_for_competition(sport) is None:
+                raise serializers.ValidationError(
+                    {
+                        "open_to_scouts": (
+                            "Only sport competitions can be opened to scouts. "
+                            "Choose a sport such as soccer, rugby or netball first."
+                        )
+                    }
+                )
         if self.instance is None and attrs.get("preset") == "custom":
             categories = attrs.get("scoring_categories") or []
             if not any(str(item.get("name", "")).strip() for item in categories):
@@ -850,8 +877,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         competition = self._update(instance, validated_data)
         after = competition.settings_json or {}
         if any(
-            before.get(key) != after.get(key)
-            for key in ("time_limit_minutes", "overtime_minutes")
+            before.get(key) != after.get(key) for key in ("time_limit_minutes", "overtime_minutes")
         ):
             _apply_game_time_to_unstarted(competition)
         return competition
@@ -869,11 +895,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         current = dict(instance.settings_json or {})
         new_status = validated_data.get("status")
         started_locks = current.get("lock_when_started") is True
-        if (
-            started_locks
-            and new_status == "draft"
-            and instance.status not in (None, "", "draft")
-        ):
+        if started_locks and new_status == "draft" and instance.status not in (None, "", "draft"):
             raise serializers.ValidationError(
                 {"status": "A started competition cannot go back to draft; its rules are locked."}
             )

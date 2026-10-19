@@ -35,25 +35,23 @@ class StandingsView(APIView):
         responses={200: StandingRowSerializer(many=True)},
     )
     def get(self, request: Request, competition_pk: str) -> Response:
-        competition = get_object_or_404(
-            visible_competitions(request.user), pk=competition_pk
-        )
+        competition = get_object_or_404(visible_competitions(request.user), pk=competition_pk)
 
         stage = None
         if stage_id := request.query_params.get("stage"):
             stage = get_object_or_404(Stage, pk=stage_id, competition=competition)
 
-        rows = StandingRow.objects.filter(
-            competition=competition, stage=stage
-        ).select_related("participant")
+        rows = StandingRow.objects.filter(competition=competition, stage=stage).select_related(
+            "participant"
+        )
 
         # An empty cache usually means nothing has been computed yet rather than
         # that the table is genuinely empty, so fill it on first read.
         if request.query_params.get("refresh") in {"1", "true", "yes"} or not rows.exists():
             refresh_standings(competition, stage)
-            rows = StandingRow.objects.filter(
-                competition=competition, stage=stage
-            ).select_related("participant")
+            rows = StandingRow.objects.filter(competition=competition, stage=stage).select_related(
+                "participant"
+            )
 
         basis = scoring_basis(competition)
         return Response(

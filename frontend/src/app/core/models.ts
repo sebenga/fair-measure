@@ -192,6 +192,8 @@ export interface Competition {
   format: CompetitionFormat;
   status: CompetitionStatus;
   is_private: boolean;
+  /** Sport competitions only: scouts can follow it and it can name its own squad. */
+  open_to_scouts?: boolean;
   starts_on: string | null;
   ends_on: string | null;
   owner: UserSummary;
@@ -203,6 +205,10 @@ export interface Competition {
 }
 
 export interface CompetitionDetail extends Competition {
+  /** Members, rostered players and team managers may post, comment and react. */
+  can_post?: boolean;
+  /** Whether the sport is one scouting covers, so it may be opened to scouts. */
+  scouting_eligible?: boolean;
   timezone: string;
   match_weekdays: number[];
   settings_json: Record<string, unknown>;
@@ -338,6 +344,8 @@ export interface StandingRow {
   points: string;
   bonus_points: string;
   form: Array<'W' | 'D' | 'L'>;
+  /** Series tables: second and third places, and results with a status. */
+  detail?: { seconds?: number; thirds?: number; statuses?: number };
   computed_at: string;
 }
 
@@ -429,6 +437,7 @@ export interface Comment {
   author: UserSummary;
   parent: string | null;
   body: string;
+  media: PostMedia[];
   reply_count: number;
   reaction_count: number;
   my_reaction: ReactionKind | null;

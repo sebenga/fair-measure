@@ -52,6 +52,43 @@ def user_can_score_fixture(fixture: Fixture, user) -> bool:
     return has_at_least(fixture.competition, user, Role.SCORER)
 
 
+def _scores(fixture: Fixture) -> dict:
+    return {
+        side.participant.name: {"score": str(side.score), "outcome": side.outcome}
+        for side in fixture.sides.select_related("participant")
+    }
+
+
+def _official_reason(fixture: Fixture, request: Request) -> str | None:
+    """In competitions whose results are official, a counted match changes only by an
+    official, and only with a reason. Returns the reason, or None when no rule applies."""
+
+    from apps.results.services import assert_can_decide, officials_required
+
+    if not officials_required(fixture.competition) or not fixture.is_counted:
+        return None
+    assert_can_decide(fixture.competition, request.user)
+    reason = str(
+        request.data.get("amendment_reason") or request.query_params.get("amendment_reason") or ""
+    ).strip()
+    if not reason:
+        raise ValidationError({"amendment_reason": "Give a reason for amending a final result."})
+    return reason
+
+
+def _log_amendment(fixture: Fixture, request: Request, reason: str, before: dict, action="amended"):
+    from apps.results.models import ResultAmendment
+
+    ResultAmendment.objects.create(
+        fixture=fixture,
+        actor=request.user,
+        action=action,
+        reason=reason[:500],
+        before=before,
+        after=_scores(fixture),
+    )
+
+
 def _assert_ready_for_kickoff(fixture: Fixture) -> None:
     problems = fixture.kickoff_problems()
     if problems:
@@ -60,7 +97,13 @@ def _assert_ready_for_kickoff(fixture: Fixture) -> None:
 
 from apps.competitions.presets import format_allowed
 
-from .services import ScheduleOptions, award_criterion, generate_knockout, generate_round_robin, record_result
+from .services import (
+    ScheduleOptions,
+    award_criterion,
+    generate_knockout,
+    generate_round_robin,
+    record_result,
+)
 
 
 def _fixture_payload(fixture: Fixture) -> dict:
@@ -127,9 +170,7 @@ class FixtureViewSet(viewsets.ModelViewSet):
         if participant_id := params.get("participant"):
             queryset = queryset.filter(sides__participant_id=participant_id)
         if params.get("upcoming") in {"1", "true", "yes"}:
-            queryset = queryset.filter(
-                status__in=[Fixture.Status.SCHEDULED, Fixture.Status.LIVE]
-            )
+            queryset = queryset.filter(status__in=[Fixture.Status.SCHEDULED, Fixture.Status.LIVE])
         if self.action == "retrieve":
             queryset = queryset.prefetch_related(
                 "events__scoring_category",
@@ -156,9 +197,7 @@ class FixtureViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer) -> None:
         self._assert_is_admin()
-        serializer.save(
-            competition=self.get_competition(), created_by=self.request.user
-        )
+        serializer.save(competition=self.get_competition(), created_by=self.request.user)
         self._broadcast(serializer.instance, "fixture.created")
 
     def perform_update(self, serializer) -> None:
@@ -293,14 +332,38 @@ class FixtureViewSet(viewsets.ModelViewSet):
     )
     @action(detail=True, methods=["post"], url_path="set-status")
     def set_status(self, request: Request, **kwargs) -> Response:
-        self._assert_can_score()
+        from apps.results.services import is_official
+
         fixture = self.get_object()
+        if not is_official(fixture.competition, request.user):
+            self._assert_can_score()
 
         serializer = FixtureStatusSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         new_status = serializer.validated_data["status"]
         if new_status == Fixture.Status.LIVE and fixture.status == Fixture.Status.SCHEDULED:
             _assert_ready_for_kickoff(fixture)
+
+        from apps.results.services import assert_can_decide, officials_required
+
+        official = officials_required(fixture.competition)
+        reopening = fixture.is_counted and new_status not in {
+            Fixture.Status.COMPLETED,
+            Fixture.Status.FORFEIT,
+        }
+        reason = ""
+        if official and (
+            new_status in {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT} or reopening
+        ):
+            # Only the officials finalise or reopen a result.
+            assert_can_decide(fixture.competition, request.user)
+            if reopening:
+                reason = str(request.data.get("amendment_reason") or "").strip()
+                if not reason:
+                    raise ValidationError(
+                        {"amendment_reason": "Give a reason for reopening a final result."}
+                    )
+        before = _scores(fixture) if official else {}
 
         with transaction.atomic():
             fixture.status = new_status
@@ -310,6 +373,16 @@ class FixtureViewSet(viewsets.ModelViewSet):
                 fixture.completed_at = timezone.now()
                 fixture.recalculate_scores()
             fixture.save(update_fields=["status", "started_at", "completed_at", "updated_at"])
+            if official and (
+                new_status in {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT} or reopening
+            ):
+                _log_amendment(
+                    fixture,
+                    request,
+                    reason,
+                    before,
+                    action="reopened" if reopening else "finalised",
+                )
 
         self._broadcast(fixture, f"fixture.{new_status}")
         return Response(FixtureDetailSerializer(fixture).data)
@@ -364,8 +437,11 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
             )
 
     def perform_create(self, serializer) -> None:
-        self._assert_can_score()
         fixture = self.get_fixture()
+        reason = _official_reason(fixture, self.request)
+        if reason is None:
+            self._assert_can_score()
+        before = _scores(fixture) if reason else {}
         if fixture.status == Fixture.Status.SCHEDULED:
             _assert_ready_for_kickoff(fixture)
         with transaction.atomic():
@@ -376,21 +452,35 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
                     fixture.started_at = timezone.now()
                 fixture.save(update_fields=["status", "started_at", "updated_at"])
             fixture.recalculate_scores()
+            if reason:
+                _log_amendment(fixture, self.request, reason, before)
         self._after_change("score.recorded", {"event_id": str(serializer.instance.id)})
 
     def perform_update(self, serializer) -> None:
-        self._assert_can_score()
+        fixture = self.get_fixture()
+        reason = _official_reason(fixture, self.request)
+        if reason is None:
+            self._assert_can_score()
+        before = _scores(fixture) if reason else {}
         with transaction.atomic():
             serializer.save()
-            self.get_fixture().recalculate_scores()
+            fixture.recalculate_scores()
+            if reason:
+                _log_amendment(fixture, self.request, reason, before)
         self._after_change("score.corrected", {"event_id": str(serializer.instance.id)})
 
     def perform_destroy(self, instance: ScoreEvent) -> None:
-        self._assert_can_score()
+        fixture = self.get_fixture()
+        reason = _official_reason(fixture, self.request)
+        if reason is None:
+            self._assert_can_score()
+        before = _scores(fixture) if reason else {}
         event_id = str(instance.id)
         with transaction.atomic():
             instance.delete()
-            self.get_fixture().recalculate_scores()
+            fixture.recalculate_scores()
+            if reason:
+                _log_amendment(fixture, self.request, reason, before)
         self._after_change("score.removed", {"event_id": event_id})
 
     @extend_schema(
@@ -401,8 +491,11 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
     )
     @action(detail=False, methods=["post"], url_path="bulk")
     def bulk(self, request: Request, **kwargs) -> Response:
-        self._assert_can_score()
         fixture = self.get_fixture()
+        reason = _official_reason(fixture, request)
+        if reason is None:
+            self._assert_can_score()
+        before = _scores(fixture) if reason else {}
         if fixture.status == Fixture.Status.SCHEDULED:
             _assert_ready_for_kickoff(fixture)
 
@@ -430,6 +523,8 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
                     defaults={"rating": rating},
                 )
             fixture.recalculate_scores()
+            if reason:
+                _log_amendment(fixture, request, reason, before)
 
         self._after_change("score.recorded", {"count": len(created)})
         return Response(
@@ -488,9 +583,7 @@ class ScoreAssistView(APIView):
     )
     def post(self, request: Request, competition_pk: str) -> Response:
         competition = self._competition(request, competition_pk)
-        serializer = ScoreAssistSerializer(
-            data=request.data, context={"competition": competition}
-        )
+        serializer = ScoreAssistSerializer(data=request.data, context={"competition": competition})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
@@ -523,7 +616,9 @@ class ScoreAssistView(APIView):
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
         self._publish_table(competition)
-        return Response({"id": str(fixture.id), "label": fixture.label}, status=status.HTTP_201_CREATED)
+        return Response(
+            {"id": str(fixture.id), "label": fixture.label}, status=status.HTTP_201_CREATED
+        )
 
 
 class FixtureRefereeView(APIView):

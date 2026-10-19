@@ -163,6 +163,205 @@ SPORTS: dict[str, dict] = {
     },
 }
 
+# How a competition's free-text sport maps onto a catalogue sport. Matching is
+# case-insensitive and ignores "_" and "-", so "rugby_union" and "Rugby union" agree.
+COMPETITION_SPORT_ALIASES: dict[str, list[str]] = {
+    "soccer": ["soccer", "football", "futsal"],
+    "rugby_union": ["rugby", "rugby union", "rugby sevens"],
+    "cricket": ["cricket", "cricket t20"],
+    "netball": ["netball"],
+    "basketball": ["basketball"],
+    "athletics": ["athletics", "track and field"],
+    "tennis": ["tennis", "padel", "table tennis"],
+    "squash": ["squash"],
+    "badminton": ["badminton"],
+    "volleyball": ["volleyball", "beach volleyball"],
+    "golf": ["golf"],
+    "swimming": ["swimming"],
+    "boxing": ["boxing", "mma", "combat"],
+    "hockey": ["hockey", "field hockey"],
+    "rowing": ["rowing"],
+    "cycling": ["cycling"],
+    "esports": ["esports", "e-sports", "gaming"],
+}
+
+DEFAULT_SQUAD_SIZE = 23
+
+# National-team style squads, one per sport. Each group lists the catalogue
+# positions it takes, extra words a roster might use for them, and the fewest and
+# most places it may fill. Minimums are filled first; the rest go to the best
+# remaining players in groups still under their maximum.
+SQUADS: dict[str, dict] = {
+    "soccer": {
+        "size": 23,
+        "groups": [
+            {
+                "key": "goalkeepers",
+                "label": "Goalkeepers",
+                "positions": ["goalkeeper"],
+                "aliases": ["gk", "keeper", "goalie"],
+                "min": 3,
+                "max": 3,
+            },
+            {
+                "key": "defenders",
+                "label": "Defenders",
+                "positions": ["centre-back", "full-back", "wing-back"],
+                "aliases": ["defender", "defence", "def", "cb", "lb", "rb", "back"],
+                "min": 7,
+                "max": 9,
+            },
+            {
+                "key": "midfielders",
+                "label": "Midfielders",
+                "positions": ["defensive-midfield", "central-midfield", "attacking-midfield"],
+                "aliases": ["midfielder", "midfield", "mid", "cm", "dm", "am"],
+                "min": 7,
+                "max": 9,
+            },
+            {
+                "key": "forwards",
+                "label": "Forwards",
+                "positions": ["winger", "striker"],
+                "aliases": ["forward", "attacker", "fw", "st", "wing"],
+                "min": 4,
+                "max": 6,
+            },
+        ],
+    },
+    "rugby_union": {
+        "size": 23,
+        "groups": [
+            {
+                "key": "front-row",
+                "label": "Front row",
+                "positions": ["loosehead-prop", "hooker", "tighthead-prop"],
+                "aliases": ["prop", "front row"],
+                "min": 5,
+                "max": 6,
+            },
+            {
+                "key": "locks",
+                "label": "Locks",
+                "positions": ["lock"],
+                "aliases": ["second row"],
+                "min": 3,
+                "max": 4,
+            },
+            {
+                "key": "back-row",
+                "label": "Loose forwards",
+                "positions": ["flanker", "number-8"],
+                "aliases": ["loose forward", "back row", "eighthman"],
+                "min": 4,
+                "max": 5,
+            },
+            {
+                "key": "halves",
+                "label": "Half-backs",
+                "positions": ["scrum-half", "fly-half"],
+                "aliases": ["half-back", "flyhalf", "scrumhalf"],
+                "min": 4,
+                "max": 5,
+            },
+            {
+                "key": "outside-backs",
+                "label": "Centres and back three",
+                "positions": ["centre", "wing", "fullback"],
+                "aliases": ["winger", "full back", "outside back"],
+                "min": 7,
+                "max": 8,
+            },
+        ],
+    },
+    "hockey": {
+        "size": 23,
+        "groups": [
+            {
+                "key": "goalkeepers",
+                "label": "Goalkeepers",
+                "positions": ["goalkeeper"],
+                "aliases": ["gk", "keeper"],
+                "min": 2,
+                "max": 3,
+            },
+            {
+                "key": "defenders",
+                "label": "Defenders",
+                "positions": ["defender"],
+                "aliases": ["defence", "back"],
+                "min": 6,
+                "max": 8,
+            },
+            {
+                "key": "midfielders",
+                "label": "Midfielders",
+                "positions": ["midfielder"],
+                "aliases": ["midfield"],
+                "min": 6,
+                "max": 8,
+            },
+            {
+                "key": "forwards",
+                "label": "Forwards",
+                "positions": ["forward"],
+                "aliases": ["striker", "attacker"],
+                "min": 5,
+                "max": 7,
+            },
+        ],
+    },
+    "cricket": {
+        "size": 23,
+        "groups": [
+            {
+                "key": "batters",
+                "label": "Batters",
+                "positions": ["batter"],
+                "aliases": ["batsman", "opener"],
+                "min": 7,
+                "max": 9,
+            },
+            {
+                "key": "keepers",
+                "label": "Wicket-keepers",
+                "positions": ["wicket-keeper"],
+                "aliases": ["keeper", "wk"],
+                "min": 2,
+                "max": 3,
+            },
+            {
+                "key": "all-rounders",
+                "label": "All-rounders",
+                "positions": ["all-rounder"],
+                "aliases": ["allrounder"],
+                "min": 4,
+                "max": 6,
+            },
+            {
+                "key": "bowlers",
+                "label": "Bowlers",
+                "positions": ["fast-bowler", "spin-bowler"],
+                "aliases": ["bowler", "seamer", "spinner", "pace"],
+                "min": 7,
+                "max": 9,
+            },
+        ],
+    },
+}
+
+# The selection score blends whatever evidence a league has, out of 10. A missing
+# source is left out and the other weights are scaled up, and the pick says so.
+SELECTION_WEIGHTS: dict[str, float] = {
+    "form": 0.5,  # average match rating
+    "output": 0.3,  # scoring contribution per game, against the best in the same position group
+    "team": 0.2,  # the player's team results
+}
+
+# Talent-profile availability values that keep a player out of an automatic pick.
+UNAVAILABLE_FOR_SELECTION = {"injured", "unavailable"}
+
+
 # Age groups by age on 1 January of the current season, youngest first. An
 # entry applies while the age is below `under`; the last entry has no limit.
 AGE_GROUPS: list[dict] = [
@@ -241,6 +440,66 @@ def position_keys(sport_key: str) -> set[str]:
     return {item["key"] for item in entry.get("positions", [])}
 
 
+def _norm(text: str) -> str:
+    return " ".join((text or "").lower().replace("_", " ").replace("-", " ").split())
+
+
+def sport_for_competition(competition_sport: str) -> str | None:
+    """The catalogue sport a competition plays, or None if it is not a scouting sport."""
+
+    wanted = _norm(competition_sport)
+    if not wanted:
+        return None
+    for key, aliases in COMPETITION_SPORT_ALIASES.items():
+        if wanted == _norm(key) or wanted in {_norm(alias) for alias in aliases}:
+            return key
+    return None
+
+
+def squad_template(sport_key: str | None) -> dict:
+    """The sport's squad shape, or one open group of the default size."""
+
+    if sport_key and sport_key in SQUADS:
+        return SQUADS[sport_key]
+    positions = [item["key"] for item in (SPORTS.get(sport_key or "") or {}).get("positions", [])]
+    return {
+        "size": DEFAULT_SQUAD_SIZE,
+        "groups": [
+            {
+                "key": "squad",
+                "label": "Squad",
+                "positions": positions,
+                "aliases": [],
+                "min": 0,
+                "max": DEFAULT_SQUAD_SIZE,
+            }
+        ],
+    }
+
+
+def group_for_position(sport_key: str | None, position: str) -> str | None:
+    """Match a catalogue position key or a roster's free-text position to a squad group."""
+
+    template = squad_template(sport_key)
+    wanted = _norm(position)
+    if not wanted:
+        return None
+    labels = {
+        item["key"]: _norm(item["label"])
+        for item in (SPORTS.get(sport_key or "") or {}).get("positions", [])
+    }
+    for group in template["groups"]:
+        names = {_norm(key) for key in group["positions"]}
+        names |= {labels[key] for key in group["positions"] if key in labels}
+        names |= {_norm(alias) for alias in group.get("aliases", [])}
+        names.add(_norm(group["label"]))
+        if wanted in names or wanted.rstrip("s") in names:
+            return group["key"]
+    if len(template["groups"]) == 1:
+        return template["groups"][0]["key"]
+    return None
+
+
 def measurement(key: str) -> dict | None:
     return next((item for item in MEASUREMENTS if item["key"] == key), None)
 
@@ -258,4 +517,8 @@ def public_catalog() -> dict:
         "regions": REGIONS,
         "measurements": MEASUREMENTS,
         "consent_sections": CONSENT_SECTIONS,
+        "competition_sports": COMPETITION_SPORT_ALIASES,
+        "squads": SQUADS,
+        "default_squad_size": DEFAULT_SQUAD_SIZE,
+        "selection_weights": SELECTION_WEIGHTS,
     }

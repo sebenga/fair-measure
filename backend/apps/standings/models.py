@@ -38,6 +38,8 @@ class StandingRow(BaseModel):
     form = models.JSONField(
         default=list, blank=True, help_text="Most recent results first, e.g. ['W','D','L']."
     )
+    # Extra series columns: second and third places, and results with a status.
+    detail = models.JSONField(default=dict, blank=True)
     computed_at = models.DateTimeField(auto_now=True)
 
     class Meta:

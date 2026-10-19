@@ -13,10 +13,12 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
+from pathlib import Path
 
 import boto3
 from botocore.client import Config
 from django.conf import settings
+from django.core import signing
 from rest_framework.exceptions import ValidationError
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/heic"}
@@ -69,9 +71,7 @@ def validate_upload(kind: str, content_type: str, size_bytes: int | None) -> str
     allowed = ALLOWED_IMAGE_TYPES if kind == "image" else ALLOWED_VIDEO_TYPES
 
     if resolved not in allowed:
-        raise ValidationError(
-            {"content_type": f"'{resolved}' is not an accepted {kind} type."}
-        )
+        raise ValidationError({"content_type": f"'{resolved}' is not an accepted {kind} type."})
     if size_bytes is not None and size_bytes > settings.MAX_UPLOAD_BYTES:
         limit_mb = settings.MAX_UPLOAD_BYTES // (1024 * 1024)
         raise ValidationError({"size_bytes": f"Files must be {limit_mb} MB or smaller."})
@@ -123,3 +123,68 @@ def head_object(key: str) -> dict | None:
 
 def delete_object(key: str) -> None:
     get_s3_client().delete_object(Bucket=settings.STORAGE_BUCKET, Key=key)
+
+
+# --- Local development storage ----------------------------------------------
+
+LOCAL_PROVIDER = "local"
+_LOCAL_SALT = "media.local-upload"
+_CHUNK = 1024 * 1024
+
+
+def local_uploads_enabled() -> bool:
+    return bool(getattr(settings, "LOCAL_MEDIA_UPLOADS", False))
+
+
+def local_upload_token(asset_id: str) -> str:
+    return signing.dumps(str(asset_id), salt=_LOCAL_SALT)
+
+
+def read_local_upload_token(token: str) -> str | None:
+    try:
+        return signing.loads(
+            token, salt=_LOCAL_SALT, max_age=settings.STORAGE_UPLOAD_URL_TTL_SECONDS
+        )
+    except signing.BadSignature:
+        return None
+
+
+def local_path(key: str) -> Path:
+    root = Path(settings.MEDIA_ROOT).resolve()
+    path = (root / key).resolve()
+    if root not in path.parents:
+        raise ValidationError("Invalid storage key.")
+    return path
+
+
+def local_url(key: str) -> str:
+    return f"{settings.PUBLIC_API_ORIGIN.rstrip('/')}{settings.MEDIA_URL}{key}"
+
+
+def save_local_upload(key: str, stream) -> int:
+    """Stream the request body to disk, refusing anything over MAX_UPLOAD_BYTES."""
+
+    path = local_path(key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    with path.open("wb") as handle:
+        while chunk := stream.read(_CHUNK):
+            written += len(chunk)
+            if written > settings.MAX_UPLOAD_BYTES:
+                handle.close()
+                path.unlink(missing_ok=True)
+                limit_mb = settings.MAX_UPLOAD_BYTES // (1024 * 1024)
+                raise ValidationError({"size_bytes": f"Files must be {limit_mb} MB or smaller."})
+            handle.write(chunk)
+    return written
+
+
+def local_head(key: str) -> dict | None:
+    path = local_path(key)
+    if not path.is_file():
+        return None
+    return {"size_bytes": path.stat().st_size, "content_type": ""}
+
+
+def delete_local(key: str) -> None:
+    local_path(key).unlink(missing_ok=True)

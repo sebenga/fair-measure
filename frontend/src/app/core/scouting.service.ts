@@ -6,14 +6,23 @@ import { environment } from '../../environments/environment';
 import type {
   ConsentRecord,
   GuardianLink,
+  IdentityDocument,
+  IdentityDocumentKind,
+  LeagueCandidates,
+  LeagueScouts,
+  LeagueSquadResponse,
+  LeagueSummary,
   Measurement,
+  ScoutingReport,
   Organisation,
   PlayerProfile,
   ProfileCard,
+  ProfileTeam,
   ScoutProfileView,
   ScoutingCatalog,
   ScoutingMe,
   ScoutingRole,
+  TeamMemberships,
   Visibility,
 } from './scouting.models';
 
@@ -43,6 +52,39 @@ export class ScoutingService {
     );
   }
 
+  teamMemberships(): Observable<TeamMemberships> {
+    return this.http.get<TeamMemberships>(`${this.base}/me/team-memberships`);
+  }
+
+  // --- Identity documents (optional; only the owner can ever download them) --
+
+  documents(): Observable<IdentityDocument[]> {
+    return this.http.get<IdentityDocument[]>(`${environment.apiBaseUrl}/auth/me/documents`);
+  }
+
+  uploadDocument(kind: IdentityDocumentKind, file: File): Observable<IdentityDocument> {
+    const form = new FormData();
+    form.append('kind', kind);
+    form.append('file', file, file.name);
+    return this.http.post<IdentityDocument>(`${environment.apiBaseUrl}/auth/me/documents`, form);
+  }
+
+  deleteDocument(id: string): Observable<void> {
+    return this.http.delete<void>(`${environment.apiBaseUrl}/auth/me/documents/${id}`);
+  }
+
+  documentFile(id: string): Observable<Blob> {
+    return this.http.get(`${environment.apiBaseUrl}/auth/me/documents/${id}/file`, {
+      responseType: 'blob',
+    });
+  }
+
+  searchTeams(q = ''): Observable<ProfileTeam[]> {
+    let params = new HttpParams();
+    if (q.trim()) params = params.set('q', q.trim());
+    return this.http.get<ProfileTeam[]>(`${this.base}/teams`, { params });
+  }
+
   becomeCoach(team: string): Observable<ScoutingRole> {
     return this.http.post<ScoutingRole>(`${this.base}/roles/coach`, { team });
   }
@@ -57,11 +99,11 @@ export class ScoutingService {
     return this.http.get<PlayerProfile>(`${this.base}/profile`);
   }
 
-  createProfile(body: Partial<PlayerProfile>): Observable<PlayerProfile> {
+  createProfile(body: Partial<PlayerProfile> & { team_ids?: string[] }): Observable<PlayerProfile> {
     return this.http.post<PlayerProfile>(`${this.base}/profile`, body);
   }
 
-  updateProfile(body: Partial<PlayerProfile>): Observable<PlayerProfile> {
+  updateProfile(body: Partial<PlayerProfile> & { team_ids?: string[] }): Observable<PlayerProfile> {
     return this.http.patch<PlayerProfile>(`${this.base}/profile`, body);
   }
 
@@ -161,6 +203,78 @@ export class ScoutingService {
     return this.http.post<Measurement>(`${this.base}/profiles/${profileId}/measurements`, body);
   }
 
+  // --- Reports and league squads --------------------------------------------
+
+  report(profileId: string, exporting = false): Observable<ScoutingReport> {
+    const params = exporting ? new HttpParams().set('export', '1') : undefined;
+    return this.http.get<ScoutingReport>(`${this.base}/profiles/${profileId}/report`, { params });
+  }
+
+  leagues(): Observable<LeagueSummary[]> {
+    return this.http.get<LeagueSummary[]>(`${this.base}/leagues`);
+  }
+
+  squad(leagueId: string, exporting = false): Observable<LeagueSquadResponse> {
+    const params = exporting ? new HttpParams().set('export', '1') : undefined;
+    return this.http.get<LeagueSquadResponse>(`${this.base}/leagues/${leagueId}/squad`, { params });
+  }
+
+  updateSquad(leagueId: string, body: { name?: string; notes?: string; size?: number }) {
+    return this.http.patch<LeagueSquadResponse>(`${this.base}/leagues/${leagueId}/squad`, body);
+  }
+
+  generateSquad(leagueId: string): Observable<LeagueSquadResponse> {
+    return this.http.post<LeagueSquadResponse>(`${this.base}/leagues/${leagueId}/squad/generate`, {});
+  }
+
+  publishSquad(leagueId: string): Observable<LeagueSquadResponse> {
+    return this.http.post<LeagueSquadResponse>(`${this.base}/leagues/${leagueId}/squad/publish`, {});
+  }
+
+  unpublishSquad(leagueId: string): Observable<LeagueSquadResponse> {
+    return this.http.delete<LeagueSquadResponse>(`${this.base}/leagues/${leagueId}/squad/publish`);
+  }
+
+  addPick(leagueId: string, user: string, groupKey?: string | null) {
+    return this.http.post<LeagueSquadResponse>(`${this.base}/leagues/${leagueId}/squad/picks`, {
+      user,
+      ...(groupKey ? { group_key: groupKey } : {}),
+    });
+  }
+
+  updatePick(leagueId: string, pickId: string, body: { locked?: boolean; group_key?: string }) {
+    return this.http.patch<LeagueSquadResponse>(
+      `${this.base}/leagues/${leagueId}/squad/picks/${pickId}`,
+      body,
+    );
+  }
+
+  dropPick(leagueId: string, pickId: string): Observable<LeagueSquadResponse> {
+    return this.http.delete<LeagueSquadResponse>(`${this.base}/leagues/${leagueId}/squad/picks/${pickId}`);
+  }
+
+  restorePlayer(leagueId: string, userId: string): Observable<LeagueSquadResponse> {
+    return this.http.delete<LeagueSquadResponse>(
+      `${this.base}/leagues/${leagueId}/squad/excluded/${userId}`,
+    );
+  }
+
+  candidates(leagueId: string): Observable<LeagueCandidates> {
+    return this.http.get<LeagueCandidates>(`${this.base}/leagues/${leagueId}/candidates`);
+  }
+
+  leagueScouts(leagueId: string): Observable<LeagueScouts> {
+    return this.http.get<LeagueScouts>(`${this.base}/leagues/${leagueId}/scouts`);
+  }
+
+  addLeagueScout(leagueId: string, email: string): Observable<LeagueScouts> {
+    return this.http.post<LeagueScouts>(`${this.base}/leagues/${leagueId}/scouts`, { email });
+  }
+
+  removeLeagueScout(leagueId: string, scoutId: string): Observable<LeagueScouts> {
+    return this.http.delete<LeagueScouts>(`${this.base}/leagues/${leagueId}/scouts/${scoutId}`);
+  }
+
   // --- Organisations --------------------------------------------------------
 
   organisations(): Observable<Organisation[]> {
@@ -226,6 +340,8 @@ export const ROLE_GUIDE: Array<{
     can: [
       'Search profiles that players (and guardians) made visible to scouts',
       'See verified and self-reported measurements, with dates',
+      'Open a scouting report for any player you can see, and save it as a PDF',
+      "See every league's ranked candidates behind its squad",
       'Never see phone numbers or email addresses; contact goes through the app',
     ],
   },
@@ -236,8 +352,8 @@ export const ROLE_GUIDE: Array<{
     summary: "Runs an organisation's scouting team.",
     can: [
       'Create the organisation and add or remove its scouts',
-      'Everything a scout can do',
-      'Later: shortlists and reports for the organisation',
+      'Everything a scout can do, including scouting reports and league rankings',
+      'Later: shortlists for the organisation',
     ],
   },
   {
@@ -251,3 +367,51 @@ export const ROLE_GUIDE: Array<{
     ],
   },
 ];
+
+/** Not a scouting role: owners and admins of a competition pick its squad. */
+export const SELECTOR_GUIDE = {
+  title: 'League selector',
+  icon: 'shirt-outline',
+  summary:
+    "In a league open to scouts, its owner, admins and league scouts pick its squad, like national selectors.",
+  can: [
+    'Open a sport competition to scouts when creating it, or later in Setup → Scouting',
+    'Attach scouts to the league; they help pick the squad',
+    "Pick the league's best players from match ratings, tagged scores and team results",
+    'Lock a player in, move them to another position group, or drop them',
+    'Publish the squad: everyone who can see the league sees it, and the players are told',
+  ],
+};
+
+/** Same matching as the backend: case-insensitive, "_" and "-" count as spaces. */
+export function scoutingSportFor(sport: string, catalog: ScoutingCatalog | null): string | null {
+  const norm = (text: string) => text.toLowerCase().replace(/[_-]/g, ' ').split(/\s+/).filter(Boolean).join(' ');
+  const wanted = norm(sport || '');
+  if (!wanted || !catalog?.competition_sports) return null;
+  for (const [key, aliases] of Object.entries(catalog.competition_sports)) {
+    if (norm(key) === wanted || aliases.some((alias) => norm(alias) === wanted)) return key;
+  }
+  return null;
+}
+
+/** Groups rows under their sport, in catalogue order, with "Other" last. */
+export function groupBySport<T>(
+  rows: T[],
+  sportOf: (row: T) => { key: string | null; label: string },
+  catalog: ScoutingCatalog | null,
+): Array<{ key: string; label: string; rows: T[] }> {
+  const order = (catalog?.sports ?? []).map((sport) => sport.key);
+  const groups = new Map<string, { key: string; label: string; rows: T[] }>();
+  for (const row of rows) {
+    const sport = sportOf(row);
+    const key = sport.key ?? `other:${sport.label.toLowerCase()}`;
+    const group = groups.get(key) ?? { key, label: sport.label, rows: [] };
+    group.rows.push(row);
+    groups.set(key, group);
+  }
+  const rank = (key: string) => {
+    const index = order.indexOf(key);
+    return index === -1 ? order.length + 1 : index;
+  };
+  return [...groups.values()].sort((a, b) => rank(a.key) - rank(b.key) || a.label.localeCompare(b.label));
+}

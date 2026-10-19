@@ -13,9 +13,7 @@ from apps.media_assets.models import MediaAsset
 
 
 class Post(BaseModel, SoftDeleteModel):
-    competition = models.ForeignKey(
-        Competition, on_delete=models.CASCADE, related_name="posts"
-    )
+    competition = models.ForeignKey(Competition, on_delete=models.CASCADE, related_name="posts")
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="posts"
     )
@@ -64,9 +62,7 @@ class PostMedia(BaseModel):
     class Meta:
         ordering = ["display_order"]
         constraints = [
-            models.UniqueConstraint(
-                fields=["post", "media_asset"], name="uniq_media_per_post"
-            )
+            models.UniqueConstraint(fields=["post", "media_asset"], name="uniq_media_per_post")
         ]
 
 
@@ -80,7 +76,7 @@ class Comment(BaseModel, SoftDeleteModel):
     parent = models.ForeignKey(
         "self", on_delete=models.CASCADE, null=True, blank=True, related_name="replies"
     )
-    body = models.TextField()
+    body = models.TextField(blank=True)
     reply_count = models.PositiveIntegerField(default=0)
     reaction_count = models.PositiveIntegerField(default=0)
 
@@ -90,6 +86,24 @@ class Comment(BaseModel, SoftDeleteModel):
 
     def __str__(self) -> str:
         return f"{self.author} · {self.body[:40]}"
+
+
+class CommentMedia(BaseModel):
+    """Ordered photos and clips attached to a comment or reply."""
+
+    comment = models.ForeignKey(Comment, on_delete=models.CASCADE, related_name="media")
+    media_asset = models.ForeignKey(
+        MediaAsset, on_delete=models.CASCADE, related_name="comment_attachments"
+    )
+    display_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["display_order"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["comment", "media_asset"], name="uniq_media_per_comment"
+            )
+        ]
 
 
 class Reaction(BaseModel):

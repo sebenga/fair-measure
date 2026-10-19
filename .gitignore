@@ -13,6 +13,7 @@ htmlcov/
 *.sqlite3
 staticfiles/
 mediafiles/
+private_media/
 
 # Node
 node_modules/

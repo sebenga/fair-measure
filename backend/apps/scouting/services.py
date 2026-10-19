@@ -190,12 +190,101 @@ def access_level(profile: PlayerProfile, viewer) -> str | None:
     return None
 
 
+def scouting_leagues(user):
+    """Competitions whose owners opened them to scouts, as far as this user may see them.
+
+    Scouts see every open league, private ones included: opening a league to scouts
+    is the owner's consent to that. Everyone else sees open leagues they could
+    already see.
+    """
+
+    from apps.competitions.models import Competition
+    from apps.competitions.views import visible_competitions
+
+    leagues = Competition.objects.filter(open_to_scouts=True).select_related("owner")
+    if is_scout(user):
+        return leagues
+    return leagues.filter(pk__in=visible_competitions(user).values("pk"))
+
+
+def is_league_scout(competition, user) -> bool:
+    if not user or not user.is_authenticated:
+        return False
+    from .models import LeagueScout
+
+    return LeagueScout.objects.filter(competition=competition, user=user).exists()
+
+
+MAX_PROFILE_TEAMS = 12
+
+
+def roster_team_ids(user) -> set:
+    """Active team (not individual) sides a person is listed on."""
+
+    if not user:
+        return set()
+    from apps.competitions.models import RosterMember
+
+    return set(
+        RosterMember.objects.filter(
+            user=user, is_active=True, participant__kind="team"
+        ).values_list("participant_id", flat=True)
+    )
+
+
+def team_payload(participant, *, from_roster: bool = False) -> dict:
+    return {
+        "id": str(participant.id),
+        "name": participant.name,
+        "competition_id": str(participant.competition_id),
+        "competition": participant.competition.name,
+        "sport": participant.competition.sport,
+        "from_roster": from_roster,
+    }
+
+
+def affiliated_teams(profile: PlayerProfile) -> list[dict]:
+    """Claimed school/club sides plus any team the player is actually rostered on.
+
+    Roster rows cannot be dropped from the talent profile; they change in the
+    competition itself. A player can still claim extra sides in other competitions.
+    """
+
+    from apps.competitions.models import Participant
+
+    roster = roster_team_ids(profile.user_id)
+    claimed = {team.id: team for team in profile.teams.select_related("competition").all()}
+    missing = roster - set(claimed)
+    if missing:
+        for team in Participant.objects.filter(pk__in=missing).select_related("competition"):
+            claimed[team.id] = team
+    rows = [
+        team_payload(team, from_roster=team.id in roster)
+        for team in sorted(
+            claimed.values(), key=lambda team: (team.name.lower(), team.competition.name.lower())
+        )
+    ]
+    return rows
+
+
+def school_or_club_label(teams: list[dict], fallback: str = "") -> str:
+    names: list[str] = []
+    seen: set[str] = set()
+    for team in teams:
+        if team["name"] not in seen:
+            seen.add(team["name"])
+            names.append(team["name"])
+    return ", ".join(names)[:160] or fallback
+
+
 def visible_profiles(viewer):
     """Every profile the viewer may open. Evaluated in Python because consent is per row."""
 
-    candidates = PlayerProfile.objects.exclude(
-        visibility=PlayerProfile.Visibility.PRIVATE
-    ).select_related("user")
+    candidates = (
+        PlayerProfile.objects.exclude(visibility=PlayerProfile.Visibility.PRIVATE)
+        .select_related("user")
+        .prefetch_related("sports", "teams__competition")
+    )
     return [
         profile for profile in candidates if access_level(profile, viewer) in {"scout", "public"}
     ]

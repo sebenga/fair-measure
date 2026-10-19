@@ -349,3 +349,63 @@ ion-tabs ion-router-outlet {
 ion-tabs ion-router-outlet[data-overlay-passthrough] {
   pointer-events: auto !important;
 }
+
+// Printing (and "Save as PDF") shows only the current page's content: Ionic keeps
+// earlier pages in the DOM and scrolls inside shadow parts, so both are undone here.
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  html,
+  body,
+  ion-app,
+  ion-router-outlet,
+  ion-tabs,
+  .ion-page {
+    position: static !important;
+    height: auto !important;
+    overflow: visible !important;
+    contain: none !important;
+    transform: none !important;
+  }
+
+  html body ion-tab-bar,
+  ion-header,
+  ion-footer,
+  ion-refresher,
+  .no-print,
+  .ion-page-hidden,
+  .ion-page.ion-page-hidden {
+    display: none !important;
+  }
+
+  ion-content {
+    --overflow: visible;
+    --offset-top: 0px !important;
+    --offset-bottom: 0px !important;
+    --background: #fff;
+    display: block;
+  }
+
+  ion-content::part(scroll) {
+    position: static !important;
+    overflow: visible !important;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  .fm-card {
+    box-shadow: none !important;
+    border: 1px solid #ddd;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

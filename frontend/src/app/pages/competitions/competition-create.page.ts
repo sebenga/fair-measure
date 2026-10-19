@@ -23,6 +23,8 @@ import {
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
+import type { ScoutingCatalog } from '../../core/scouting.models';
+import { ScoutingService, scoutingSportFor } from '../../core/scouting.service';
 import type { CompetitionFormat, Preset, PresetKind } from '../../core/models';
 import { isPointsPreset } from '../../core/models';
 
@@ -599,6 +601,35 @@ function presetKind(preset: Preset): PresetKind {
               </button>
             </div>
 
+            @if (scoutable()) {
+              <h3 class="fm-section-title">Scouting</h3>
+              <div class="visibility">
+                <button
+                  type="button"
+                  class="vis"
+                  [class.selected]="!form.controls.open_to_scouts.value"
+                  (click)="form.controls.open_to_scouts.setValue(false)"
+                >
+                  <ion-icon name="eye-off-outline" aria-hidden="true" />
+                  <strong>Closed to scouts</strong>
+                  <p>The league stays between its players, officials and fans.</p>
+                </button>
+                <button
+                  type="button"
+                  class="vis"
+                  [class.selected]="form.controls.open_to_scouts.value"
+                  (click)="form.controls.open_to_scouts.setValue(true)"
+                >
+                  <ion-icon name="ribbon-outline" aria-hidden="true" />
+                  <strong>Open to scouts</strong>
+                  <p>
+                    Scouts can follow it, its results feed scouting reports, and it can name its own squad
+                    of the best players. Players still decide who sees their profile.
+                  </p>
+                </button>
+              </div>
+            }
+
             <div class="summary fm-card">
               <h4>You are creating</h4>
               <dl>
@@ -651,6 +682,12 @@ function presetKind(preset: Preset): PresetKind {
                   <dt>Visibility</dt>
                   <dd>{{ form.controls.is_private.value ? 'Private' : 'Public' }}</dd>
                 </div>
+                @if (scoutable()) {
+                  <div>
+                    <dt>Scouts</dt>
+                    <dd>{{ form.controls.open_to_scouts.value ? 'Open: can name its own squad' : 'Closed' }}</dd>
+                  </div>
+                }
               </dl>
             </div>
           }
@@ -691,6 +728,9 @@ export class CompetitionCreatePage implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(ApiService);
   private readonly navCtrl = inject(NavController);
+  private readonly scouting = inject(ScoutingService);
+
+  readonly scoutingCatalog = signal<ScoutingCatalog | null>(null);
   private nextDraftKey = 1;
 
   readonly weekdays = WEEKDAYS;
@@ -790,12 +830,17 @@ export class CompetitionCreatePage implements OnInit {
       ends_on: [''],
       timezone: [localTimezone()],
       is_private: [false],
+      open_to_scouts: [false],
       match_weekdays: [[] as number[]],
     },
     { validators: endAfterStart },
   );
 
   ngOnInit(): void {
+    this.scouting.catalog().subscribe({
+      next: (catalog) => this.scoutingCatalog.set(catalog),
+      error: () => this.scoutingCatalog.set(null),
+    });
     this.api.listPresets().subscribe({
       next: (presets) => {
         this.presets.set(presets);
@@ -1014,6 +1059,11 @@ export class CompetitionCreatePage implements OnInit {
     this.form.controls.name.markAsTouched();
   }
 
+  /** Only sports that scouting covers can be opened to scouts. */
+  scoutable(): boolean {
+    return scoutingSportFor(this.form.controls.sport.value, this.scoutingCatalog()) !== null;
+  }
+
   submit(): void {
     if (this.form.invalid || this.saving()) {
       this.form.markAllAsTouched();
@@ -1053,6 +1103,7 @@ export class CompetitionCreatePage implements OnInit {
             }
           : {}),
         is_private: raw.is_private,
+        open_to_scouts: this.scoutable() && raw.open_to_scouts,
         starts_on: raw.starts_on || null,
         ends_on: raw.ends_on || null,
         timezone: raw.timezone,

@@ -3,8 +3,12 @@ from __future__ import annotations
 import json
 import logging
 
+from django.conf import settings
+from django.http import HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -23,7 +27,20 @@ from .serializers import (
     RequestUploadSerializer,
     UploadTargetSerializer,
 )
-from .storage import build_key, create_presigned_upload, head_object, validate_upload
+from .storage import (
+    LOCAL_PROVIDER,
+    build_key,
+    create_presigned_upload,
+    delete_local,
+    head_object,
+    local_head,
+    local_upload_token,
+    local_uploads_enabled,
+    local_url,
+    read_local_upload_token,
+    save_local_upload,
+    validate_upload,
+)
 from .video import get_video_provider
 
 logger = logging.getLogger(__name__)
@@ -79,7 +96,9 @@ class MediaAssetViewSet(
             status=MediaAsset.Status.PENDING,
         )
 
-        if data["kind"] == MediaAsset.Kind.IMAGE:
+        if local_uploads_enabled():
+            payload = self._local_target(request, asset, data)
+        elif data["kind"] == MediaAsset.Kind.IMAGE:
             content_type = validate_upload(
                 "image", data.get("content_type", ""), data.get("size_bytes")
             )
@@ -120,9 +139,7 @@ class MediaAssetViewSet(
             asset.video_provider = direct.provider
             asset.provider_asset_id = direct.provider_asset_id
             asset.status = MediaAsset.Status.PROCESSING
-            asset.save(
-                update_fields=["video_provider", "provider_asset_id", "status"]
-            )
+            asset.save(update_fields=["video_provider", "provider_asset_id", "status"])
 
             payload = {
                 "media_asset": MediaAssetSerializer(asset).data,
@@ -132,6 +149,28 @@ class MediaAssetViewSet(
             }
 
         return Response(payload, status=status.HTTP_201_CREATED)
+
+    def _local_target(self, request: Request, asset: MediaAsset, data: dict) -> dict:
+        content_type = validate_upload(
+            asset.kind, data.get("content_type", ""), data.get("size_bytes")
+        )
+        folder = "images" if asset.kind == MediaAsset.Kind.IMAGE else "videos"
+        asset.storage_provider = LOCAL_PROVIDER
+        asset.storage_key = build_key(f"{folder}/{request.user.id}", data.get("filename", ""))
+        asset.content_type = content_type
+        asset.size_bytes = data.get("size_bytes")
+        asset.save(update_fields=["storage_provider", "storage_key", "content_type", "size_bytes"])
+        upload_url = request.build_absolute_uri(
+            f"/api/v1/media/{asset.id}/local-upload?token={local_upload_token(asset.id)}"
+        )
+        return {
+            "media_asset": MediaAssetSerializer(asset).data,
+            "upload_url": upload_url,
+            "method": "PUT",
+            "headers": {"Content-Type": content_type},
+            "storage_key": asset.storage_key,
+            "expires_in": settings.STORAGE_UPLOAD_URL_TTL_SECONDS,
+        }
 
     @extend_schema(
         tags=["Media"],
@@ -155,7 +194,8 @@ class MediaAssetViewSet(
         serializer = CompleteUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        stored = head_object(asset.storage_key)
+        is_local = asset.storage_provider == LOCAL_PROVIDER
+        stored = local_head(asset.storage_key) if is_local else head_object(asset.storage_key)
         if stored is None:
             raise ValidationError("No uploaded file was found for this asset.")
 
@@ -167,12 +207,17 @@ class MediaAssetViewSet(
         asset.ready_at = timezone.now()
         asset.save()
 
-        enqueue_job(Queues.MEDIA, "generate-thumbnail", {"media_asset_id": str(asset.id)})
+        if not is_local:
+            enqueue_job(Queues.MEDIA, "generate-thumbnail", {"media_asset_id": str(asset.id)})
         return Response(MediaAssetSerializer(asset).data)
 
     def perform_destroy(self, instance: MediaAsset) -> None:
         if instance.owner_id != self.request.user.id:
             raise PermissionDenied("You can only delete your own media.")
+        if instance.storage_provider == LOCAL_PROVIDER:
+            delete_local(instance.storage_key)
+            instance.delete()
+            return
         enqueue_job(
             Queues.MEDIA,
             "delete-remote-asset",
@@ -246,3 +291,41 @@ def video_webhook(request: Request, provider: str) -> Response:
         immediate=True,
     )
     return Response({"detail": "Applied."})
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def local_upload(request: HttpRequest, pk: str) -> JsonResponse:
+    """Receives the bytes for a local-storage upload. The signed token stands in for auth.
+
+    Only routed while LOCAL_MEDIA_UPLOADS is on. Images still go through `complete`;
+    local videos have no transcoding step, so they are ready as soon as they land.
+    """
+
+    if not local_uploads_enabled() or read_local_upload_token(request.GET.get("token", "")) != str(
+        pk
+    ):
+        return JsonResponse({"detail": "Invalid or expired upload link."}, status=403)
+
+    asset = MediaAsset.objects.filter(
+        pk=pk, storage_provider=LOCAL_PROVIDER, status=MediaAsset.Status.PENDING
+    ).first()
+    if asset is None:
+        return JsonResponse({"detail": "This upload is no longer open."}, status=404)
+
+    try:
+        written = save_local_upload(asset.storage_key, request)
+    except ValidationError as error:
+        return JsonResponse({"detail": error.detail}, status=400)
+    if written == 0:
+        return JsonResponse({"detail": "The file was empty."}, status=400)
+
+    asset.size_bytes = written
+    fields = ["size_bytes"]
+    if asset.kind == MediaAsset.Kind.VIDEO:
+        asset.status = MediaAsset.Status.READY
+        asset.playback_url = local_url(asset.storage_key)
+        asset.ready_at = timezone.now()
+        fields += ["status", "playback_url", "ready_at"]
+    asset.save(update_fields=fields)
+    return JsonResponse({"detail": "Stored.", "size_bytes": written})

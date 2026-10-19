@@ -189,3 +189,38 @@
   font-size: 0.78rem;
   line-height: 1.5;
 }
+
+.combo-form {
+  display: grid;
+  gap: 10px;
+}
+
+.combo-field {
+  display: grid;
+  gap: 4px;
+  margin: 0 16px;
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--ion-color-medium);
+
+  input,
+  select {
+    width: 100%;
+    min-height: 42px;
+    padding: 8px 10px;
+    border: 1px solid var(--ion-color-step-200, #d7d8da);
+    border-radius: 10px;
+    background: var(--ion-background-color, #fff);
+    color: var(--ion-text-color);
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+}
+
+.combo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 16px;
+}

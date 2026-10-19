@@ -22,6 +22,8 @@ import { extractErrorMessage } from '../../../core/error-message';
 import type { CompetitionDetail, CriterionBreakdown, StandingRow } from '../../../core/models';
 import { isPointsTable } from '../../../core/models';
 import { RealtimeService } from '../../../core/realtime.service';
+import type { CombinationStatRow } from '../../../core/results.models';
+import { ResultsService } from '../../../core/results.service';
 
 @Component({
   selector: 'fm-competition-standings',
@@ -99,9 +101,13 @@ import { RealtimeService } from '../../../core/realtime.service';
           <thead>
             <tr>
               <th class="pos">#</th>
-              <th class="team">{{ pointsTable() ? 'Name' : 'Team' }}</th>
-              <th>{{ pointsTable() ? 'E' : 'P' }}</th>
-              @if (!pointsTable()) {
+              <th class="team">{{ pointsTable() ? 'Name' : seriesTable() ? 'Entrant' : 'Team' }}</th>
+              <th>{{ pointsTable() ? 'E' : seriesTable() ? 'St' : 'P' }}</th>
+              @if (seriesTable()) {
+                <th>1st</th>
+                <th>2nd</th>
+                <th>3rd</th>
+              } @else if (!pointsTable()) {
                 <th>W</th>
                 <th>D</th>
                 <th>L</th>
@@ -146,7 +152,11 @@ import { RealtimeService } from '../../../core/realtime.service';
                   }
                 </td>
                 <td>{{ row.played }}</td>
-                @if (!pointsTable()) {
+                @if (seriesTable()) {
+                  <td>{{ row.wins }}</td>
+                  <td>{{ row.detail?.seconds ?? 0 }}</td>
+                  <td>{{ row.detail?.thirds ?? 0 }}</td>
+                } @else if (!pointsTable()) {
                   <td>{{ row.wins }}</td>
                   <td>{{ row.draws }}</td>
                   <td>{{ row.losses }}</td>
@@ -188,8 +198,51 @@ import { RealtimeService } from '../../../core/realtime.service';
         </table>
       </div>
 
+      @if (combinations()) {
+        <section class="combo-stats">
+          <div class="combo-tabs" role="tablist">
+            @for (option of statOptions; track option.key) {
+              <button type="button" role="tab" [attr.aria-selected]="statsBy() === option.key" [class.on]="statsBy() === option.key" (click)="loadStats(option.key)">
+                {{ option.label }}
+              </button>
+            }
+          </div>
+          <div class="table-wrap fm-card">
+            <table>
+              <thead>
+                <tr>
+                  <th class="team">{{ statLabel() }}</th>
+                  <th>St</th>
+                  <th>1st</th>
+                  <th>2nd</th>
+                  <th>3rd</th>
+                  <th class="pts">Pts</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of stats(); track row.key) {
+                  <tr>
+                    <td class="team"><span class="name">{{ row.name }}</span></td>
+                    <td>{{ row.starts }}</td>
+                    <td>{{ row.wins }}</td>
+                    <td>{{ row.seconds }}</td>
+                    <td>{{ row.thirds }}</td>
+                    <td class="pts">{{ trim(row.points) }}</td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="6" class="empty-cell">No confirmed results yet.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+
       <p class="legend">
-        @if (pointsTable()) {
+        @if (seriesTable()) {
+          A series table: each confirmed event awards placing points. Eliminations and withdrawals never score.
+          Ties: {{ tiebreakerLabels() }}.
+        } @else if (pointsTable()) {
           Tap a name to see each scoring criterion, what the points mean, and how they were accumulated.
         } @else {
           Tie-breakers in order: {{ tiebreakerLabels() }}.
@@ -420,6 +473,40 @@ import { RealtimeService } from '../../../core/realtime.service';
         font-size: 0.8rem;
       }
 
+      .combo-stats {
+        margin-top: 18px;
+      }
+
+      .combo-tabs {
+        display: flex;
+        gap: 6px;
+        margin: 0 16px 8px;
+
+        button {
+          min-height: 36px;
+          padding: 6px 14px;
+          border: 1.5px solid var(--ion-color-step-150, #dfe2e6);
+          border-radius: 999px;
+          background: var(--ion-background-color, #fff);
+          color: var(--ion-text-color);
+          font: inherit;
+          font-size: 0.85rem;
+          cursor: pointer;
+
+          &.on {
+            border-color: var(--ion-color-primary);
+            background: color-mix(in srgb, var(--ion-color-primary) 12%, transparent);
+            color: var(--ion-color-primary);
+            font-weight: 700;
+          }
+        }
+      }
+
+      .empty-cell {
+        color: var(--ion-color-medium);
+        text-align: center;
+      }
+
       .criterion p,
       .entry {
         grid-column: 1 / -1;
@@ -434,8 +521,16 @@ export class CompetitionStandingsComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly realtime = inject(RealtimeService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly results = inject(ResultsService);
 
   readonly competition = input.required<CompetitionDetail>();
+  readonly statOptions: Array<{ key: 'horse' | 'rider' | 'trainer'; label: string }> = [
+    { key: 'horse', label: 'Horses' },
+    { key: 'rider', label: 'Riders' },
+    { key: 'trainer', label: 'Trainers' },
+  ];
+  readonly statsBy = signal<'horse' | 'rider' | 'trainer'>('horse');
+  readonly stats = signal<CombinationStatRow[]>([]);
 
   readonly rows = signal<StandingRow[]>([]);
   readonly breakdown = signal<Record<string, CriterionBreakdown[]>>({});
@@ -475,6 +570,7 @@ export class CompetitionStandingsComponent implements OnInit {
         next: (response) => {
           this.noteChanges(response.rows);
           this.rows.set(response.rows);
+          if (this.combinations()) this.loadStats();
           this.breakdown.set(response.breakdown ?? {});
           this.loading.set(false);
         },
@@ -517,7 +613,28 @@ export class CompetitionStandingsComponent implements OnInit {
   }
 
   pointsTable(): boolean {
-    return isPointsTable(this.competition());
+    return !this.seriesTable() && isPointsTable(this.competition());
+  }
+
+  /** Competitions ranked per event (races, classes, rides) show a series table. */
+  seriesTable(): boolean {
+    return Boolean(this.competition().settings_json?.['result_type']);
+  }
+
+  combinations(): boolean {
+    return this.competition().settings_json?.['participant_type'] === 'combination';
+  }
+
+  statLabel(): string {
+    return this.statOptions.find((option) => option.key === this.statsBy())?.label.replace(/s$/, '') ?? '';
+  }
+
+  loadStats(by: 'horse' | 'rider' | 'trainer' = this.statsBy()): void {
+    this.statsBy.set(by);
+    this.results.stats(this.competition().id, by).subscribe({
+      next: (response) => this.stats.set(response.rows),
+      error: () => this.stats.set([]),
+    });
   }
 
   toggle(participantId: string): void {
@@ -537,6 +654,9 @@ export class CompetitionStandingsComponent implements OnInit {
       head_to_head: 'head-to-head',
       played: 'fewest played',
       name: 'name',
+      placings: 'most wins, then seconds, then thirds',
+      seconds: 'second places',
+      thirds: 'third places',
     };
     return this.competition()
       .points_policy.tiebreakers.map((key) => labels[key] ?? key)

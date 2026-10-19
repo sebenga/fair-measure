@@ -65,6 +65,8 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.search",
     "apps.scouting",
+    "apps.horses",
+    "apps.results",
 ]
 
 MIDDLEWARE = [
@@ -234,6 +236,20 @@ STORAGE_ENDPOINT_URL = env("STORAGE_ENDPOINT_URL")
 STORAGE_PUBLIC_BASE_URL = env("STORAGE_PUBLIC_BASE_URL")
 STORAGE_UPLOAD_URL_TTL_SECONDS = env_int("STORAGE_UPLOAD_URL_TTL_SECONDS", 900)
 MAX_UPLOAD_BYTES = env_int("MAX_UPLOAD_BYTES", 512 * 1024 * 1024)
+
+# Development stand-in for R2/S3 and the video provider: the browser PUTs bytes to
+# this API with a signed, short-lived URL and Django serves them from MEDIA_ROOT.
+# Never enable this in production; it streams uploads through the web process.
+LOCAL_MEDIA_UPLOADS = env_bool("LOCAL_MEDIA_UPLOADS", False)
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "mediafiles"
+PUBLIC_API_ORIGIN = env("PUBLIC_API_ORIGIN", "http://localhost:8000")
+
+# Passport and ID scans. Kept outside MEDIA_ROOT so no URL ever serves them; the
+# owner downloads through an authenticated endpoint. Point this at encrypted,
+# backed-up storage in production.
+PRIVATE_MEDIA_ROOT = Path(env("PRIVATE_MEDIA_ROOT", str(BASE_DIR / "private_media")))
+MAX_DOCUMENT_BYTES = env_int("MAX_DOCUMENT_BYTES", 10 * 1024 * 1024)
 
 # --- Video ------------------------------------------------------------------
 
