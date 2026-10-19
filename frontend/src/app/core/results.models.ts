@@ -6,7 +6,15 @@ export type ResultType =
   | 'penalty_total_lowest'
   | 'judged_percentage'
   | 'timed_with_vet_gates'
-  | 'points_per_run';
+  | 'points_per_run'
+  | 'timed_lowest'
+  | 'measured_highest'
+  | 'judged_score'
+  | 'points_highest'
+  | 'points_lowest'
+  | 'combat_decision'
+  | 'multi_run_aggregate'
+  | 'combined_events';
 
 export interface ResultStatus {
   code: string;
@@ -20,6 +28,15 @@ export interface PenaltyItem {
   eliminate_at?: number;
   per_obstacle?: boolean;
   scale?: Array<number | string>;
+  seconds?: number | string;
+}
+
+export interface MarkPoints {
+  field: string;
+  label: string;
+  base: number | string;
+  target: number | string;
+  per_unit: number | string;
 }
 
 export interface ResultConfig {
@@ -27,6 +44,7 @@ export interface ResultConfig {
   record_fields?: string[];
   rounds?: Array<{ key: string; label?: string; decides?: string }>;
   penalties?: PenaltyItem[];
+  mark_points?: MarkPoints;
   time_allowed?: Record<string, number | string>;
   time_limit?: Record<string, number | string>;
   phases?: Array<{

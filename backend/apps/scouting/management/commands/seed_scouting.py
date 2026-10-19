@@ -13,6 +13,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
@@ -68,6 +69,14 @@ class Command(BaseCommand):
         self.rng = random.Random(42)  # noqa: S311 - repeatable demo data, not security
         with transaction.atomic():
             self._seed()
+        # Phase 2: existing demo competitions record player stats (assists, tackles, ...).
+        call_command("add_player_stat_types", stdout=self.stdout)
+        # Phase 3: a league with tagged match stats, minutes and physical tests.
+        call_command("seed_scouting_stats", password=self.password, stdout=self.stdout)
+        # Phase 4: dated scout ratings, private to each organisation.
+        call_command("seed_scout_ratings", stdout=self.stdout)
+        # Phase 5: competition levels, a shortlist, a saved search and contact requests.
+        call_command("seed_scouting_discovery", stdout=self.stdout)
 
     def _person(self, key: str):
         email, given, family = PEOPLE[key]

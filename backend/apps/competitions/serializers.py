@@ -889,6 +889,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         "overtime_minutes",
         "team_entry",
         "profile_entrants",
+        "level",
     )
 
     def _update(self, instance: Competition, validated_data: dict) -> Competition:

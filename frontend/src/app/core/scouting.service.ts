@@ -19,7 +19,23 @@ import type {
   ProfileCard,
   ProfileTeam,
   ScoutProfileView,
+  CompareResponse,
+  ContactRequestRow,
+  PlayerStats,
+  SavedSearch,
+  SearchFilters,
+  SearchResult,
+  Shortlist,
+  ShortlistEntry,
+  ShortlistLogRow,
+  ShortlistStatus,
+  ProfileRatings,
+  RatingContext,
+  RatingDraft,
+  RecordablePlayers,
   ScoutingCatalog,
+  SportCatalogue,
+  TestResultRow,
   ScoutingMe,
   ScoutingRole,
   TeamMemberships,
@@ -40,6 +56,144 @@ export class ScoutingService {
     return this.http
       .get<ScoutingCatalog>(`${this.base}/catalog`)
       .pipe(tap((catalog) => (this.catalogCache = catalog)));
+  }
+
+  private readonly sportCache = new Map<string, SportCatalogue>();
+
+  /** One sport's areas, attributes, physical tests and match stats. */
+  sportCatalogue(sport: string): Observable<SportCatalogue> {
+    const cached = this.sportCache.get(sport);
+    if (cached) return of(cached);
+    return this.http
+      .get<SportCatalogue>(`${this.base}/catalog/${sport}`)
+      .pipe(tap((row) => this.sportCache.set(sport, row)));
+  }
+
+  profileStats(profileId: string, filters: { sport?: string; season?: number; competition?: string } = {}) {
+    let params = new HttpParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== null && value !== '') params = params.set(key, String(value));
+    }
+    return this.http.get<PlayerStats>(`${this.base}/profiles/${profileId}/stats`, { params });
+  }
+
+  recordTest(
+    profileId: string,
+    body: { sport: string; test_key: string; value: number; tested_on: string; venue?: string; note?: string },
+  ) {
+    return this.http.post<TestResultRow & { test: string }>(`${this.base}/profiles/${profileId}/tests`, body);
+  }
+
+  removeTest(resultId: string) {
+    return this.http.delete<void>(`${this.base}/tests/${resultId}`);
+  }
+
+  ratingContext(profileId: string): Observable<RatingContext> {
+    return this.http.get<RatingContext>(`${this.base}/profiles/${profileId}/rating-context`);
+  }
+
+  syncRatings(drafts: RatingDraft[]) {
+    return this.http.post<{ results: Array<{ client_id: string; status: 'created' | 'duplicate' | 'rejected'; id?: string; error?: string }> }>(
+      `${this.base}/ratings/sync`,
+      { ratings: drafts },
+    );
+  }
+
+  profileRatings(profileId: string, organisation?: string): Observable<ProfileRatings> {
+    let params = new HttpParams();
+    if (organisation) params = params.set('organisation', organisation);
+    return this.http.get<ProfileRatings>(`${this.base}/profiles/${profileId}/ratings`, { params });
+  }
+
+  lookupCode(code: string): Observable<{ id: string; name: string }> {
+    return this.http.get<{ id: string; name: string }>(`${this.base}/profiles/lookup`, { params: { code } });
+  }
+
+  qrUrl(profileId: string): string {
+    return `${this.base}/profiles/${profileId}/qr`;
+  }
+
+  search(filters: SearchFilters) {
+    return this.http.post<{ count: number; results: SearchResult[] }>(`${this.base}/search`, { filters });
+  }
+
+  savedSearches(): Observable<SavedSearch[]> {
+    return this.http.get<SavedSearch[]>(`${this.base}/saved-searches`);
+  }
+
+  saveSearch(body: { name: string; filters: SearchFilters; alerts: boolean }) {
+    return this.http.post<SavedSearch>(`${this.base}/saved-searches`, body);
+  }
+
+  updateSavedSearch(id: string, body: Partial<{ name: string; alerts: boolean; filters: SearchFilters }>) {
+    return this.http.patch<SavedSearch>(`${this.base}/saved-searches/${id}`, body);
+  }
+
+  deleteSavedSearch(id: string) {
+    return this.http.delete<void>(`${this.base}/saved-searches/${id}`);
+  }
+
+  compare(profileIds: string[], sport?: string): Observable<CompareResponse> {
+    let params = new HttpParams().set('profiles', profileIds.join(','));
+    if (sport) params = params.set('sport', sport);
+    return this.http.get<CompareResponse>(`${this.base}/compare`, { params });
+  }
+
+  shortlists(profileId?: string): Observable<Shortlist[]> {
+    const params = profileId ? new HttpParams().set('profile', profileId) : undefined;
+    return this.http.get<Shortlist[]>(`${this.base}/shortlists`, { params });
+  }
+
+  createShortlist(body: { name: string; description?: string }) {
+    return this.http.post<Shortlist>(`${this.base}/shortlists`, body);
+  }
+
+  shortlist(id: string): Observable<Shortlist> {
+    return this.http.get<Shortlist>(`${this.base}/shortlists/${id}`);
+  }
+
+  deleteShortlist(id: string) {
+    return this.http.delete<void>(`${this.base}/shortlists/${id}`);
+  }
+
+  addToShortlist(id: string, profileId: string) {
+    return this.http.post<ShortlistEntry>(`${this.base}/shortlists/${id}/entries`, { profile: profileId });
+  }
+
+  updateShortlistEntry(id: string, entryId: string, body: { status?: ShortlistStatus; assigned_to?: string | null }) {
+    return this.http.patch<ShortlistEntry>(`${this.base}/shortlists/${id}/entries/${entryId}`, body);
+  }
+
+  removeFromShortlist(id: string, entryId: string) {
+    return this.http.delete<void>(`${this.base}/shortlists/${id}/entries/${entryId}`);
+  }
+
+  commentOnEntry(id: string, entryId: string, body: string) {
+    return this.http.post<ShortlistEntry>(`${this.base}/shortlists/${id}/entries/${entryId}/comments`, { body });
+  }
+
+  shortlistLog(id: string): Observable<ShortlistLogRow[]> {
+    return this.http.get<ShortlistLogRow[]>(`${this.base}/shortlists/${id}/log`);
+  }
+
+  requestContact(profileId: string, message: string) {
+    return this.http.post<ContactRequestRow>(`${this.base}/profiles/${profileId}/contact`, { message });
+  }
+
+  contactRequests(box: 'received' | 'sent'): Observable<ContactRequestRow[]> {
+    return this.http.get<ContactRequestRow[]>(`${this.base}/contact-requests`, { params: { box } });
+  }
+
+  respondToContact(id: string, accept: boolean, message: string) {
+    return this.http.post<ContactRequestRow>(`${this.base}/contact-requests/${id}/respond`, { accept, message });
+  }
+
+  withdrawContact(id: string) {
+    return this.http.post<ContactRequestRow>(`${this.base}/contact-requests/${id}/withdraw`, {});
+  }
+
+  recordablePlayers(): Observable<RecordablePlayers> {
+    return this.http.get<RecordablePlayers>(`${this.base}/tests/players`);
   }
 
   loadMe(): Observable<ScoutingMe> {

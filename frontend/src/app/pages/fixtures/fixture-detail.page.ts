@@ -274,36 +274,55 @@ interface Celebration {
               <div class="fm-card scorer">
                 <h4>{{ side.participant.short_name || side.participant.name }}</h4>
                 @if (rosterFor(side).length) {
-                  <p class="score-hint">Choose the profile. It is added to this match and to that profile.</p>
-                  <div class="who">
-                    <label>
-                      Who
-                      <select
-                        [value]="scorerFor(side.id)"
-                        (change)="setScorer(side.id, $any($event.target).value)"
+                  <p class="score-hint">Tap who it was, then what they did. Player stats can be left untagged.</p>
+                  <div class="roster-chips" role="radiogroup" [attr.aria-label]="'Player for ' + (side.participant.short_name || side.participant.name)">
+                    @for (member of rosterFor(side); track member.id) {
+                      <button
+                        type="button"
+                        class="roster-chip"
+                        role="radio"
+                        [attr.aria-checked]="scorerFor(side.id) === member.id"
+                        [class.on]="scorerFor(side.id) === member.id"
+                        (click)="toggleScorer(side.id, member.id)"
                       >
-                        <option value="">Choose a profile</option>
-                        @for (member of rosterFor(side); track member.id) {
-                          <option [value]="member.id">{{ member.name }}</option>
+                        @if (member.number !== null) {
+                          <span class="number">{{ member.number }}</span>
                         }
-                      </select>
-                    </label>
-                    <label>
-                      Rating this game
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        step="0.1"
-                        placeholder="0–10"
-                        [value]="ratingFor(side.id)"
-                        (input)="setRating(side.id, $any($event.target).value)"
-                      />
-                    </label>
+                        {{ member.name }}
+                      </button>
+                    }
                   </div>
+                  @if (scorerFor(side.id)) {
+                    <div class="who">
+                      <label>
+                        Rating this game
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          step="0.1"
+                          placeholder="0–10"
+                          [value]="ratingFor(side.id)"
+                          (input)="setRating(side.id, $any($event.target).value)"
+                        />
+                      </label>
+                      <label>
+                        Minutes played
+                        <input
+                          type="number"
+                          min="0"
+                          max="300"
+                          inputmode="numeric"
+                          placeholder="Full match"
+                          [value]="minutesFor(side.id)"
+                          (input)="setMinutes(side.id, $any($event.target).value)"
+                        />
+                      </label>
+                    </div>
+                  }
                 }
                 <div class="chips">
-                  @for (category of categories(); track category.id) {
+                  @for (category of scoreCategories(); track category.id) {
                     <button
                       type="button"
                       class="chip-button"
@@ -319,6 +338,23 @@ interface Celebration {
                     </button>
                   }
                 </div>
+                @if (statCategories().length) {
+                  <details class="player-stats">
+                    <summary>Player stats ({{ statCategories().length }}) <small>don't change the score</small></summary>
+                    <div class="chips">
+                      @for (category of statCategories(); track category.id) {
+                        <button
+                          type="button"
+                          class="chip-button stat"
+                          [disabled]="saving() || kickoffBlocked()"
+                          (click)="record(side, category)"
+                        >
+                          <span class="label">{{ category.name }}</span>
+                        </button>
+                      }
+                    </div>
+                  </details>
+                }
               </div>
             }
           }
@@ -438,6 +474,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   private celebrationTimer: ReturnType<typeof setTimeout> | undefined;
   readonly scorers = signal<Record<string, string>>({});
   readonly gameRatings = signal<Record<string, string>>({});
+  readonly gameMinutes = signal<Record<string, string>>({});
   readonly profiles = signal<ProfileSummary[]>([]);
   readonly refereeQuery = signal('');
   readonly timeLimitDraft = signal('');
@@ -737,6 +774,25 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     return this.competition()?.scoring_categories ?? [];
   }
 
+  /** Score types the preset marks as player stats (assists, tackles, ...). */
+  private statCodes(): Set<string> {
+    const types = this.competition()?.settings_json?.['score_types'];
+    if (!Array.isArray(types)) return new Set();
+    return new Set(
+      types.filter((item: { stat?: boolean }) => item?.stat).map((item: { key: string }) => item.key),
+    );
+  }
+
+  scoreCategories(): ScoringCategory[] {
+    const stats = this.statCodes();
+    return this.categories().filter((category) => !stats.has(category.code));
+  }
+
+  statCategories(): ScoringCategory[] {
+    const stats = this.statCodes();
+    return this.categories().filter((category) => stats.has(category.code));
+  }
+
   countsForOtherSide(category: ScoringCategory): boolean {
     const code = category.code.trim().toLowerCase();
     const name = category.name.trim().toLowerCase();
@@ -862,6 +918,19 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     this.scorers.update((current) => ({ ...current, [sideId]: value }));
   }
 
+  /** One tap picks the player; tapping them again clears the tag. */
+  toggleScorer(sideId: string, memberId: string): void {
+    this.setScorer(sideId, this.scorers()[sideId] === memberId ? '' : memberId);
+  }
+
+  minutesFor(sideId: string): string {
+    return this.gameMinutes()[sideId] ?? '';
+  }
+
+  setMinutes(sideId: string, value: string): void {
+    this.gameMinutes.update((current) => ({ ...current, [sideId]: value }));
+  }
+
   setRating(sideId: string, value: string): void {
     this.gameRatings.update((current) => ({ ...current, [sideId]: value }));
   }
@@ -952,8 +1021,10 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       );
       return;
     }
-    if (roster.length && !playerId) {
-      await this.showToast('Choose the player first.', 'danger');
+    // A team with a roster names who scored; player stats can stay untagged.
+    const isStat = this.statCategories().some((item) => item.id === category.id);
+    if (roster.length && !playerId && category.affects_score && !isStat) {
+      await this.showToast('Tap the player first.', 'danger');
       return;
     }
     const rating = this.ratingFor(side.id).trim();
@@ -978,6 +1049,16 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       if (member) body['player_name'] = member.name;
     }
     if (rating) body['rating'] = Number(rating).toFixed(1);
+    const minutes = this.minutesFor(side.id).trim();
+    if (playerId && minutes) {
+      const value = Number(minutes);
+      if (!Number.isInteger(value) || value < 0 || value > 300) {
+        this.saving.set(false);
+        await this.showToast('Minutes played must be a whole number.', 'danger');
+        return;
+      }
+      body['minutes'] = value;
+    }
     if (this.units().length) {
       body['unit_index'] = this.unitIndex();
       body['period'] = this.unitLabel({ unit_index: this.unitIndex() } as ScoreEvent);

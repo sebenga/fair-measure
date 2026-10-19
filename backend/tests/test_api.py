@@ -108,8 +108,12 @@ def test_creating_a_competition_with_a_preset_seeds_scoring(api):
 
     detail = api.get(f"/api/v1/competitions/{response.data['id']}")
     codes = {item["code"] for item in detail.data["scoring_categories"]}
+    stats = {"assist", "shot", "shot-on-target", "tackle", "interception", "save"}
 
-    assert codes == {"goal", "own-goal", "yellow-card", "red-card"}
+    assert codes == {"goal", "own-goal", "yellow-card", "red-card"} | stats
+    assert not any(
+        item["affects_score"] for item in detail.data["scoring_categories"] if item["code"] in stats
+    )
     by_code = {item["code"]: item for item in detail.data["scoring_categories"]}
     assert by_code["goal"]["points"] == "1.00"
     assert detail.data["points_policy"]["win_points"] == "3.00"

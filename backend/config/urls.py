@@ -24,6 +24,7 @@ api_v1 = [
     path("", include("apps.scouting.urls")),
     path("", include("apps.horses.urls")),
     path("", include("apps.results.urls")),
+    path("", include("apps.games.urls")),
 ]
 
 urlpatterns = [

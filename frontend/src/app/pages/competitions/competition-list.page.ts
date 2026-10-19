@@ -52,6 +52,10 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
       <ion-toolbar>
         <ion-title>My leagues</ion-title>
         <ion-buttons slot="end">
+          <ion-button type="button" routerLink="/tabs/games" routerDirection="forward">
+            <ion-icon slot="start" name="trophy-outline" aria-hidden="true" />
+            Games
+          </ion-button>
           <ion-button type="button" routerLink="/tabs/competitions/new" routerDirection="forward">
             <ion-icon slot="icon-only" name="add-outline" aria-label="New competition" />
           </ion-button>

@@ -271,6 +271,28 @@ class PlayerMatchRating(BaseModel):
         return f"{self.player} {self.rating}"
 
 
+class PlayerAppearance(BaseModel):
+    """Minutes a roster profile played in one fixture, for per-90 stats.
+
+    Optional: a profile with an event or a rating but no row here is counted as
+    playing the fixture's full regulation time.
+    """
+
+    fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="appearances")
+    player = models.ForeignKey(
+        RosterMember, on_delete=models.CASCADE, related_name="appearances"
+    )
+    minutes = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["fixture", "player"], name="uniq_player_appearance")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.player} {self.minutes} min"
+
+
 class FixtureReferee(BaseModel):
     """A person allowed to run scoring for one fixture."""
 

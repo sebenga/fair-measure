@@ -80,10 +80,33 @@ class CatalogView(APIView):
     permission_classes = [permissions.AllowAny]
 
     @extend_schema(
-        tags=TAG, summary="Sports, positions, age groups and consent sections", responses=dict
+        tags=TAG,
+        summary="Sports, positions, rating areas, age groups and consent sections",
+        responses=dict,
     )
     def get(self, request: Request) -> Response:
         return Response(catalog.public_catalog())
+
+
+class CatalogSportView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(
+        tags=TAG,
+        summary="One sport's rating catalogue: areas, attributes, physical tests, match stats",
+        description=(
+            "Every sport rates the same five areas (physical, technical, tactical, mental, "
+            "context) from 1 to 10. Attributes may apply only to some positions. Each match "
+            "stat names its engine source (a score type key or an outcome/result value) or a "
+            "formula over the sport's other stats."
+        ),
+        responses=dict,
+    )
+    def get(self, request: Request, sport: str) -> Response:
+        payload = catalog.sport_catalogue(sport)
+        if payload is None:
+            raise NotFound("That sport is not in the scouting catalogue.")
+        return Response(payload)
 
 
 class ScoutingMeView(APIView):

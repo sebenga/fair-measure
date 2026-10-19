@@ -32,6 +32,7 @@ meilisearch>=0.31,<1.0
 # --- Config & media --------------------------------------------------------
 python-dotenv>=1.0,<2.0
 Pillow>=10.4
+segno>=1.6,<2.0  # QR codes for scouting (rate a player by scanning their profile)
 
 # --- Server ----------------------------------------------------------------
 gunicorn>=23.0,<24.0

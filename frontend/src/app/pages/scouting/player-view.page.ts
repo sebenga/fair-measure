@@ -10,6 +10,7 @@ import {
   IonSpinner,
   IonTitle,
   IonToolbar,
+  AlertController,
   ToastController,
 } from '@ionic/angular/standalone';
 
@@ -22,13 +23,15 @@ import type {
   ScoutingCatalog,
 } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
+import { PlayerRatingsComponent } from './player-ratings.component';
+import { PlayerStatsComponent } from './player-stats.component';
 
 type Viewable = PlayerProfile | ScoutProfileView;
 
 @Component({
   selector: 'fm-scouting-player-view',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
+  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner, PlayerStatsComponent, PlayerRatingsComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
@@ -86,6 +89,19 @@ type Viewable = PlayerProfile | ScoutProfileView;
           </div>
         </section>
 
+        <div class="segmented section" role="tablist">
+          <button type="button" role="tab" [class.on]="tab() === 'profile'" [attr.aria-selected]="tab() === 'profile'" (click)="tab.set('profile')">Profile</button>
+          <button type="button" role="tab" [class.on]="tab() === 'stats'" [attr.aria-selected]="tab() === 'stats'" (click)="tab.set('stats')">Stats</button>
+          @if (canRate(p)) {
+            <button type="button" role="tab" [class.on]="tab() === 'ratings'" [attr.aria-selected]="tab() === 'ratings'" (click)="tab.set('ratings')">Ratings</button>
+          }
+        </div>
+
+        @if (tab() === 'stats') {
+          <fm-player-stats [profileId]="p.id" />
+        } @else if (tab() === 'ratings') {
+          <fm-player-ratings [profileId]="p.id" />
+        } @else {
         <div class="notice">
           <ion-icon name="lock-closed-outline" aria-hidden="true" />
           {{ contactNote(p) }}
@@ -96,6 +112,18 @@ type Viewable = PlayerProfile | ScoutProfileView;
             <ion-icon name="document-text-outline" aria-hidden="true" />
             Scouting report
           </button>
+          @if (canRate(p)) {
+            <div class="scout-actions">
+              <button type="button" class="btn ghost" (click)="addToShortlist(p)">
+                <ion-icon name="list-outline" aria-hidden="true" />
+                Shortlist
+              </button>
+              <button type="button" class="btn ghost" (click)="requestContact(p)">
+                <ion-icon name="mail-outline" aria-hidden="true" />
+                Request contact
+              </button>
+            </div>
+          }
         </div>
 
         @if (p.bio) {
@@ -212,7 +240,8 @@ type Viewable = PlayerProfile | ScoutProfileView;
           </section>
         }
 
-        <p class="lede">Last updated {{ p.updated_at | date: 'd MMM y' }}. Ratings, stats and reports arrive in later phases.</p>
+        <p class="lede">Last updated {{ p.updated_at | date: 'd MMM y' }}.</p>
+        }
       }
       <div style="height: 32px"></div>
     </ion-content>
@@ -260,6 +289,13 @@ type Viewable = PlayerProfile | ScoutProfileView;
       .muted {
         color: var(--ion-color-medium);
       }
+
+      .scout-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 8px;
+      }
     `,
   ],
 })
@@ -268,11 +304,16 @@ export class ScoutingPlayerViewPage {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastController);
+  private readonly alerts = inject(AlertController);
 
   readonly catalog = signal<ScoutingCatalog | null>(null);
   readonly player = signal<Viewable | null>(null);
   readonly loading = signal(true);
   readonly error = signal('');
+  readonly tab = signal<'profile' | 'stats' | 'ratings'>('profile');
+  readonly isScout = computed(() =>
+    (this.scouting.me()?.role_keys ?? []).some((role) => role === 'scout' || role === 'scout_admin'),
+  );
 
   readonly measurements = computed<Measurement[]>(() => this.player()?.measurements ?? []);
   readonly isCoach = computed(() => (this.scouting.me()?.role_keys ?? []).includes('coach'));
@@ -293,8 +334,76 @@ export class ScoutingPlayerViewPage {
   });
 
   ionViewWillEnter(): void {
+    const tab = this.route.snapshot.queryParamMap.get('tab');
+    if (tab === 'stats' || tab === 'ratings') this.tab.set(tab);
     this.load();
     if (!this.scouting.me()) this.scouting.loadMe().subscribe();
+  }
+
+  async addToShortlist(player: Viewable): Promise<void> {
+    this.scouting.shortlists(player.id).subscribe({
+      next: async (lists) => {
+        if (!lists.length) {
+          await this.toastMessage('Create a shortlist first (Scouting → Shortlists).', 'danger');
+          return;
+        }
+        const alert = await this.alerts.create({
+          header: `Shortlist ${player.first_name}`,
+          inputs: lists.map((list) => ({
+            type: 'radio' as const,
+            label: `${list.name}${list.has_profile ? ' (already on it)' : ''}`,
+            value: list.id,
+            disabled: !!list.has_profile,
+          })),
+          buttons: [
+            { text: 'Cancel', role: 'cancel' },
+            {
+              text: 'Add',
+              handler: (value: string) => {
+                if (!value) return;
+                this.scouting.addToShortlist(value, player.id).subscribe({
+                  next: () => void this.toastMessage(`${player.first_name} added to the shortlist.`, 'success'),
+                  error: (err: unknown) => void this.toastMessage(extractErrorMessage(err, 'Could not add them.'), 'danger'),
+                });
+              },
+            },
+          ],
+        });
+        await alert.present();
+      },
+      error: (err: unknown) => void this.toastMessage(extractErrorMessage(err, 'Join a scouting organisation first.'), 'danger'),
+    });
+  }
+
+  async requestContact(player: Viewable): Promise<void> {
+    const alert = await this.alerts.create({
+      header: 'Request contact',
+      message: 'The request goes to the player, or to their guardian if they are under 18. Nobody sees phone numbers or email addresses.',
+      inputs: [{ name: 'message', type: 'textarea', placeholder: 'Who you are and why you would like to talk' }],
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Send',
+          handler: (data: { message?: string }) => {
+            this.scouting.requestContact(player.id, (data.message ?? '').trim()).subscribe({
+              next: (row) =>
+                void this.toastMessage(row.to_guardian ? 'Sent to their guardian.' : 'Sent to the player.', 'success'),
+              error: (err: unknown) => void this.toastMessage(extractErrorMessage(err, 'Could not send the request.'), 'danger'),
+            });
+          },
+        },
+      ],
+    });
+    await alert.present();
+  }
+
+  private async toastMessage(message: string, color: 'success' | 'danger'): Promise<void> {
+    const toast = await this.toasts.create({ message, color, duration: 2600, position: 'top' });
+    await toast.present();
+  }
+
+  canRate(player: Viewable): boolean {
+    return this.isScout() && (player as ScoutProfileView).access === 'scout';
   }
 
   private load(): void {

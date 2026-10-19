@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     "apps.scouting",
     "apps.horses",
     "apps.results",
+    "apps.games",
 ]
 
 MIDDLEWARE = [
@@ -244,6 +245,8 @@ LOCAL_MEDIA_UPLOADS = env_bool("LOCAL_MEDIA_UPLOADS", False)
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "mediafiles"
 PUBLIC_API_ORIGIN = env("PUBLIC_API_ORIGIN", "http://localhost:8000")
+# Where the app is served; QR codes on player profiles open the rate screen here.
+PUBLIC_APP_ORIGIN = env("PUBLIC_APP_ORIGIN", "http://localhost:8100")
 
 # Passport and ID scans. Kept outside MEDIA_ROOT so no URL ever serves them; the
 # owner downloads through an authenticated endpoint. Point this at encrypted,

@@ -118,8 +118,72 @@ export const routes: Routes = [
           import('./pages/results/event-results.page').then((m) => m.EventResultsPage),
       },
       {
+        path: 'games',
+        loadComponent: () => import('./pages/games/games-list.page').then((m) => m.GamesListPage),
+      },
+      {
+        path: 'games/:id',
+        loadComponent: () => import('./pages/games/games-home.page').then((m) => m.GamesHomePage),
+      },
+      {
+        path: 'games/:id/sports',
+        loadComponent: () => import('./pages/games/games-sports.page').then((m) => m.GamesSportsPage),
+      },
+      {
+        path: 'games/:id/events/:eventId',
+        loadComponent: () => import('./pages/games/games-event.page').then((m) => m.GamesEventPage),
+      },
+      {
+        path: 'games/:id/nocs/:nocId',
+        loadComponent: () => import('./pages/games/games-noc.page').then((m) => m.GamesNocPage),
+      },
+      {
+        path: 'games/:id/athletes/:athleteId',
+        loadComponent: () => import('./pages/games/games-athlete.page').then((m) => m.GamesAthletePage),
+      },
+      {
+        path: 'games/:id/reports/:kind',
+        loadComponent: () => import('./pages/games/games-report.page').then((m) => m.GamesReportPage),
+      },
+      {
         path: 'horses',
         loadComponent: () => import('./pages/horses/horses.page').then((m) => m.HorsesPage),
+      },
+      {
+        path: 'scouting/search',
+        loadComponent: () => import('./pages/scouting/search.page').then((m) => m.TalentSearchPage),
+      },
+      {
+        path: 'scouting/compare',
+        loadComponent: () => import('./pages/scouting/compare.page').then((m) => m.ComparePage),
+      },
+      {
+        path: 'scouting/shortlists',
+        loadComponent: () => import('./pages/scouting/shortlists.page').then((m) => m.ShortlistsPage),
+      },
+      {
+        path: 'scouting/shortlists/:id',
+        loadComponent: () => import('./pages/scouting/shortlists.page').then((m) => m.ShortlistsPage),
+      },
+      {
+        path: 'scouting/requests',
+        loadComponent: () => import('./pages/scouting/contact-requests.page').then((m) => m.ContactRequestsPage),
+      },
+      {
+        path: 'scouting/rate',
+        loadComponent: () => import('./pages/scouting/rate.page').then((m) => m.RatePage),
+      },
+      {
+        path: 'scouting/record-test',
+        loadComponent: () => import('./pages/scouting/record-test.page').then((m) => m.RecordTestPage),
+      },
+      {
+        path: 'scouting/guide',
+        loadComponent: () => import('./pages/scouting/rating-guide.page').then((m) => m.RatingGuidePage),
+      },
+      {
+        path: 'scouting/guide/:sport',
+        loadComponent: () => import('./pages/scouting/rating-guide.page').then((m) => m.RatingGuidePage),
       },
       {
         path: 'scouting/leagues',

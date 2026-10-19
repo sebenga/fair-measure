@@ -102,6 +102,13 @@ def authorize_rooms(request: Request) -> Response:
                 allowed.append(room)
             continue
 
+        if kind == "games":
+            from apps.games.views import visible_games
+
+            if visible_games(user).filter(pk=identifier).exists():
+                allowed.append(room)
+            continue
+
         if kind == "competition":
             competition = competitions.get(identifier)
         elif kind == "fixture":
@@ -347,3 +354,29 @@ def finalize_media(request: Request) -> Response:
         immediate=True,
     )
     return Response({"status": asset.status})
+
+
+@extend_schema(exclude=True)
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([HasInternalToken])
+def recompute_player_stats(request: Request) -> Response:
+    """The stats job: rebuild cached player stats for one competition's players."""
+
+    from apps.competitions.models import Competition
+    from apps.scouting.stats import recompute_competition
+
+    competition = get_object_or_404(Competition, pk=request.data.get("competition_id"))
+    return Response({"rows": recompute_competition(competition)})
+
+
+@extend_schema(exclude=True)
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([HasInternalToken])
+def run_saved_search_alerts(request: Request) -> Response:
+    """The scheduled job: tell scouts about players newly matching their saved searches."""
+
+    from apps.scouting.discovery_views import run_saved_search_alerts as run
+
+    return Response({"alerts": run()})

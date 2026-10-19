@@ -504,3 +504,55 @@
     text-align: left;
   }
 }
+
+.player-stats {
+  margin-top: 10px;
+
+  summary {
+    padding: 4px 0 8px;
+    color: var(--ion-color-medium-shade);
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  small {
+    color: var(--ion-color-medium);
+    font-weight: 500;
+  }
+
+  .stat {
+    border-style: dashed;
+  }
+}
+
+.roster-chips {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  overflow-x: auto;
+
+  button {
+    flex: none;
+    min-height: 40px;
+    padding: 6px 12px;
+    border: 1.5px solid var(--ion-color-step-150, #dfe2e6);
+    border-radius: 999px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 0.86rem;
+  }
+
+  .number {
+    margin-right: 4px;
+    font-weight: 800;
+  }
+
+  .on {
+    border-color: var(--ion-color-primary);
+    background: var(--ion-color-primary);
+    color: var(--ion-color-primary-contrast);
+    font-weight: 700;
+  }
+}

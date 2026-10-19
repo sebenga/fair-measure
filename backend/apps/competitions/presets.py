@@ -216,12 +216,31 @@ CUSTOM: Preset = {
 
 from .catalog import CATALOG
 
+from .olympic_presets import GOVERNANCE, OLYMPIC_PRESETS
+
 PRESETS: dict[str, Preset] = {
     "soccer": SOCCER,
     "golf_stroke": GOLF_STROKE,
     **CATALOG,
+    **OLYMPIC_PRESETS,
     "custom": CUSTOM,
 }
+for _key, (_body, _rulebook) in GOVERNANCE.items():
+    if _key in PRESETS:
+        PRESETS[_key] = {**PRESETS[_key], "governing_body": _body, "rulebook": _rulebook}
+
+from .stat_types import STAT_SCORE_TYPES
+
+for _key, _rows in STAT_SCORE_TYPES.items():
+    if _key in PRESETS:
+        _have = {item["key"] for item in PRESETS[_key].get("score_types") or []}
+        PRESETS[_key] = {
+            **PRESETS[_key],
+            "score_types": [
+                *(PRESETS[_key].get("score_types") or []),
+                *(row for row in _rows if row["key"] not in _have),
+            ],
+        }
 
 PRESET_CHOICES = [(key, value["label"]) for key, value in PRESETS.items()]
 

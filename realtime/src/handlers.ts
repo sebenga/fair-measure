@@ -36,4 +36,8 @@ export const handlers: Record<QueueName, Handler> = {
   search: (job) => forward('/internal/search/index', { job: job.name, data: job.data }, job),
 
   media: (job) => forward('/internal/media/finalize', { job: job.name, data: job.data }, job),
+
+  stats: (job) => forward('/internal/scouting/stats', { ...job.data }, job),
+
+  scouting: (job) => forward('/internal/scouting/saved-searches', { ...job.data }, job),
 };

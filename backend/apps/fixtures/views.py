@@ -35,6 +35,7 @@ from .serializers import (
     GenerateFixturesSerializer,
     ScoreAssistSerializer,
     ScoreEventSerializer,
+    save_minutes,
 )
 
 
@@ -87,6 +88,14 @@ def _log_amendment(fixture: Fixture, request: Request, reason: str, before: dict
         before=before,
         after=_scores(fixture),
     )
+
+
+def _results_changed(fixture: Fixture) -> None:
+    """Tell listeners (such as Games medals) the counted results may have moved."""
+
+    from apps.core.signals import results_changed
+
+    results_changed.send(sender=Fixture, competition=fixture.competition)
 
 
 def _assert_ready_for_kickoff(fixture: Fixture) -> None:
@@ -225,6 +234,7 @@ class FixtureViewSet(viewsets.ModelViewSet):
             _fixture_payload(fixture),
             [competition_room(fixture.competition_id), fixture_room(fixture.id)],
         )
+        _results_changed(fixture)
         if fixture.is_counted:
             enqueue_job(
                 Queues.STANDINGS,
@@ -423,6 +433,8 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
     def _after_change(self, event_name: str, extra: dict | None = None) -> None:
         fixture = self.get_fixture()
         fixture.refresh_from_db()
+        if fixture.is_counted:
+            _results_changed(fixture)
         payload = {**_fixture_payload(fixture), **(extra or {})}
         publish_event(
             event_name,
@@ -508,13 +520,15 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
         rows = []
         for item in serializer.validated_data["events"]:
             rating = item.pop("rating", None)
+            minutes = item.pop("minutes", None)
             event = ScoreEvent(fixture=fixture, recorded_by=request.user, **item)
             rows.append(event)
-            pending_ratings.append((event, rating))
+            pending_ratings.append((event, rating, minutes))
 
         with transaction.atomic():
             created = ScoreEvent.objects.bulk_create(rows)
-            for event, rating in pending_ratings:
+            for event, rating, minutes in pending_ratings:
+                save_minutes(event, minutes)
                 if rating is None or event.player_id is None:
                     continue
                 PlayerMatchRating.objects.update_or_create(

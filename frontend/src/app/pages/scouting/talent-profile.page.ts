@@ -110,6 +110,18 @@ const EMPTY_IDENTITY: Identity = {
               }
             </div>
           }
+          @if (p.effective_visibility !== 'private') {
+            <details class="fm-card section qr-card">
+              <summary>Show my scouting QR code</summary>
+              <div class="qr-row">
+                <img [src]="qrUrl(p.id)" alt="QR code scouts scan to rate you" width="148" height="148" />
+                <span>
+                  A scout scans this at a match to rate you, or types your code:
+                  <strong class="code">{{ shortCode(p.id) }}</strong>
+                </span>
+              </div>
+            </details>
+          }
         } @else {
           <p class="lede">
             Your talent profile is what scouts see. You decide how visible it is, and phone numbers and
@@ -434,6 +446,23 @@ const EMPTY_IDENTITY: Identity = {
   `,
   styles: [
     `
+      .qr-card summary {
+        cursor: pointer;
+        font-weight: 700;
+      }
+      .qr-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-top: 10px;
+        font-size: 0.88rem;
+      }
+      .qr-row .code {
+        display: block;
+        margin-top: 6px;
+        font-size: 1.3rem;
+        letter-spacing: 0.12em;
+      }
       .summary {
         display: flex;
         align-items: center;
@@ -577,6 +606,14 @@ export class TalentProfilePage {
 
   readonly catalog = signal<ScoutingCatalog | null>(null);
   readonly profile = signal<PlayerProfile | null>(null);
+
+  qrUrl(id: string): string {
+    return this.scouting.qrUrl(id);
+  }
+
+  shortCode(id: string): string {
+    return id.replace(/-/g, '').slice(0, 8).toUpperCase();
+  }
   readonly consents = signal<ConsentRecord[]>([]);
   readonly draft = signal<Identity>({ ...EMPTY_IDENTITY });
   readonly loading = signal(true);

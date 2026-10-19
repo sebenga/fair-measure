@@ -6,7 +6,9 @@ from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
 from apps.competitions.models import RosterMember
+from apps.core.signals import results_changed
 
+from . import catalog
 from .models import PlayerProfile
 from .services import affiliated_teams, school_or_club_label
 
@@ -24,3 +26,14 @@ def _refresh_school_or_club(sender, instance: RosterMember, **kwargs) -> None:
     label = school_or_club_label(affiliated_teams(profile))
     if label != profile.school_or_club:
         PlayerProfile.objects.filter(pk=profile.pk).update(school_or_club=label)
+
+
+@receiver(results_changed)
+def _queue_player_stats(sender, competition, **kwargs) -> None:
+    # Player stats are rebuilt in the background after counted results change, so
+    # completing a fixture never waits for them.
+    from apps.core.bus import Queues, enqueue_job
+
+    if catalog.sport_for_competition(competition.sport) is None:
+        return
+    enqueue_job(Queues.STATS, "recompute", {"competition_id": str(competition.id)})

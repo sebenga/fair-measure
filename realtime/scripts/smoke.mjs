@@ -40,20 +40,27 @@ async function main() {
   });
   log('signed in');
 
-  const competitions = await api('/competitions?mine=true', { token: access });
-  const competition = competitions.results[0];
-  if (!competition) throw new Error('No competitions. Run: manage.py seed_demo');
+  const competitions = await api('/competitions?mine=true&page_size=100', { token: access });
+  if (!competitions.results.length) throw new Error('No competitions. Run: manage.py seed_demo');
+
+  // Use the first competition that can take a score in a live fixture; result-sheet
+  // events (Games performance finals, sports days) have no score categories.
+  let competition = null;
+  let category = null;
+  let fixture = null;
+  for (const candidate of competitions.results) {
+    const detail = await api(`/competitions/${candidate.id}`, { token: access });
+    const scoring = detail.scoring_categories.find((entry) => entry.affects_score);
+    if (!scoring) continue;
+    const live = await api(`/competitions/${candidate.id}/fixtures?status=live`, { token: access });
+    if (!live.results.length) continue;
+    competition = candidate;
+    category = scoring;
+    fixture = live.results[0];
+    break;
+  }
+  if (!competition) throw new Error('No competition with a live fixture to score. Run: manage.py seed_demo');
   log(`competition: ${competition.name}`);
-
-  const detail = await api(`/competitions/${competition.id}`, { token: access });
-  const category = detail.scoring_categories.find((entry) => entry.affects_score);
-  if (!category) throw new Error('Competition has no scoring category that affects the score.');
-
-  const fixtures = await api(`/competitions/${competition.id}/fixtures?status=live`, {
-    token: access,
-  });
-  const fixture = fixtures.results[0];
-  if (!fixture) throw new Error('No live fixture to score.');
   log(`fixture: ${fixture.sides.map((side) => side.participant.short_name).join(' v ')}`);
 
   const socket = io(REALTIME, { transports: ['websocket'], auth: { token: access } });
@@ -92,6 +99,14 @@ async function main() {
   const message = await received;
   log(`broadcast received: ${message.event}`);
   console.log(JSON.stringify(message, null, 2));
+
+  const games = await api('/games', { token: access });
+  if (games.length) {
+    const room = `games:${games[0].id}`;
+    const granted = await new Promise((resolve) => socket.emit('subscribe', [room], resolve));
+    if (!granted.joined.includes(room)) throw new Error(`Games room refused: ${JSON.stringify(granted)}`);
+    log(`games room granted: ${room}`);
+  }
 
   socket.close();
   console.log('\nPASS — REST write reached the socket.');

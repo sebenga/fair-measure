@@ -16,6 +16,8 @@ from django.db import transaction
 from apps.competitions.models import Competition, PointsPolicy, Stage
 from apps.fixtures.models import Fixture, FixtureSide, ScoreEvent
 
+from apps.core.signals import results_changed
+
 from .models import StandingRow
 
 ZERO = Decimal("0")
@@ -457,6 +459,34 @@ def criteria_breakdown(competition: Competition) -> dict[str, list[dict]]:
     }
 
 
+def _decided_after_regulation(fixtures, settings: dict) -> set:
+    """Fixtures level at the end of regulation and won in extra blocks (overtime,
+    shoot-out), when the preset scores those results differently."""
+
+    league_points = settings.get("league_points") or {}
+    if "extra_time_win" not in league_points or not fixtures:
+        return set()
+    from apps.competitions.engine import expand_units
+
+    slots = expand_units(settings.get("match_structure") or [])
+    regulation = {slot["index"] for slot in slots if not slot["extra"]}
+    fixtures = list(fixtures)
+    totals: dict = defaultdict(lambda: ZERO)
+    for event in ScoreEvent.objects.filter(
+        fixture__in=fixtures, scoring_category__affects_score=True
+    ):
+        if event.unit_index is None or event.unit_index in regulation:
+            totals[(event.fixture_id, event.side_id)] += event.points
+    decided = set()
+    for fixture in fixtures:
+        sides = list(fixture.sides.all())
+        if len(sides) != 2 or not any(side.outcome == FixtureSide.Outcome.WIN for side in sides):
+            continue
+        if totals[(fixture.id, sides[0].id)] == totals[(fixture.id, sides[1].id)]:
+            decided.add(fixture.id)
+    return decided
+
+
 def compute_standings(competition: Competition, stage: Stage | None = None) -> list[Row]:
     """Aggregate every counted fixture into an ordered table."""
 
@@ -503,6 +533,9 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
     if settings.get("result_type"):
         _series_from_results(competition, rows, settings)
         fixtures = []
+
+    league_points = settings.get("league_points") or {}
+    after_regulation = _decided_after_regulation(fixtures, settings)
 
     for fixture in fixtures:
         sides = list(fixture.sides.all())
@@ -580,7 +613,11 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
 
             if side.outcome == FixtureSide.Outcome.WIN:
                 row.wins += 1
-                row.points += policy.win_points
+                row.points += (
+                    Decimal(str(league_points["extra_time_win"]))
+                    if fixture.id in after_regulation
+                    else policy.win_points
+                )
                 form_by_participant[participant_id].append("W")
                 for other in sides:
                     if other.id != side.id:
@@ -594,7 +631,11 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
                         row.drawn.add(str(other.participant_id))
             else:
                 row.losses += 1
-                row.points += policy.loss_points
+                row.points += (
+                    Decimal(str(league_points["extra_time_loss"]))
+                    if fixture.id in after_regulation
+                    else policy.loss_points
+                )
                 form_by_participant[participant_id].append("L")
 
             # Optional margin bonus. Margin is measured against the best
@@ -667,6 +708,7 @@ def refresh_standings(competition: Competition, stage: Stage | None = None) -> l
     computed = compute_standings(competition, stage)
 
     StandingRow.objects.filter(competition=competition, stage=stage).delete()
+    results_changed.send(sender=Competition, competition=competition)
     saved = StandingRow.objects.bulk_create(
         [
             StandingRow(

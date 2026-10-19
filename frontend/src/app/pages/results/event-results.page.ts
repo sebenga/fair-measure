@@ -28,6 +28,14 @@ const TYPE_LABEL: Record<string, string> = {
   judged_percentage: 'Judged percentage',
   timed_with_vet_gates: 'Fastest time through every vet gate',
   points_per_run: 'Points per run',
+  timed_lowest: 'Fastest time',
+  measured_highest: 'Longest or highest mark',
+  judged_score: 'Judges\' panel score',
+  points_highest: 'Highest points total',
+  points_lowest: 'Lowest points total',
+  combat_decision: 'Bout decision',
+  multi_run_aggregate: 'Total time over all runs',
+  combined_events: 'Combined events points',
 };
 
 const WELFARE = '__welfare__';
@@ -52,6 +60,17 @@ function clock(seconds: number | string | null | undefined): string {
   const m = Math.floor((total % 3600) / 60);
   const s = Math.round(total % 60);
   return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** A race time with its decimals kept: "9.58 s", "3:51.20", "1:02:10.5". */
+function raceTime(value: number | string | null | undefined): string {
+  const total = Number(value);
+  if (!Number.isFinite(total)) return '';
+  const places = String(value).split('.')[1]?.length ?? 0;
+  if (total < 60) return `${total.toFixed(places)} s`;
+  const whole = Math.floor(total);
+  const fraction = places ? (total - whole).toFixed(places).slice(1) : '';
+  return `${clock(whole)}${fraction}`;
 }
 
 @Component({
@@ -189,7 +208,7 @@ function clock(seconds: number | string | null | undefined): string {
                         </select>
                       </label>
                       @for (field of s.config.record_fields ?? []; track field) {
-                        <label class="field">{{ field }}<input [value]="val(entry, [field])" (change)="setText(entry, [field], $event)" /></label>
+                        <label class="field">{{ fieldLabel(field) }}<input [value]="val(entry, [field])" (change)="setText(entry, [field], $event)" /></label>
                       }
                     </div>
                   }
@@ -300,6 +319,109 @@ function clock(seconds: number | string | null | undefined): string {
                           <option value="ftq" [selected]="val(entry, ['final_inspection', 'result']) === 'ftq'">Failed to qualify</option>
                         </select>
                       </label>
+                    </div>
+                  }
+                  @case ('timed_lowest') {
+                    <div class="grid">
+                      <label class="field">Time (s or m:ss.xx)<input [value]="val(entry, ['time'])" (change)="setTime(entry, ['time'], $event)" /></label>
+                      @for (item of s.config.penalties ?? []; track item.key) {
+                        <label class="field">{{ item.label }} (+{{ item.seconds }} s each)<input type="number" min="0" [value]="val(entry, [item.key])" (change)="setNum(entry, [item.key], $event)" /></label>
+                      }
+                      @for (field of s.config.record_fields ?? []; track field) {
+                        <label class="field">{{ fieldLabel(field) }}<input [value]="val(entry, [field])" (change)="setNum(entry, [field], $event)" /></label>
+                      }
+                      @if (s.config['reaction_limit']) {
+                        <label class="field">Reaction time (s)<input inputmode="decimal" [value]="val(entry, ['reaction_time'])" (change)="setNum(entry, ['reaction_time'], $event)" /></label>
+                        <label class="field">
+                          False start
+                          <select (change)="setBool(entry, ['false_start'], $event)">
+                            <option value="" [selected]="!val(entry, ['false_start'])">No</option>
+                            <option value="true" [selected]="val(entry, ['false_start']) === true">Yes</option>
+                          </select>
+                        </label>
+                      }
+                      <label class="field">Record (optional)<input [value]="val(entry, ['record'])" placeholder="e.g. GR, NR, WR" (change)="setText(entry, ['record'], $event)" /></label>
+                    </div>
+                  }
+                  @case ('measured_highest') {
+                    @if (s.config['mode'] === 'heights') {
+                      <label class="field">Heights (height:attempts, e.g. 2.20:o, 2.25:xo, 2.30:xxx)<input [value]="heightsText(entry)" (change)="setHeights(entry, $event)" /></label>
+                    } @else if (s.config['mode'] === 'total_of_best') {
+                      <div class="grid">
+                        @for (lift of lifts(); track lift.key) {
+                          <label class="field">{{ lift.label }} attempts (kg, x for a no-lift)<input [value]="listText(entry, ['lifts', lift.key])" (change)="setList(entry, ['lifts', lift.key], $event)" /></label>
+                        }
+                        <label class="field">Order the total was reached (lower breaks a tie)<input inputmode="numeric" [value]="val(entry, ['total_reached_at'])" (change)="setNum(entry, ['total_reached_at'], $event)" /></label>
+                      </div>
+                    } @else {
+                      <label class="field">Attempts in order (metres, x for a foul, e.g. 8.10, x, 7.95)<input [value]="listText(entry, ['attempts'])" (change)="setList(entry, ['attempts'], $event)" /></label>
+                    }
+                  }
+                  @case ('judged_score') {
+                    @for (attempt of attemptsOf(entry); track $index; let index = $index) {
+                      <p class="sub">Attempt {{ index + 1 }}</p>
+                      <div class="grid">
+                        @if (s.config.mark_points; as mark) {
+                          <label class="field">{{ mark.label }}<input inputmode="decimal" [value]="val(entry, ['attempts', index, mark.field])" (change)="setNum(entry, ['attempts', index, mark.field], $event)" /></label>
+                        }
+                        <label class="field">Judges' scores (comma separated)<input [value]="listText(entry, ['attempts', index, 'scores'])" (change)="setList(entry, ['attempts', index, 'scores'], $event)" /></label>
+                        <label class="field">Degree of difficulty<input inputmode="decimal" [value]="val(entry, ['attempts', index, 'difficulty'])" (change)="setNum(entry, ['attempts', index, 'difficulty'], $event)" /></label>
+                        <label class="field">D-score<input inputmode="decimal" [value]="val(entry, ['attempts', index, 'd'])" (change)="setNum(entry, ['attempts', index, 'd'], $event)" /></label>
+                        <label class="field">Penalty<input inputmode="decimal" [value]="val(entry, ['attempts', index, 'penalty'])" (change)="setNum(entry, ['attempts', index, 'penalty'], $event)" /></label>
+                        @for (extra of extras(); track extra.key) {
+                          <label class="field">{{ extra.label }}<input inputmode="decimal" [value]="val(entry, ['attempts', index, 'extras', extra.key])" (change)="setNum(entry, ['attempts', index, 'extras', extra.key], $event)" /></label>
+                        }
+                      </div>
+                    }
+                    <button type="button" class="btn ghost small" (click)="addAttempt(entry)">Add an attempt</button>
+                  }
+                  @case ('points_highest') {
+                    <label class="field">Points per round (comma separated)<input [value]="listText(entry, ['rounds'])" (change)="setList(entry, ['rounds'], $event)" /></label>
+                    <label class="field">Tie-break counts, best first (optional)<input [value]="listText(entry, ['tiebreak'])" (change)="setList(entry, ['tiebreak'], $event)" /></label>
+                  }
+                  @case ('points_lowest') {
+                    <label class="field">Points per race, in order (comma separated)<input [value]="listText(entry, ['rounds'])" (change)="setList(entry, ['rounds'], $event)" /></label>
+                  }
+                  @case ('combat_decision') {
+                    <div class="grid">
+                      <label class="field">
+                        Winner
+                        <select (change)="setBool(entry, ['winner'], $event)">
+                          <option value="" [selected]="!val(entry, ['winner'])">Not decided</option>
+                          <option value="true" [selected]="val(entry, ['winner']) === true">Won this bout</option>
+                        </select>
+                      </label>
+                      <label class="field">
+                        How
+                        <select (change)="setText(entry, ['method'], $event)">
+                          <option value="" [selected]="!val(entry, ['method'])">Choose</option>
+                          @for (method of methods(); track method.code) {
+                            <option [value]="method.code" [selected]="val(entry, ['method']) === method.code">{{ method.code }} · {{ method.label }}</option>
+                          }
+                        </select>
+                      </label>
+                      <label class="field">Judges' cards (comma separated)<input [value]="listText(entry, ['cards'])" (change)="setList(entry, ['cards'], $event)" /></label>
+                      <label class="field">Score<input inputmode="decimal" [value]="val(entry, ['score'])" (change)="setNum(entry, ['score'], $event)" /></label>
+                    </div>
+                  }
+                  @case ('multi_run_aggregate') {
+                    @for (run of runSlots(entry); track $index; let index = $index) {
+                      <div class="grid run">
+                        <label class="field">Run {{ index + 1 }} time<input [value]="val(entry, ['runs', index, 'time'])" (change)="setTime(entry, ['runs', index, 'time'], $event)" /></label>
+                        @for (penalty of penaltyItems(); track penalty.key) {
+                          <label class="field">{{ penalty.label || penalty.key }}<input type="number" min="0" [value]="val(entry, ['runs', index, penalty.key])" (change)="setNum(entry, ['runs', index, penalty.key], $event)" /></label>
+                        }
+                      </div>
+                    }
+                  }
+                  @case ('combined_events') {
+                    <div class="grid">
+                      @for (spec of combinedEvents(); track spec.key) {
+                        <label class="field">
+                          {{ spec.label }}{{ spec.kind === 'track' ? ' (s)' : ' (m)' }}
+                          <input [value]="val(entry, ['marks', spec.key])" (change)="setTimeOrMark(entry, spec, $event)" />
+                        </label>
+                      }
                     </div>
                   }
                   @case ('points_per_run') {
@@ -483,6 +605,27 @@ export class EventResultsPage {
         return `${clock(b['ride_seconds'])} · ${b['average_speed_kmh']} km/h`;
       case 'points_per_run':
         return `${trim(entry.primary)} pts`;
+      case 'timed_lowest':
+        return `${raceTime(b['time'] ?? entry.primary)}${b['penalty_seconds'] ? ` (incl. +${trim(b['penalty_seconds'])} s penalties)` : ''}${b['record'] ? ' · ' + b['record'] : ''}`;
+      case 'measured_highest':
+        if (b['best'] && typeof b['best'] === 'object') {
+          const parts = this.lifts().map((lift) => `${lift.label} ${trim(b['best'][lift.key])}`);
+          return `${trim(b['total'])} kg · ${parts.join(' / ')}`;
+        }
+        return b['failures_at_best'] !== undefined
+          ? `${trim(entry.primary)} m · ${b['failures_at_best']} / ${b['total_failures']} failures`
+          : `${trim(entry.primary)} m`;
+      case 'judged_score':
+        return `${trim(entry.primary)} pts`;
+      case 'points_highest':
+      case 'points_lowest':
+        return `${trim(entry.primary)} pts${(b['discarded'] ?? []).length ? ' · discarded ' + b['discarded'].join(', ') : ''}`;
+      case 'combat_decision':
+        return entry.rank === 1 ? `Won${b['method_label'] ? ' · ' + b['method_label'] : b['decision'] ? ' · ' + b['decision'] : ''}` : 'Lost';
+      case 'multi_run_aggregate':
+        return `${b['total'] ?? trim(entry.primary)} s`;
+      case 'combined_events':
+        return `${trim(entry.primary)} pts · ${b['events_done']}/${b['events']} events`;
       default:
         return entry.primary;
     }
@@ -561,6 +704,87 @@ export class EventResultsPage {
       if (obstacle && Number(count) > 0) parsed[obstacle] = Number(count);
     }
     this.put(entry, path, Object.keys(parsed).length ? parsed : '');
+  }
+
+  listText(entry: ResultEntry, path: Array<string | number>): string {
+    const value = this.val(entry, path);
+    return Array.isArray(value) ? value.join(', ') : '';
+  }
+
+  setList(entry: ResultEntry, path: Array<string | number>, event: Event): void {
+    const items = (event.target as HTMLInputElement).value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => (Number.isFinite(Number(item)) ? Number(item) : item.toLowerCase()));
+    this.put(entry, path, items.length ? items : '');
+  }
+
+  heightsText(entry: ResultEntry): string {
+    const value = this.val(entry, ['heights']);
+    if (!value || typeof value !== 'object') return '';
+    return Object.entries(value)
+      .map(([height, attempts]) => `${height}:${attempts}`)
+      .join(', ');
+  }
+
+  setHeights(entry: ResultEntry, event: Event): void {
+    const parsed: Record<string, string> = {};
+    for (const part of (event.target as HTMLInputElement).value.split(',')) {
+      const [height, attempts] = part.split(':').map((item) => item.trim());
+      if (height && attempts) parsed[height] = attempts.toLowerCase();
+    }
+    this.put(entry, ['heights'], Object.keys(parsed).length ? parsed : '');
+  }
+
+  attemptsOf(entry: ResultEntry): unknown[] {
+    const attempts = this.val(entry, ['attempts']);
+    const planned = Number(this.sheet()?.config['attempts'] ?? 1);
+    const list = Array.isArray(attempts) ? [...attempts] : [];
+    while (list.length < planned) list.push({});
+    return list;
+  }
+
+  addAttempt(entry: ResultEntry): void {
+    this.put(entry, ['attempts', this.attemptsOf(entry).length, 'scores'], []);
+  }
+
+  fieldLabel(field: string): string {
+    const text = field.replace(/_/g, ' ');
+    return text.length <= 2 ? text.toUpperCase() : text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  lifts(): Array<{ key: string; label: string }> {
+    return (this.sheet()?.config['lifts'] as Array<{ key: string; label: string }> | undefined) ?? [];
+  }
+
+  extras(): Array<{ key: string; label: string }> {
+    return (this.sheet()?.config['extras'] as Array<{ key: string; label: string }> | undefined) ?? [];
+  }
+
+  methods(): Array<{ code: string; label: string }> {
+    return (this.sheet()?.config['methods'] as Array<{ code: string; label: string }> | undefined) ?? [];
+  }
+
+  runSlots(entry: ResultEntry): unknown[] {
+    const runs = this.val(entry, ['runs']);
+    const planned = Number(this.sheet()?.config['runs'] ?? 2);
+    const list = Array.isArray(runs) ? [...runs] : [];
+    while (list.length < planned) list.push({});
+    return list;
+  }
+
+  penaltyItems(): Array<{ key: string; label?: string }> {
+    return (this.sheet()?.config['penalties'] as Array<{ key: string; label?: string }> | undefined) ?? [];
+  }
+
+  combinedEvents(): Array<{ key: string; label: string; kind: string }> {
+    return (this.sheet()?.config['events'] as Array<{ key: string; label: string; kind: string }> | undefined) ?? [];
+  }
+
+  setTimeOrMark(entry: ResultEntry, spec: { key: string; kind: string }, event: Event): void {
+    if (spec.kind === 'track') this.setTime(entry, ['marks', spec.key], event);
+    else this.setNum(entry, ['marks', spec.key], event);
   }
 
   runsOf(entry: ResultEntry): Array<{ outcome?: string; time?: number }> {

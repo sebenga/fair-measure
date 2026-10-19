@@ -11,6 +11,59 @@ export interface CatalogItem {
 
 export interface CatalogSport extends CatalogItem {
   positions: CatalogItem[];
+  attribute_count?: number;
+  physical_test_count?: number;
+  match_stat_count?: number;
+}
+
+export type RatingAreaKey = 'physical' | 'technical' | 'tactical' | 'mental' | 'context';
+
+export interface RatingArea {
+  key: RatingAreaKey;
+  label: string;
+  description: string;
+  /** What 2, 5, 8 and 10 look like on the 1 to 10 scale. */
+  anchors: Record<'2' | '5' | '8' | '10', string>;
+}
+
+export interface CatalogAttribute {
+  key: string;
+  label: string;
+  area: RatingAreaKey;
+  description: string;
+  scale: { min: number; max: number };
+  applies_to_positions?: string[];
+  universal?: boolean;
+}
+
+export interface PhysicalTest {
+  key: string;
+  label: string;
+  unit: string;
+  better: 'lower' | 'higher';
+  description: string;
+}
+
+export interface MatchStat {
+  key: string;
+  label: string;
+  per: 'match' | '90min' | 'game';
+  source?: string;
+  source_label?: string;
+  formula?: string;
+  unit?: string;
+  better?: 'higher' | 'lower' | null;
+}
+
+export interface SportCatalogue {
+  key: string;
+  label: string;
+  positions: CatalogItem[];
+  scale: { min: number; max: number };
+  areas: Array<RatingArea & { attributes: CatalogAttribute[] }>;
+  physical_tests: PhysicalTest[];
+  match_stats: MatchStat[];
+  presets: string[];
 }
 
 export interface MeasurementSpec extends CatalogItem {
@@ -29,6 +82,11 @@ export interface ScoutingCatalog {
   consent_sections: Array<CatalogItem & { required: boolean }>;
   /** Catalogue sport key → the competition sport names that count as it. */
   competition_sports?: Record<string, string[]>;
+  areas?: RatingArea[];
+  universal_attributes?: CatalogAttribute[];
+  competition_levels?: Array<CatalogItem & { rank: number }>;
+  shortlist_statuses?: CatalogItem[];
+  rating_recommendations?: CatalogItem[];
 }
 
 export interface ScoutingRole {
@@ -404,4 +462,277 @@ export interface IdentityDocument {
   content_type: string;
   size_bytes: number;
   uploaded_at: string;
+}
+
+// --- Phase 3: stats, tests and percentiles ----------------------------------------------
+
+export interface PlayerStat {
+  key: string;
+  label: string;
+  per: 'match' | '90min' | 'game';
+  unit?: string;
+  formula?: string;
+  source?: string;
+  better: 'higher' | 'lower' | null;
+  value: number | null;
+  per_match: number | null;
+  percentile: number | null;
+  sample: number;
+}
+
+export interface TestResultRow {
+  id: string;
+  value: number;
+  unit: string;
+  tested_on: string;
+  venue: string;
+  source: 'self' | 'coach' | 'official';
+  verified: boolean;
+  label: 'Verified' | 'Self-reported';
+}
+
+export interface TestSummary extends PhysicalTest {
+  personal_best: TestResultRow;
+  latest: TestResultRow;
+  history: TestResultRow[];
+  trend: 'improving' | 'declining' | 'steady' | null;
+  percentile: number | null;
+  sample: number;
+}
+
+export interface PlayerStats {
+  profile_id: string;
+  name: string;
+  sports: CatalogItem[];
+  sport: string;
+  seasons: number[];
+  season: number;
+  competitions: Array<{ id: string; name: string }>;
+  competition: string | null;
+  line: { matches: number; minutes: number; computed_at: string | null };
+  stats: PlayerStat[];
+  history: Array<{ season: number; matches: number; values: Record<string, number | null> }>;
+  tests: TestSummary[];
+  percentile_minimum: number;
+  cohort: number;
+  can_record_tests: boolean;
+}
+
+export interface RecordablePlayers {
+  players: Array<{ profile_id: string; name: string; team: string; sports: CatalogItem[] }>;
+  self: { profile_id: string; sports: CatalogItem[] } | null;
+}
+
+// --- Phase 4: scout ratings ------------------------------------------------------------
+
+export type RatingMode = 'quick' | 'full';
+export type Confidence = 'low' | 'medium' | 'high';
+export type Watched = 'live' | 'video';
+export type Recommendation = 'monitor' | 'trial' | 'sign' | 'not_for_us';
+
+export interface RatingClip {
+  video?: string | null;
+  title?: string;
+  url?: string;
+  at_seconds: number;
+  note?: string;
+}
+
+/** What the app saves on the phone and sends when there is signal. */
+export interface RatingDraft {
+  client_id: string;
+  profile: string;
+  organisation?: string;
+  sport: string;
+  position?: string;
+  fixture?: string;
+  mode: RatingMode;
+  watched: Watched;
+  confidence: Confidence;
+  area_scores: Partial<Record<RatingAreaKey, number>>;
+  attribute_scores: Record<string, number>;
+  current_ability?: number | null;
+  potential?: number | null;
+  recommendation?: Recommendation | '';
+  notes?: string;
+  clips?: RatingClip[];
+  observed_at: string;
+}
+
+export interface QueuedRating {
+  draft: RatingDraft;
+  player_name: string;
+  status: 'pending' | 'rejected';
+  error?: string;
+  queued_at: string;
+}
+
+export interface RatingContext {
+  profile: { id: string; name: string; photo_url: string; code: string };
+  sports: Array<{ key: string; label: string; position: string }>;
+  fixtures: Array<{ id: string; label: string; competition: string; scheduled_at: string | null; status: string }>;
+  videos: Array<{ id: string; title: string }>;
+  organisations: Array<{ id: string; name: string }>;
+  confidence: Array<{ key: Confidence; label: string; description: string; weight: number }>;
+  watched: Array<{ key: Watched; label: string }>;
+  recommendations: Array<{ key: Recommendation; label: string }>;
+}
+
+export interface ScoutRatingRow {
+  id: string;
+  client_id: string;
+  scout: { id: string; name: string };
+  sport: string;
+  position: string;
+  fixture: { id: string; label: string; competition: string } | null;
+  mode: RatingMode;
+  watched: Watched;
+  confidence: Confidence;
+  area_scores: Record<string, number>;
+  attribute_scores: Record<string, number>;
+  areas: Record<string, number>;
+  current_ability: number | null;
+  potential: number | null;
+  recommendation: Recommendation | '';
+  notes: string;
+  clips: RatingClip[];
+  observed_at: string;
+  synced_at: string;
+}
+
+export interface RatingSummary {
+  organisation: { id: string; name: string };
+  scouts: number;
+  ratings: number;
+  areas: Array<{ key: RatingAreaKey; label: string; average: number | null; scouts: number }>;
+  current_ability: number | null;
+  potential: number | null;
+  recommendations: Array<{ key: Recommendation; label: string; count: number }>;
+  progress: Array<{ observed_at: string; scout: string; average: number | null; current_ability: number | null; potential: number | null }>;
+}
+
+export interface ProfileRatings {
+  summary: RatingSummary;
+  ratings: ScoutRatingRow[];
+  organisations: Array<{ id: string; name: string }>;
+}
+
+// --- Phase 5: search, compare, shortlists and contact ------------------------------------
+
+export type FilterOp = 'lt' | 'lte' | 'gt' | 'gte' | 'eq';
+
+export interface SearchFilters {
+  q?: string;
+  sport?: string;
+  position?: string;
+  age_group?: string;
+  gender?: string;
+  region?: string;
+  level?: string;
+  has_video?: boolean;
+  tests?: Array<{ key: string; op: FilterOp; value: number }>;
+  stats?: Array<{ key: string; op: FilterOp; value: number }>;
+  percentiles?: Array<{ key: string; min: number }>;
+  areas?: Array<{ key: RatingAreaKey; min: number }>;
+  potential_min?: number;
+  current_min?: number;
+  recommendation?: Recommendation;
+}
+
+export interface SearchResult extends ProfileCard {
+  facts: {
+    level?: string;
+    has_video?: boolean;
+    tests?: Record<string, number>;
+    stats?: Record<string, number>;
+    percentiles?: Record<string, number>;
+    areas?: Record<string, number>;
+    potential?: number | null;
+    recommendation?: string | null;
+  };
+}
+
+export interface SavedSearch {
+  id: string;
+  name: string;
+  filters: SearchFilters;
+  alerts: boolean;
+  matches: number;
+  last_run_at: string | null;
+  created_at: string;
+}
+
+export interface ComparePlayer extends ProfileCard {
+  areas: Partial<Record<RatingAreaKey, number | null>>;
+  current_ability: number | null;
+  potential: number | null;
+  season: number | null;
+  matches: number;
+  stats: Record<string, { value: number | null; percentile: number | null }>;
+  tests: Record<string, { best: number; verified: boolean; percentile: number | null }>;
+}
+
+export interface CompareResponse {
+  sport: string;
+  areas: Array<{ key: RatingAreaKey; label: string }>;
+  stats: Array<{ key: string; label: string; unit: string; better: 'higher' | 'lower' | null }>;
+  tests: Array<{ key: string; label: string; unit: string; better: 'higher' | 'lower' }>;
+  players: ComparePlayer[];
+}
+
+export type ShortlistStatus = 'watching' | 'contacted' | 'trial_booked' | 'signed' | 'rejected';
+
+export interface PersonRef {
+  id: string;
+  name: string;
+}
+
+export interface ShortlistEntry {
+  id: string;
+  profile: ProfileCard;
+  status: ShortlistStatus;
+  assigned_to: PersonRef | null;
+  added_by: PersonRef | null;
+  created_at: string;
+  comments: Array<{ id: string; author: PersonRef | null; body: string; created_at: string }>;
+  contact: { status: string; created_at: string } | null;
+}
+
+export interface Shortlist {
+  id: string;
+  name: string;
+  description: string;
+  organisation: { id: string; name: string };
+  count: number;
+  statuses: Record<ShortlistStatus, number>;
+  created_at: string;
+  has_profile?: boolean;
+  entries?: ShortlistEntry[];
+  scouts?: PersonRef[];
+}
+
+export interface ShortlistLogRow {
+  id: string;
+  action: string;
+  action_label: string;
+  player: string;
+  actor: PersonRef | null;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ContactRequestRow {
+  id: string;
+  player: { id: string; name: string };
+  organisation: { id: string; name: string };
+  requested_by: PersonRef | null;
+  message: string;
+  to_guardian: boolean;
+  status: 'pending' | 'accepted' | 'declined' | 'withdrawn';
+  status_label: string;
+  response: string;
+  responded_at: string | null;
+  created_at: string;
+  can_respond: boolean;
 }

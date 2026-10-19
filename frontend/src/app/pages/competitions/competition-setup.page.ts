@@ -838,7 +838,23 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   {{ comp.open_to_scouts ? 'Open to scouts' : 'Closed to scouts' }}
                 </ion-toggle>
               </ion-item>
+              <ion-item>
+                <ion-select
+                  label="Competition level"
+                  labelPlacement="stacked"
+                  interface="popover"
+                  placeholder="Not set"
+                  [value]="comp.settings_json['level'] ?? ''"
+                  [disabled]="busy() || !canManage()"
+                  (ionChange)="setLevel($any($event).detail.value)"
+                >
+                  @for (level of competitionLevels; track level.key) {
+                    <ion-select-option [value]="level.key">{{ level.label }}</ion-select-option>
+                  }
+                </ion-select>
+              </ion-item>
             </ion-list>
+            <p class="hint">Scouts can search for players by the level they play at: the highest level of their teams' competitions.</p>
 
             @if (comp.open_to_scouts) {
               <div class="add-row">
@@ -1041,6 +1057,29 @@ export class CompetitionSetupPage implements OnInit {
       if (value === 'entrants' && this.isCombination()) this.loadHorses();
       if (value === 'scouting') this.loadScouts();
     }
+  }
+
+  readonly competitionLevels = [
+    { key: 'school', label: 'School' },
+    { key: 'club', label: 'Club' },
+    { key: 'provincial', label: 'Provincial' },
+    { key: 'national', label: 'National' },
+    { key: 'international', label: 'International' },
+  ];
+
+  setLevel(level: string): void {
+    const competition = this.competition();
+    if (!competition || (competition.settings_json?.['level'] ?? '') === level) return;
+    this.busy.set(true);
+    this.api
+      .updateCompetition(this.competitionId, { settings_json: { ...(competition.settings_json ?? {}), level } })
+      .subscribe({
+        next: (updated) => {
+          this.busy.set(false);
+          this.competition.set(updated);
+        },
+        error: () => this.busy.set(false),
+      });
   }
 
   setOpenToScouts(open: boolean): void {

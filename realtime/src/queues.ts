@@ -3,7 +3,7 @@ import { Queue } from 'bullmq';
 import { createRedis } from './redis.js';
 
 /** Queue names, mirrored in backend/apps/core/bus.py (class Queues). */
-export const QUEUE_NAMES = ['media', 'notifications', 'standings', 'search'] as const;
+export const QUEUE_NAMES = ['media', 'notifications', 'standings', 'search', 'stats', 'scouting'] as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[number];
 

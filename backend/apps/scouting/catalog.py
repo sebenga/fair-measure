@@ -2,11 +2,14 @@
 
 Nothing else in the scouting app names a sport. Views, permissions and
 serializers read this dictionary, the same way the competition engine reads its
-presets. Phase 1 needs positions; later phases add attributes, physical tests
-and match stats to the same entries.
+presets. Positions live here; attributes, physical tests and match stats live in
+``attributes.py`` and are joined per sport by ``sport_catalogue``.
 """
 
 from __future__ import annotations
+
+from . import attributes as attribute_data
+from .formulas import names as formula_names
 
 
 def _positions(*pairs: tuple[str, str]) -> list[dict]:
@@ -508,9 +511,113 @@ def keys(items: list[dict]) -> set[str]:
     return {item["key"] for item in items}
 
 
+def presets_for_sport(sport_key: str) -> list[str]:
+    """Competition presets whose sport is this catalogue sport."""
+
+    from apps.competitions.presets import PRESETS
+
+    return [
+        key
+        for key, preset in PRESETS.items()
+        if sport_for_competition(str(preset.get("sport") or "")) == sport_key
+    ]
+
+
+def engine_score_types(sport_key: str) -> set[str]:
+    from apps.competitions.presets import PRESETS
+
+    return {
+        item["key"]
+        for key in presets_for_sport(sport_key)
+        for item in PRESETS[key].get("score_types") or []
+    }
+
+
+def attributes_for(sport_key: str) -> list[dict]:
+    extra = attribute_data.SPORT_ATTRIBUTES.get(sport_key) or {}
+    skip = set(extra.get("skip_universal") or [])
+    universal = [row for row in attribute_data.UNIVERSAL_ATTRIBUTES if row["key"] not in skip]
+    return [
+        *({**row, "universal": True} for row in universal),
+        *({**row, "universal": False} for row in extra.get("attributes") or []),
+    ]
+
+
+def stat_problems(sport_key: str) -> list[str]:
+    """Why a sport's match stats cannot be calculated; empty when every one can."""
+
+    extra = attribute_data.SPORT_ATTRIBUTES.get(sport_key) or {}
+    stats = extra.get("match_stats") or []
+    known = {row["key"] for row in stats} | set(attribute_data.BUILTINS)
+    engine = engine_score_types(sport_key) | set(attribute_data.ENGINE_SOURCES)
+    problems = []
+    for row in stats:
+        if row.get("formula"):
+            try:
+                unknown = formula_names(row["formula"]) - known
+            except ValueError as error:
+                problems.append(f"{row['key']}: {error}")
+                continue
+            if unknown:
+                problems.append(f"{row['key']}: unknown names {sorted(unknown)}")
+        elif row.get("source") not in engine:
+            problems.append(f"{row['key']}: {row.get('source')!r} is not recorded by the engine")
+        if row.get("per") not in {"match", "90min", "game"}:
+            problems.append(f"{row['key']}: per must be match, 90min or game")
+    return problems
+
+
+def sport_catalogue(sport_key: str) -> dict | None:
+    """Everything a scout needs to rate one sport: areas, attributes, tests and stats."""
+
+    entry = SPORTS.get(sport_key)
+    if entry is None:
+        return None
+    extra = attribute_data.SPORT_ATTRIBUTES.get(sport_key) or {}
+    rows = attributes_for(sport_key)
+    return {
+        "key": sport_key,
+        "label": entry["label"],
+        "positions": entry.get("positions", []),
+        "scale": attribute_data.SCALE,
+        "areas": [
+            {**area, "attributes": [row for row in rows if row["area"] == area["key"]]}
+            for area in attribute_data.AREAS
+        ],
+        "physical_tests": extra.get("physical_tests") or [],
+        "match_stats": [
+            {
+                **row,
+                "source_label": attribute_data.ENGINE_SOURCES.get(row.get("source", ""), ""),
+                "better": attribute_data.stat_better(sport_key, row["key"]),
+            }
+            for row in extra.get("match_stats") or []
+        ],
+        "presets": presets_for_sport(sport_key),
+    }
+
+
 def public_catalog() -> dict:
     return {
-        "sports": [{"key": key, **value} for key, value in SPORTS.items()],
+        "areas": attribute_data.AREAS,
+        "scale": attribute_data.SCALE,
+        "universal_attributes": attribute_data.UNIVERSAL_ATTRIBUTES,
+        "engine_sources": attribute_data.ENGINE_SOURCES,
+        "formula_builtins": attribute_data.BUILTINS,
+        "sports": [
+            {
+                "key": key,
+                **value,
+                "attribute_count": len(attributes_for(key)),
+                "physical_test_count": len(
+                    (attribute_data.SPORT_ATTRIBUTES.get(key) or {}).get("physical_tests") or []
+                ),
+                "match_stat_count": len(
+                    (attribute_data.SPORT_ATTRIBUTES.get(key) or {}).get("match_stats") or []
+                ),
+            }
+            for key, value in SPORTS.items()
+        ],
         "age_groups": AGE_GROUPS,
         "age_of_consent": AGE_OF_CONSENT,
         "gender_categories": GENDER_CATEGORIES,
@@ -521,4 +628,9 @@ def public_catalog() -> dict:
         "squads": SQUADS,
         "default_squad_size": DEFAULT_SQUAD_SIZE,
         "selection_weights": SELECTION_WEIGHTS,
+        "rating_confidence": attribute_data.CONFIDENCE,
+        "rating_watched": attribute_data.WATCHED,
+        "rating_recommendations": attribute_data.RECOMMENDATIONS,
+        "competition_levels": attribute_data.COMPETITION_LEVELS,
+        "shortlist_statuses": attribute_data.SHORTLIST_STATUSES,
     }

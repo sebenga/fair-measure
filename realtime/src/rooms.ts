@@ -5,11 +5,11 @@ import { logger } from './logger.js';
  * Room-name grammar, mirrored in backend/apps/core/bus.py.
  *
  * `user:<id>` is authorised locally because the socket's own identity is proof
- * enough. Competition and fixture rooms need Django to confirm membership, so
+ * enough. Competition, fixture and Games rooms need Django to confirm access, so
  * a private competition's live scores never leak to a non-member who guessed
  * an id.
  */
-const ROOM_PATTERN = /^(competition|fixture|user):[0-9a-fA-F-]{36}$/;
+const ROOM_PATTERN = /^(competition|fixture|games|user):[0-9a-fA-F-]{36}$/;
 
 export function isWellFormedRoom(room: string): boolean {
   return ROOM_PATTERN.test(room);

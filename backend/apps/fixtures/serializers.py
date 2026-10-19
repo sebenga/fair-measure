@@ -8,7 +8,7 @@ from rest_framework import serializers
 
 from apps.competitions.models import Participant, ScoringCategory, Stage
 
-from .models import Fixture, FixtureSide, PlayerMatchRating, ScoreEvent
+from .models import Fixture, FixtureSide, PlayerAppearance, PlayerMatchRating, ScoreEvent
 
 
 class ParticipantRefSerializer(serializers.ModelSerializer):
@@ -92,6 +92,13 @@ class ScoreEventSerializer(serializers.ModelSerializer):
         max_value=Decimal("10"),
         help_text="This profile's rating for the fixture, from 0 to 10.",
     )
+    minutes = serializers.IntegerField(
+        required=False,
+        write_only=True,
+        min_value=0,
+        max_value=300,
+        help_text="Minutes this profile played in the fixture (for per-90 stats).",
+    )
 
     class Meta:
         model = ScoreEvent
@@ -110,6 +117,7 @@ class ScoreEventSerializer(serializers.ModelSerializer):
             "player_user_id",
             "player_name",
             "rating",
+            "minutes",
             "note",
             "occurred_at",
             "created_at",
@@ -141,11 +149,14 @@ class ScoreEventSerializer(serializers.ModelSerializer):
             )
 
         player = attrs.get("player", getattr(self.instance, "player", None))
+        # A team that keeps a roster names who scored; player stats (assists,
+        # tackles) and other non-scoring events can be tagged or left untagged.
         roster_exists = (
             side is not None and side.participant.roster.filter(is_active=True).exists()
         )
+        scores = category is not None and category.affects_score
         if self.instance is None and player is None and (
-            _event_needs_profile(category) or roster_exists
+            _event_needs_profile(category) or (roster_exists and scores)
         ):
             raise serializers.ValidationError({"player": "Choose the profile this applies to."})
         if player is not None and side is not None and player.participant_id != side.participant_id:
@@ -158,6 +169,10 @@ class ScoreEventSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"rating": "A rating belongs to the profile who played."}
             )
+        if attrs.get("minutes") is not None and player is None:
+            raise serializers.ValidationError(
+                {"minutes": "Minutes belong to the profile who played."}
+            )
         return attrs
 
     def _save_rating(self, event: ScoreEvent, rating: Decimal | None) -> None:
@@ -169,17 +184,32 @@ class ScoreEventSerializer(serializers.ModelSerializer):
             defaults={"rating": rating},
         )
 
+    def _save_minutes(self, event: ScoreEvent, minutes: int | None) -> None:
+        save_minutes(event, minutes)
+
     def create(self, validated_data: dict) -> ScoreEvent:
         rating = validated_data.pop("rating", None)
+        minutes = validated_data.pop("minutes", None)
         event = super().create(validated_data)
         self._save_rating(event, rating)
+        self._save_minutes(event, minutes)
         return event
 
     def update(self, instance: ScoreEvent, validated_data: dict) -> ScoreEvent:
         rating = validated_data.pop("rating", None)
+        minutes = validated_data.pop("minutes", None)
         event = super().update(instance, validated_data)
         self._save_rating(event, rating)
+        self._save_minutes(event, minutes)
         return event
+
+
+def save_minutes(event: ScoreEvent, minutes: int | None) -> None:
+    if minutes is None or event.player_id is None:
+        return
+    PlayerAppearance.objects.update_or_create(
+        fixture_id=event.fixture_id, player_id=event.player_id, defaults={"minutes": minutes}
+    )
 
 
 _HIGHLIGHT_CODES = _PROFILE_EVENT_CODES | {"try", "penalty-try"}

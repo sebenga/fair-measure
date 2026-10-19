@@ -55,6 +55,10 @@ def fixture_room(fixture_id: Any) -> str:
     return f"fixture:{fixture_id}"
 
 
+def games_room(games_id: Any) -> str:
+    return f"games:{games_id}"
+
+
 def user_room(user_id: Any) -> str:
     return f"user:{user_id}"
 
@@ -145,3 +149,5 @@ class Queues:
     NOTIFICATIONS = "notifications"
     STANDINGS = "standings"
     SEARCH = "search"
+    STATS = "stats"
+    SCOUTING = "scouting"

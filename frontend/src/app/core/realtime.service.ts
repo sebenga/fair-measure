@@ -29,6 +29,7 @@ const RELAYED_EVENTS = [
   'post.deleted',
   'comment.created',
   'media.updated',
+  'games.medals',
 ] as const;
 
 @Injectable({ providedIn: 'root' })
@@ -146,6 +147,10 @@ export class RealtimeService {
 
 export function competitionRoom(id: string): string {
   return `competition:${id}`;
+}
+
+export function gamesRoom(id: string): string {
+  return `games:${id}`;
 }
 
 export function fixtureRoom(id: string): string {

@@ -1,9 +1,14 @@
 from django.urls import path
 
-from . import views
+from . import discovery_views, ratings_views, stats_views, views
 
 urlpatterns = [
     path("scouting/catalog", views.CatalogView.as_view(), name="scouting-catalog"),
+    path(
+        "scouting/catalog/<slug:sport>",
+        views.CatalogSportView.as_view(),
+        name="scouting-catalog-sport",
+    ),
     path("scouting/me", views.ScoutingMeView.as_view(), name="scouting-me"),
     path("scouting/me/teams", views.MyTeamsView.as_view(), name="scouting-my-teams"),
     path("scouting/teams", views.PlatformTeamsView.as_view(), name="scouting-teams"),
@@ -44,6 +49,62 @@ urlpatterns = [
     path("scouting/profiles", views.ProfileListView.as_view(), name="scouting-profiles"),
     path("scouting/profiles/<uuid:pk>", views.ProfileDetailView.as_view(), name="scouting-profile"),
     path("scouting/profiles/<uuid:pk>/measurements", views.CoachMeasurementView.as_view()),
+    path(
+        "scouting/profiles/<uuid:pk>/stats",
+        stats_views.ProfileStatsView.as_view(),
+        name="scouting-profile-stats",
+    ),
+    path(
+        "scouting/profiles/<uuid:pk>/tests",
+        stats_views.ProfileTestsView.as_view(),
+        name="scouting-profile-tests",
+    ),
+    path("scouting/tests/players", stats_views.RecordablePlayersView.as_view()),
+    path("scouting/ratings", ratings_views.RatingCreateView.as_view(), name="scouting-ratings"),
+    path(
+        "scouting/ratings/sync",
+        ratings_views.RatingSyncView.as_view(),
+        name="scouting-ratings-sync",
+    ),
+    path("scouting/profiles/lookup", ratings_views.ProfileLookupView.as_view()),
+    path("scouting/search", discovery_views.SearchView.as_view(), name="scouting-search"),
+    path("scouting/saved-searches", discovery_views.SavedSearchListView.as_view()),
+    path("scouting/saved-searches/<uuid:pk>", discovery_views.SavedSearchDetailView.as_view()),
+    path("scouting/compare", discovery_views.CompareView.as_view(), name="scouting-compare"),
+    path(
+        "scouting/shortlists",
+        discovery_views.ShortlistListView.as_view(),
+        name="scouting-shortlists",
+    ),
+    path("scouting/shortlists/<uuid:pk>", discovery_views.ShortlistDetailView.as_view()),
+    path("scouting/shortlists/<uuid:pk>/entries", discovery_views.ShortlistEntriesView.as_view()),
+    path(
+        "scouting/shortlists/<uuid:pk>/entries/<uuid:entry_id>",
+        discovery_views.ShortlistEntryDetailView.as_view(),
+    ),
+    path(
+        "scouting/shortlists/<uuid:pk>/entries/<uuid:entry_id>/comments",
+        discovery_views.ShortlistCommentsView.as_view(),
+    ),
+    path("scouting/shortlists/<uuid:pk>/log", discovery_views.ShortlistLogView.as_view()),
+    path("scouting/profiles/<uuid:pk>/contact", discovery_views.ContactRequestCreateView.as_view()),
+    path("scouting/contact-requests", discovery_views.ContactRequestListView.as_view()),
+    path(
+        "scouting/contact-requests/<uuid:pk>/respond",
+        discovery_views.ContactRequestRespondView.as_view(),
+    ),
+    path(
+        "scouting/contact-requests/<uuid:pk>/withdraw",
+        discovery_views.ContactRequestWithdrawView.as_view(),
+    ),
+    path(
+        "scouting/profiles/<uuid:pk>/ratings",
+        ratings_views.ProfileRatingsView.as_view(),
+        name="scouting-profile-ratings",
+    ),
+    path("scouting/profiles/<uuid:pk>/rating-context", ratings_views.RatingContextView.as_view()),
+    path("scouting/profiles/<uuid:pk>/qr", ratings_views.ProfileQrView.as_view()),
+    path("scouting/tests/<uuid:pk>", stats_views.TestResultDetailView.as_view()),
     path(
         "scouting/profiles/<uuid:pk>/report",
         views.ProfileReportView.as_view(),

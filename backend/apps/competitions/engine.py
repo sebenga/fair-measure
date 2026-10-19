@@ -41,6 +41,7 @@ def expand_units(structure: list[dict] | None) -> list[dict]:
                     "minutes": block.get("minutes"),
                     "affects_total": bool(block.get("affects_total", True)),
                     "resolves_draw": bool(block.get("resolves_draw", False)),
+                    "extra": bool(block.get("extra", False)),
                     "first_to": block.get("first_to"),
                     "win_by": int(block.get("win_by") or 1),
                     "cap": block.get("cap"),

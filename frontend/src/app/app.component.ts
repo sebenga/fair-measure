@@ -2,6 +2,18 @@ import { ChangeDetectionStrategy, Component, effect, inject } from '@angular/cor
 import { IonApp, IonRouterOutlet } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import {
+  notificationsOffOutline,
+  listOutline,
+  mailOutline,
+  cloudUploadOutline,
+  cloudDoneOutline,
+  qrCodeOutline,
+  starOutline,
+  notifications,
+  notificationsOutline,
+  downloadOutline,
+  radioOutline,
+  timeOutline,
   addOutline,
   alertCircle,
   alertCircleOutline,
@@ -97,6 +109,18 @@ export class AppComponent {
 
   constructor() {
     addIcons({
+      notificationsOffOutline,
+      listOutline,
+      mailOutline,
+      cloudUploadOutline,
+      cloudDoneOutline,
+      qrCodeOutline,
+      starOutline,
+      notifications,
+      notificationsOutline,
+      downloadOutline,
+      radioOutline,
+      timeOutline,
       businessOutline,
       clipboardOutline,
       personOutline,

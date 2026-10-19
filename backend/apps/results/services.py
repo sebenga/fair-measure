@@ -69,6 +69,10 @@ def sheet_config(fixture) -> dict:
             config[key] = {**(config.get(key) or {}), **value}
         else:
             config[key] = value
+    if config.get("table") and not config.get("events"):
+        from .tables import COMBINED_EVENT_TABLES
+
+        config["events"] = COMBINED_EVENT_TABLES.get(config["table"], [])
     return config
 
 

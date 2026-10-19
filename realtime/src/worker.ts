@@ -11,7 +11,7 @@ import { Worker } from 'bullmq';
 import { startJobBridge } from './bridge.js';
 import { handlers } from './handlers.js';
 import { logger } from './logger.js';
-import { closeQueues, QUEUE_NAMES, type QueueName } from './queues.js';
+import { closeQueues, QUEUE_NAMES, queues, type QueueName } from './queues.js';
 import { createRedis } from './redis.js';
 
 const bridgeConnection = createRedis('job-bridge');
@@ -34,9 +34,9 @@ const workers = QUEUE_NAMES.map((name: QueueName) => {
     {
       connection: workerConnection,
       // Notifications and search fan out over the network, so a little
-      // concurrency helps; standings recomputes are heavier and serialised
-      // per competition by Django anyway.
-      concurrency: name === 'standings' ? 2 : 5,
+      // concurrency helps; standings and player-stats recomputes are heavier and
+      // serialised per competition by Django anyway.
+      concurrency: name === 'standings' || name === 'stats' ? 2 : 5,
     },
   );
 
@@ -55,6 +55,13 @@ const workers = QUEUE_NAMES.map((name: QueueName) => {
 });
 
 logger.info({ queues: QUEUE_NAMES }, 'Workers started');
+
+/** Saved-search alerts run on a schedule; the fixed job id keeps one schedule per deployment. */
+const SAVED_SEARCH_EVERY_MS = Number(process.env.SAVED_SEARCH_EVERY_MS ?? 15 * 60 * 1000);
+void queues.scouting
+  .add('saved-search-alerts', {}, { repeat: { every: SAVED_SEARCH_EVERY_MS }, jobId: 'saved-search-alerts' })
+  .then(() => logger.info({ everyMs: SAVED_SEARCH_EVERY_MS }, 'Saved-search alerts scheduled'))
+  .catch((error: unknown) => logger.error({ err: error }, 'Could not schedule saved-search alerts'));
 
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutting down workers');

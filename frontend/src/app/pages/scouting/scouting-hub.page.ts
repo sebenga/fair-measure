@@ -14,6 +14,7 @@ import {
 
 import { extractErrorMessage } from '../../core/error-message';
 import type { ScoutingCatalog, ScoutingRoleKey } from '../../core/scouting.models';
+import { RatingQueueService } from '../../core/rating-queue.service';
 import { ROLE_GUIDE, ScoutingService } from '../../core/scouting.service';
 
 @Component({
@@ -71,6 +72,36 @@ import { ROLE_GUIDE, ScoutingService } from '../../core/scouting.service';
               }
             </small>
           </button>
+          @if (canRate()) {
+            <button type="button" class="tile" (click)="go('search')">
+              <ion-icon name="options-outline" aria-hidden="true" />
+              <strong>Talent search</strong>
+              <small>Filters, saved searches and alerts</small>
+            </button>
+            <button type="button" class="tile" (click)="go('shortlists')">
+              <ion-icon name="list-outline" aria-hidden="true" />
+              <strong>Shortlists</strong>
+              <small>Your organisation's targets</small>
+            </button>
+          }
+          <button type="button" class="tile" (click)="go('requests')">
+            <ion-icon name="mail-outline" aria-hidden="true" />
+            <strong>Contact requests</strong>
+            <small>{{ canRate() ? 'Sent and received' : 'Scouts who want to talk' }}</small>
+          </button>
+          @if (canRate()) {
+            <button type="button" class="tile" (click)="go('rate')">
+              <ion-icon name="star-outline" aria-hidden="true" />
+              <strong>Rate a player</strong>
+              <small>
+                @if (queue.pending()) {
+                  <span class="badge warn">{{ queue.pending() }} waiting to sync</span>
+                } @else {
+                  Pitch-side, works offline
+                }
+              </small>
+            </button>
+          }
           @if (canBrowse()) {
             <button type="button" class="tile" (click)="go('players')">
               <ion-icon name="search-outline" aria-hidden="true" />
@@ -82,6 +113,18 @@ import { ROLE_GUIDE, ScoutingService } from '../../core/scouting.service';
             <ion-icon name="shirt-outline" aria-hidden="true" />
             <strong>League squads</strong>
             <small>Each league's best 23</small>
+          </button>
+          @if (isCoachOrPlayer()) {
+            <button type="button" class="tile" (click)="go('record-test')">
+              <ion-icon name="stopwatch-outline" aria-hidden="true" />
+              <strong>Record a test result</strong>
+              <small>Sprint, jump and fitness tests</small>
+            </button>
+          }
+          <button type="button" class="tile" (click)="go('guide')">
+            <ion-icon name="book-outline" aria-hidden="true" />
+            <strong>Rating guide</strong>
+            <small>Attributes, tests and stats per sport</small>
           </button>
           @for (organisation of me()?.organisations ?? []; track organisation.id) {
             <button type="button" class="tile" (click)="go('organisations/' + organisation.id)">
@@ -345,6 +388,16 @@ export class ScoutingHubPage {
   readonly canBrowse = computed(() =>
     this.roleKeys().some((key) => key === 'scout' || key === 'scout_admin' || key === 'coach'),
   );
+
+  readonly queue = inject(RatingQueueService);
+  readonly canRate = computed(() =>
+    (this.scouting.me()?.role_keys ?? []).some((role) => role === 'scout' || role === 'scout_admin'),
+  );
+
+  readonly isCoachOrPlayer = computed(() => {
+    const roles = this.scouting.me()?.role_keys ?? [];
+    return roles.includes('coach') || !!this.scouting.me()?.profile_id;
+  });
 
   ionViewWillEnter(): void {
     this.load();
