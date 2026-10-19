@@ -24,17 +24,19 @@ def expand_units(structure: list[dict] | None) -> list[dict]:
     """
 
     slots: list[dict] = []
+    seen: dict[str, int] = {}
     for block in structure or []:
         count = int(block.get("count") or block.get("best_of") or 1)
         if block.get("repeat"):
             count = max(count, 3)
-        for offset in range(max(count, 1)):
+        for _offset in range(max(count, 1)):
             name = str(block.get("unit") or "unit")
+            seen[name] = seen.get(name, 0) + 1
             slots.append(
                 {
                     "index": len(slots),
                     "unit": name,
-                    "label": f"{name.replace('_', ' ')} {offset + 1}",
+                    "label": f"{name.replace('_', ' ')} {seen[name]}",
                     "minutes": block.get("minutes"),
                     "affects_total": bool(block.get("affects_total", True)),
                     "resolves_draw": bool(block.get("resolves_draw", False)),
@@ -46,6 +48,8 @@ def expand_units(structure: list[dict] | None) -> list[dict]:
                     "tiebreak_win_by": int(block.get("tiebreak_win_by") or 2),
                     "start": block.get("start"),
                     "illegal_remaining": list(block.get("illegal_remaining") or []),
+                    "finish": block.get("finish"),
+                    "tied_winner": block.get("tied_winner"),
                     "target": block.get("target"),
                     "better": block.get("better") or "higher",
                 }
@@ -85,6 +89,14 @@ def _event_amount(event) -> Decimal:
     return Decimal(event.quantity) * Decimal(category.points)
 
 
+def _quantity_allowed(rule: dict, quantity: Decimal) -> bool:
+    if rule.get("minimum") is not None and quantity < Decimal(str(rule["minimum"])):
+        return False
+    if rule.get("maximum") is not None and quantity > Decimal(str(rule["maximum"])):
+        return False
+    return True
+
+
 def _slot_for(index: int | None, slots: list[dict]) -> dict | None:
     if index is None:
         return None
@@ -104,18 +116,25 @@ def split_scores(sides, events, slots: list[dict], settings: dict | None = None)
     tiebreak = {side_id: [ZERO] * len(slots) for side_id in side_ids}
     decider_by_slot: dict[int, dict] = {}
     ordered = list(events)
-    affecting = [
-        event
-        for event in ordered
-        if event.scoring_category is not None and event.scoring_category.affects_score
-    ]
+    countable = []
+    for event in ordered:
+        if event.scoring_category is None:
+            continue
+        rule = rules.get(event.scoring_category.code, {})
+        if not _quantity_allowed(rule, Decimal(event.quantity)):
+            continue
+        # A fill ball can be the source of a bonus without joining the match total.
+        if event.scoring_category.affects_score or rule.get("role") == "fill":
+            countable.append(event)
+    countable_ids = {id(event) for event in countable}
     bonus_extra: dict = {}
-    for index, event in enumerate(affecting):
+    for index, event in enumerate(countable):
         rule = rules.get(event.scoring_category.code, {})
         follow = int(rule.get("bonus_next") or 0)
         if follow:
+            later = [other for other in countable[index + 1 :] if other.side_id == event.side_id]
             bonus_extra[id(event)] = sum(
-                (_event_amount(other) for other in affecting[index + 1 : index + 1 + follow]),
+                (_event_amount(other) for other in later[:follow]),
                 ZERO,
             )
 
@@ -133,8 +152,10 @@ def split_scores(sides, events, slots: list[dict], settings: dict | None = None)
     for event in ordered:
         if event.side_id not in match or event.scoring_category is None:
             continue
+        if id(event) not in countable_ids:
+            continue
         rule = rules.get(event.scoring_category.code, {})
-        if rule.get("role") == "no_result":
+        if rule.get("role") in {"no_result", "fill"}:
             continue
         amount = _event_amount(event) + bonus_extra.get(id(event), ZERO)
         slot = _slot_for(event.unit_index, slots)
@@ -143,6 +164,8 @@ def split_scores(sides, events, slots: list[dict], settings: dict | None = None)
             remaining = Decimal(str(slot["start"])) - (current + amount)
             illegal = {Decimal(str(value)) for value in slot.get("illegal_remaining") or []}
             if remaining < 0 or remaining in illegal:
+                continue
+            if remaining == 0 and slot.get("finish") == "marked" and rule.get("role") != "checkout":
                 continue
         if slot is not None:
             amount *= unit_factor.get((event.side_id, slot["index"]), Decimal("1"))
@@ -196,9 +219,19 @@ def _label(side_ids, leaders: list) -> dict:
     return {side_id: DRAW if side_id in leaders else LOSS for side_id in side_ids}
 
 
-def _sequential_decider(leaders: list, decider_by_slot: dict) -> list:
-    """Use each played decider slot in order. An unplayed slot is all zeroes."""
+def _sequential_decider(
+    leaders: list,
+    decider_by_slot: dict,
+    slots: list[dict] | None = None,
+    home_of: dict | None = None,
+) -> list:
+    """Use each played decider slot in order. An unplayed slot is all zeroes.
 
+    A slot can name ``tied_winner`` as ``home`` or ``away`` when a level
+    decider still has to produce one winner.
+    """
+
+    slot_by_index = {slot["index"]: slot for slot in slots or []}
     for index in sorted(decider_by_slot):
         scores = {side_id: decider_by_slot[index].get(side_id, ZERO) for side_id in leaders}
         if not any(scores.values()):
@@ -206,6 +239,16 @@ def _sequential_decider(leaders: list, decider_by_slot: dict) -> list:
         decided = _best_ids(scores, "highest_total")
         if len(decided) == 1:
             return decided
+        preference = (slot_by_index.get(index) or {}).get("tied_winner")
+        if preference in {"home", "away"} and home_of:
+            wanted_home = preference == "home"
+            chosen = [
+                side_id
+                for side_id in decided
+                if bool(home_of.get(side_id)) is wanted_home
+            ]
+            if len(chosen) == 1:
+                return chosen
     return leaders
 
 
@@ -287,6 +330,8 @@ def decide_outcomes(
     target: Decimal | None = None,
     unit_wins: dict | None = None,
     race: int | None = None,
+    slots: list[dict] | None = None,
+    home_of: dict | None = None,
 ) -> dict:
     """Map each side id to win, loss, draw, or pending."""
 
@@ -321,16 +366,31 @@ def decide_outcomes(
     if len(leaders) <= 1 or draw_allowed:
         return _label(side_ids, leaders)
 
-    decided = _sequential_decider(leaders, decider_by_slot)
+    decided = _sequential_decider(leaders, decider_by_slot, slots, home_of)
     if len(decided) == 1:
         return _label(side_ids, decided)
     return {side_id: pending for side_id in side_ids}
 
 
-def draws_are_allowed(settings: dict, competition_format: str) -> bool:
+def draws_are_allowed(
+    settings: dict,
+    competition_format: str,
+    *,
+    allow_draws: bool | None = None,
+) -> bool:
+    """Whether a level score can stand.
+
+    Knockouts always need a winner. A preset can forbid draws, and so can the
+    competition's points policy (the checkbox on a custom competition).
+    """
+
     if competition_format == "knockout":
         return False
-    return bool(settings.get("draw_allowed", True))
+    if not bool(settings.get("draw_allowed", True)):
+        return False
+    if allow_draws is False:
+        return False
+    return True
 
 
 def _apply_bonuses(match: dict, sides, events, settings: dict) -> None:
@@ -393,15 +453,28 @@ def settle_fixture(fixture) -> None:
             if winner is not None and any(tiebreak[side_id][slot["index"]] for side_id in side_ids):
                 match[winner] += 1
     _apply_bonuses(match, sides, events, settings)
+    from apps.competitions.models import PointsPolicy
+
+    policy = (
+        PointsPolicy.objects.filter(competition_id=fixture.competition_id)
+        .only("allow_draws")
+        .first()
+    )
     outcomes = decide_outcomes(
         side_ids,
         match,
         decider,
         win_condition=win_condition,
-        draw_allowed=draws_are_allowed(settings, fixture.competition.format),
+        draw_allowed=draws_are_allowed(
+            settings,
+            fixture.competition.format,
+            allow_draws=None if policy is None else policy.allow_draws,
+        ),
         target=match_target(structure, settings),
         unit_wins=unit_wins,
         race=race_target(structure),
+        slots=slots,
+        home_of={side.id: side.is_home for side in sides},
     )
     for side in sides:
         side.score = match.get(side.id, ZERO)

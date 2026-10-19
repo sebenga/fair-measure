@@ -459,6 +459,7 @@ export interface Preset {
   table_mode?: TableMode;
   scoring_locked?: boolean;
   locked?: boolean;
+  accumulation_ranking?: 'highest_first' | 'lowest_first' | null;
   scoring_categories: Array<{
     name: string;
     code: string;
@@ -494,10 +495,12 @@ export function isScoringLocked(competition: {
   settings_json?: Record<string, unknown>;
 }): boolean {
   const settings = competition.settings_json ?? {};
+  if (settings['scoring_sealed'] === true) return true;
+  if (settings['scoring_locked'] === true) return true;
   if (settings['lock_when_started'] === true) {
     return !!competition.status && competition.status !== 'draft';
   }
-  return settings['scoring_locked'] === true;
+  return settings['locked'] === true;
 }
 
 export function isPointsPreset(preset: Pick<Preset, 'kind' | 'table_mode' | 'key'> | null): boolean {

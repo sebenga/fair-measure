@@ -147,6 +147,46 @@ def search(index_name: str, query: str, *, filters: str = "", limit: int = 20) -
         return _postgres_fallback(index_name, query, limit)
 
 
+PUBLIC_STATUSES = ("active", "completed")
+
+
+def only_public_hits(results: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    """Drop drafts and anything that belongs to a private competition.
+
+    Meilisearch documents can lag a privacy change, so this checks the database
+    rather than trusting a flag on the hit.
+    """
+
+    from apps.competitions.models import Competition
+
+    competition_ids: set[str] = set()
+    for label, hits in results.items():
+        for hit in hits:
+            if label == "competitions":
+                competition_ids.add(str(hit.get("id")))
+            elif hit.get("competition_id"):
+                competition_ids.add(str(hit["competition_id"]))
+
+    allowed = {
+        str(competition_id)
+        for competition_id in Competition.objects.filter(
+            id__in=competition_ids,
+            is_private=False,
+            status__in=PUBLIC_STATUSES,
+        ).values_list("id", flat=True)
+    }
+
+    cleaned: dict[str, list[dict]] = {}
+    for label, hits in results.items():
+        if label == "competitions":
+            cleaned[label] = [hit for hit in hits if str(hit.get("id")) in allowed]
+        else:
+            cleaned[label] = [
+                hit for hit in hits if str(hit.get("competition_id")) in allowed
+            ]
+    return cleaned
+
+
 def _postgres_fallback(index_name: str, query: str, limit: int) -> list[dict]:
     from django.db.models import Q
 
@@ -156,13 +196,18 @@ def _postgres_fallback(index_name: str, query: str, limit: int) -> list[dict]:
         rows = Competition.objects.filter(
             Q(name__icontains=query) | Q(description__icontains=query) | Q(sport__icontains=query),
             is_private=False,
+            status__in=PUBLIC_STATUSES,
         ).select_related("owner")[:limit]
         return [competition_document(row) for row in rows]
 
     if index_name == PARTICIPANTS_INDEX:
         from apps.competitions.models import Participant
 
-        rows = Participant.objects.filter(name__icontains=query)[:limit]
+        rows = Participant.objects.filter(
+            name__icontains=query,
+            competition__is_private=False,
+            competition__status__in=PUBLIC_STATUSES,
+        )[:limit]
         return [participant_document(row) for row in rows]
 
     if index_name == POSTS_INDEX:
@@ -170,7 +215,11 @@ def _postgres_fallback(index_name: str, query: str, limit: int) -> list[dict]:
 
         rows = (
             Post.objects.alive()
-            .filter(body__icontains=query, competition__is_private=False)
+            .filter(
+                body__icontains=query,
+                competition__is_private=False,
+                competition__status__in=PUBLIC_STATUSES,
+            )
             .select_related("author")[:limit]
         )
         return [post_document(row) for row in rows]

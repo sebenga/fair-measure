@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Prefetch
 
 from apps.competitions.models import Competition, PointsPolicy, Stage
 from apps.fixtures.models import Fixture, FixtureSide, ScoreEvent
@@ -47,6 +48,7 @@ class Row:
     category_points: dict = field(default_factory=dict)
     drawn: set[str] = field(default_factory=set)
     countback: tuple = ()
+    counting_units: int = 0
 
     @property
     def score_difference(self) -> Decimal:
@@ -148,9 +150,10 @@ def _sort_key(row: Row, tiebreakers: list[str], settings: dict | None = None) ->
         elif rule == PointsPolicy.Tiebreaker.RECENT:
             key.append(-row.last_activity)
         elif str(rule).startswith("category:"):
-            code = str(rule).split(":", 1)[1]
-            total = row.category_totals.get(code, ZERO)
-            better = ((settings or {}).get("category_better") or {}).get(code)
+            spec = str(rule).split(":", 1)[1]
+            codes = [part.strip() for part in spec.split(",") if part.strip()]
+            total = sum((row.category_totals.get(code, ZERO) for code in codes), ZERO)
+            better = ((settings or {}).get("category_better") or {}).get(codes[0] if codes else "")
             key.append(total if better == "lower" else -total)
         elif rule == PointsPolicy.Tiebreaker.COUNTBACK:
             key.append(row.countback)
@@ -173,7 +176,9 @@ def _attach_unit_tiebreakers(rows: dict[str, Row], competition: Competition) -> 
         ScoreEvent.objects.filter(
             fixture__competition=competition,
             fixture__status__in=[Fixture.Status.COMPLETED, Fixture.Status.FORFEIT],
-        ).select_related("side", "scoring_category", "fixture")
+        )
+        .select_related("side", "scoring_category", "fixture")
+        .prefetch_related("fixture__sides")
     )
     by_fixture: dict[str, list] = defaultdict(list)
     for event in events:
@@ -257,6 +262,11 @@ def _attach_rate(rows: dict[str, Row], settings: dict, by_fixture: dict[str, lis
     if not codes or not balls_code:
         return
     scale = Decimal(str(basis.get("scale") or 1))
+    wickets_code = basis.get("all_out_wickets")
+    all_out_at = Decimal(str(basis["all_out_at"])) if basis.get("all_out_at") is not None else None
+    all_out_balls = (
+        Decimal(str(basis["all_out_balls"])) if basis.get("all_out_balls") is not None else None
+    )
     scored: dict[str, Decimal] = defaultdict(lambda: ZERO)
     faced: dict[str, Decimal] = defaultdict(lambda: ZERO)
     conceded: dict[str, Decimal] = defaultdict(lambda: ZERO)
@@ -271,6 +281,7 @@ def _attach_rate(rows: dict[str, Row], settings: dict, by_fixture: dict[str, lis
     for fixture_events in by_fixture.values():
         match_scored: dict[str, Decimal] = defaultdict(lambda: ZERO)
         match_faced: dict[str, Decimal] = defaultdict(lambda: ZERO)
+        match_wickets: dict[str, Decimal] = defaultdict(lambda: ZERO)
         for event in fixture_events:
             if event.scoring_category is None or event.unit_index in decider_indexes:
                 continue
@@ -280,6 +291,12 @@ def _attach_rate(rows: dict[str, Row], settings: dict, by_fixture: dict[str, lis
                 match_scored[participant_id] += event.points
             if code == balls_code:
                 match_faced[participant_id] += Decimal(event.quantity)
+            if wickets_code and code == wickets_code:
+                match_wickets[participant_id] += Decimal(event.quantity)
+        if all_out_at is not None and all_out_balls is not None:
+            for participant_id, wickets in match_wickets.items():
+                if wickets >= all_out_at and match_faced[participant_id] < all_out_balls:
+                    match_faced[participant_id] = all_out_balls
         players = set(match_scored) | set(match_faced)
         for participant_id in players:
             scored[participant_id] += match_scored[participant_id]
@@ -414,6 +431,50 @@ def criteria_breakdown(competition: Competition) -> dict[str, list[dict]]:
     }
 
 
+def _units_with_score(fixture, sides, settings: dict) -> dict:
+    """How many structure slots each side actually scored in this fixture."""
+
+    from apps.competitions.engine import expand_units, split_scores
+
+    slots = expand_units(settings.get("match_structure") or [])
+    if not slots:
+        return {side.id: 1 if side.score > 0 else 0 for side in sides}
+    _match, _decider, per_unit, _tiebreak = split_scores(
+        sides, list(fixture.events.all()), slots, settings
+    )
+    return {
+        side.id: sum(1 for value in per_unit.get(side.id, []) if value > 0) for side in sides
+    }
+
+
+def _points_for_unit_result(settings: dict, fixture, side, sides) -> Decimal | None:
+    """Table points that depend on the unit score, such as 3-0 or 3-2."""
+
+    table = settings.get("unit_result_points") or {}
+    if not table or len(sides) < 2:
+        return None
+    from apps.competitions.engine import expand_units, split_scores, unit_table
+
+    slots = expand_units(settings.get("match_structure") or [])
+    if not slots:
+        return None
+    _match, _decider, per_unit, tiebreak = split_scores(
+        sides, list(fixture.events.all()), slots, settings
+    )
+    side_ids = [item.id for item in sides]
+    winners = unit_table(side_ids, slots, per_unit, tiebreak)
+    wins = {side_id: 0 for side_id in side_ids}
+    for winner in winners.values():
+        if winner in wins:
+            wins[winner] += 1
+    mine = wins.get(side.id, 0)
+    theirs = sum(count for side_id, count in wins.items() if side_id != side.id)
+    key = f"{mine}-{theirs}"
+    if key not in table:
+        return None
+    return Decimal(str(table[key]))
+
+
 def compute_standings(competition: Competition, stage: Stage | None = None) -> list[Row]:
     """Aggregate every counted fixture into an ordered table."""
 
@@ -425,6 +486,7 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
     participants = competition.participants.all()
     if stage is not None:
         participants = participants.filter(stages=stage)
+    participants = list(participants)
     for participant in participants:
         rows[str(participant.id)] = Row(
             participant_id=str(participant.id), name=participant.name
@@ -435,7 +497,13 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
             competition=competition,
             status__in=[Fixture.Status.COMPLETED, Fixture.Status.FORFEIT],
         )
-        .prefetch_related("sides__participant")
+        .prefetch_related(
+            "sides__participant",
+            Prefetch(
+                "events",
+                queryset=ScoreEvent.objects.select_related("scoring_category"),
+            ),
+        )
         .order_by("scheduled_at", "created_at")
     )
     if stage is not None:
@@ -462,6 +530,10 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
     for fixture in fixtures:
         sides = list(fixture.sides.all())
         if not sides:
+            continue
+        # A bracket bye is a placeholder so the winner has a place in the next
+        # round. It is not a match and does not move the table.
+        if fixture.notes == "bracket-bye" or (fixture.label == "Bye" and len(sides) < 2):
             continue
         if fixture.id in no_result_fixtures:
             for side in sides:
@@ -501,12 +573,14 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
         # Criteria leagues add each side's score. A one-person entry is how
         # an awarded criterion is stored, so its score always reaches the table.
         if criteria_league or len(sides) == 1:
+            counted = _units_with_score(fixture, sides, settings)
             for side in sides:
                 participant_id = str(side.participant_id)
                 row = rows.get(participant_id)
                 if row is None:
                     continue
                 row.played += 1
+                row.counting_units += counted.get(side.id, 0)
                 row.score_for += side.score
                 row.points += side.score
                 if side.score > row.best_single:
@@ -535,23 +609,24 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
                 form_by_participant[participant_id].append("L")
                 continue
 
+            unit_points = _points_for_unit_result(settings, fixture, side, sides)
             if side.outcome == FixtureSide.Outcome.WIN:
                 row.wins += 1
-                row.points += policy.win_points
+                row.points += policy.win_points if unit_points is None else unit_points
                 form_by_participant[participant_id].append("W")
                 for other in sides:
                     if other.id != side.id:
                         row.beaten.add(str(other.participant_id))
             elif side.outcome == FixtureSide.Outcome.DRAW:
                 row.draws += 1
-                row.points += policy.draw_points
+                row.points += policy.draw_points if unit_points is None else unit_points
                 form_by_participant[participant_id].append("D")
                 for other in sides:
                     if other.id != side.id:
                         row.drawn.add(str(other.participant_id))
             else:
                 row.losses += 1
-                row.points += policy.loss_points
+                row.points += policy.loss_points if unit_points is None else unit_points
                 form_by_participant[participant_id].append("L")
 
             # Optional margin bonus. Margin is measured against the best
@@ -598,8 +673,11 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
         lowest = settings.get("accumulation_ranking") == "lowest_first"
 
         def accumulation_key(row: Row) -> tuple:
-            primary = row.score_for if lowest else -row.score_for
-            return (primary, _sort_key(row, tiebreakers, settings))
+            if lowest:
+                # A shorter card is not a better card. Unplayed entrants sit last.
+                completeness = row.counting_units if settings.get("match_structure") else row.played
+                return (-completeness, row.score_for, _sort_key(row, tiebreakers, settings))
+            return (-row.score_for, _sort_key(row, tiebreakers, settings))
 
         ordered = sorted(rows.values(), key=accumulation_key)
     else:

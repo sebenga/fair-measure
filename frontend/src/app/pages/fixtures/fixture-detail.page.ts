@@ -669,6 +669,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     const structure = this.competition()?.settings_json?.['match_structure'];
     if (!Array.isArray(structure)) return [];
     const slots: Array<{ index: number; label: string }> = [];
+    const seen = new Map<string, number>();
     for (const block of structure) {
       if (!block || typeof block !== 'object') continue;
       const record = block as { unit?: string; count?: number; best_of?: number; repeat?: boolean };
@@ -676,7 +677,9 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       if (record.repeat) count = Math.max(count, 3);
       const name = String(record.unit || 'unit').replaceAll('_', ' ');
       for (let offset = 0; offset < count; offset += 1) {
-        slots.push({ index: slots.length, label: `${name} ${offset + 1}` });
+        const number = (seen.get(name) ?? 0) + 1;
+        seen.set(name, number);
+        slots.push({ index: slots.length, label: `${name} ${number}` });
       }
     }
     return slots;

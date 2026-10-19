@@ -626,9 +626,14 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
           @case ('officials') {
             <h3 class="fm-section-title">Game time</h3>
             <p class="hint">
-              Every game needs a time limit and a referee before kickoff. Overtime is optional: set it to 0
-              or remove it. Saving applies to every game that has not started; an admin can still change one
-              game on its match page.
+              @if (scoringLocked()) {
+                Match length is part of the official preset, so it stays as written.
+                A referee is still chosen on each game before kickoff.
+              } @else {
+                Every game needs a time limit and a referee before kickoff. Overtime is optional: set it to 0
+                or remove it. Saving applies to every game that has not started; an admin can still change one
+                game on its match page.
+              }
             </p>
             <form class="add-row" (submit)="saveTimeLimits($event)">
               <ion-input
@@ -641,6 +646,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
                 [(ngModel)]="timeLimit"
                 name="timeLimit"
                 placeholder="Minutes"
+                [readonly]="scoringLocked()"
               />
               <ion-input
                 type="number"
@@ -651,11 +657,14 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
                 [(ngModel)]="overtimeLimit"
                 name="overtime"
                 placeholder="0 for none"
+                [readonly]="scoringLocked()"
               />
+              @if (!scoringLocked()) {
               <ion-button type="submit" size="small" [disabled]="busy() || !canManage() || !timeLimit">
                 Save
               </ion-button>
-              @if (canManage() && overtimeLimit && overtimeLimit !== '0') {
+              }
+              @if (!scoringLocked() && canManage() && overtimeLimit && overtimeLimit !== '0') {
                 <ion-button
                   type="button"
                   size="small"
@@ -1020,7 +1029,7 @@ export class CompetitionSetupPage implements OnInit {
   saveTimeLimits(event: Event): void {
     event.preventDefault();
     const competition = this.competition();
-    if (!competition || !this.canManage() || this.busy()) return;
+    if (!competition || !this.canManage() || this.busy() || this.scoringLocked()) return;
     const regulation = Number(this.timeLimit);
     const overtime = Number(this.overtimeLimit || 0);
     if (!Number.isFinite(regulation) || regulation < 1) {

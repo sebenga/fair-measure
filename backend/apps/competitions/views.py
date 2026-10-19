@@ -17,7 +17,7 @@ from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnl
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.core.bus import Queues, competition_room, enqueue_job, publish_event
+from apps.core.bus import Queues, competition_room, enqueue_job, fixture_room, publish_event
 from apps.fixtures.models import PlayerMatchRating, ScoreEvent
 from apps.core.permissions import (
     IsCompetitionAdminOrReadOnly,
@@ -83,6 +83,11 @@ def visible_competitions(user) -> QuerySet[Competition]:
             ),
             OpenApiParameter("status", str, description="draft | active | completed | archived"),
             OpenApiParameter("mine", bool, description="Only competitions you are a member of."),
+            OpenApiParameter(
+                "discover",
+                bool,
+                description="Public board only: active and completed competitions that are not private.",
+            ),
             OpenApiParameter("search", str, description="Search name, description and sport."),
         ],
     ),
@@ -110,6 +115,20 @@ class CompetitionViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(
                 Q(owner=self.request.user) | Q(memberships__user=self.request.user)
             ).distinct()
+        # Discover is the public board: no drafts, no private competitions, no archive.
+        if self.request.query_params.get("discover") in {"1", "true", "yes"}:
+            queryset = queryset.filter(
+                is_private=False,
+                status__in=[Competition.Status.ACTIVE, Competition.Status.COMPLETED],
+            )
+        if self.request.user.is_authenticated:
+            queryset = queryset.prefetch_related(
+                Prefetch(
+                    "memberships",
+                    queryset=Membership.objects.filter(user=self.request.user),
+                    to_attr="my_memberships",
+                )
+            )
         if self.action == "retrieve":
             queryset = queryset.prefetch_related(
                 "scoring_categories",
@@ -197,7 +216,7 @@ class CompetitionViewSet(viewsets.ModelViewSet):
             raise ValidationError("There is no round to advance.")
         current = list(
             Fixture.objects.filter(competition=competition, round_number=latest).order_by(
-                "created_at"
+                "scheduled_at", "created_at"
             )
         )
         winners = round_winners(current)
@@ -206,13 +225,16 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         if len(winners) < 2:
             return Response({"advanced": False, "detail": "The bracket is complete."})
 
+        from apps.fixtures.services import BRACKET_BYE_NOTE
+
         pairs, bye = pair_advancers(winners)
         created = []
+        next_round = (latest or 0) + 1
         with transaction.atomic():
             for home_id, away_id in pairs:
                 fixture = Fixture.objects.create(
                     competition=competition,
-                    round_number=(latest or 0) + 1,
+                    round_number=next_round,
                     status=Fixture.Status.SCHEDULED,
                 )
                 FixtureSide.objects.create(
@@ -221,24 +243,48 @@ class CompetitionViewSet(viewsets.ModelViewSet):
                 FixtureSide.objects.create(
                     fixture=fixture, participant_id=away_id, position=1, is_home=False
                 )
-                created.append(str(fixture.id))
+                created.append(fixture)
             if bye is not None and pairs:
                 # A bye waits in the following round against the next winner.
                 fixture = Fixture.objects.create(
                     competition=competition,
-                    round_number=(latest or 0) + 1,
+                    round_number=next_round,
                     label="Bye",
+                    notes=BRACKET_BYE_NOTE,
                     status=Fixture.Status.COMPLETED,
                 )
-                side = FixtureSide.objects.create(
-                    fixture=fixture, participant_id=bye, position=0, is_home=True
+                FixtureSide.objects.create(
+                    fixture=fixture,
+                    participant_id=bye,
+                    position=0,
+                    is_home=True,
+                    outcome=FixtureSide.Outcome.WIN,
                 )
-                side.outcome = FixtureSide.Outcome.WIN
-                side.save(update_fields=["outcome", "updated_at"])
-                created.append(str(fixture.id))
+                created.append(fixture)
+
+        publish_event(
+            "competition.updated",
+            {
+                "competition_id": str(competition.id),
+                "round_number": next_round,
+                "fixtures": [str(fixture.id) for fixture in created],
+            },
+            [competition_room(competition.id)],
+        )
+        for fixture in created:
+            publish_event(
+                "fixture.created",
+                {"fixture_id": str(fixture.id), "competition_id": str(competition.id)},
+                [competition_room(competition.id), fixture_room(fixture.id)],
+            )
+        enqueue_job(Queues.STANDINGS, "recompute", {"competition_id": str(competition.id)})
 
         return Response(
-            {"advanced": True, "round_number": (latest or 0) + 1, "fixtures": created},
+            {
+                "advanced": True,
+                "round_number": next_round,
+                "fixtures": [str(fixture.id) for fixture in created],
+            },
             status=status.HTTP_201_CREATED,
         )
 
@@ -401,6 +447,23 @@ class RuleViewSet(CompetitionScopedViewSet):
     queryset = Rule.objects.all()
     serializer_class = RuleSerializer
     basename = "rule"
+
+    def _assert_scoring_editable(self) -> None:
+        if scoring_is_locked(self.get_competition()):
+            raise PermissionDenied(SCORING_LOCKED_MESSAGE)
+
+    def perform_create(self, serializer) -> None:
+        self._assert_scoring_editable()
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer) -> None:
+        self._assert_scoring_editable()
+        super().perform_update(serializer)
+
+    def perform_destroy(self, instance: Rule) -> None:
+        self._assert_can_write()
+        self._assert_scoring_editable()
+        instance.delete()
 
 
 @extend_schema_view(
@@ -582,6 +645,10 @@ class PointsPolicyView(generics.RetrieveUpdateAPIView):
         if scoring_is_locked(competition):
             raise PermissionDenied(SCORING_LOCKED_MESSAGE)
         serializer.save()
+        settings = dict(competition.settings_json or {})
+        settings["draw_allowed"] = bool(serializer.instance.allow_draws)
+        competition.settings_json = settings
+        competition.save(update_fields=["settings_json", "updated_at"])
 
         # Every row of the league table is derived from this policy.
         enqueue_job(Queues.STANDINGS, "recompute", {"competition_id": str(competition.id)})

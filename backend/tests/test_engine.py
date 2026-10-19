@@ -206,6 +206,7 @@ def test_golf_ranks_lowest_total_then_countback(api):
     ada = Participant.objects.create(competition=competition, name="Ada", kind="individual")
     bo = Participant.objects.create(competition=competition, name="Bo", kind="individual")
     cy = Participant.objects.create(competition=competition, name="Cy", kind="individual")
+    Participant.objects.create(competition=competition, name="Dee", kind="individual")
     fixture = Fixture.objects.create(competition=competition, status=Fixture.Status.COMPLETED, label="Round 1")
     sides = {
         player.name: FixtureSide.objects.create(fixture=fixture, participant=player, position=index)
@@ -234,8 +235,21 @@ def test_golf_ranks_lowest_total_then_countback(api):
     hole("Cy", 17, 5)
     fixture.recalculate_scores()
 
+    fay = Participant.objects.create(competition=competition, name="Fay", kind="individual")
+    short = Fixture.objects.create(competition=competition, status=Fixture.Status.COMPLETED, label="Nine holes")
+    fay_side = FixtureSide.objects.create(fixture=short, participant=fay, position=0)
+    for unit in range(9):
+        ScoreEvent.objects.create(
+            fixture=short,
+            side=fay_side,
+            scoring_category=stroke,
+            quantity=Decimal(3),
+            unit_index=unit,
+        )
+    short.recalculate_scores()
+
     names = [row.name for row in compute_standings(competition)]
-    assert names == ["Bo", "Ada", "Cy"]
+    assert names == ["Bo", "Ada", "Cy", "Fay", "Dee"]
     rows = {row.name: row for row in compute_standings(competition)}
     assert rows["Ada"].score_for == rows["Bo"].score_for == Decimal("72")
     assert rows["Cy"].score_for == Decimal("90")

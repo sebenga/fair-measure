@@ -115,8 +115,10 @@ cd backend && pytest
 resolution, the standings engine (bonus points, each tie-breaker, form), role
 permissions, and the Redis envelopes the Node service depends on.
 
-Those run without Redis or the Node service. To check the wiring between all
-three, with everything running and the demo data seeded:
+Those run without Redis or the Node service. `docs/SYSTEM_REVIEW.md` lists the
+engine, privacy, and preset findings, and whether each one is fixed.
+
+To check the wiring between all three, with everything running and the demo data seeded:
 
 ```bash
 cd realtime && npm run smoke

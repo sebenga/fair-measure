@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
@@ -92,6 +92,7 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
 export class DiscoverPage implements OnInit {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly queries = new Subject<string>();
 
   readonly results = signal<Competition[]>([]);
@@ -107,9 +108,9 @@ export class DiscoverPage implements OnInit {
         switchMap((query) => {
           this.loading.set(true);
           this.query.set(query);
-          return this.api.listCompetitions({ search: query, page_size: 30 });
+          return this.api.listCompetitions({ search: query, page_size: 30, discover: true });
         }),
-        takeUntilDestroyed(),
+        takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
         next: (page) => {
@@ -135,7 +136,7 @@ export class DiscoverPage implements OnInit {
     if (showSpinner) this.loading.set(true);
     this.error.set(null);
 
-    this.api.listCompetitions({ search: this.query(), page_size: 30 }).subscribe({
+    this.api.listCompetitions({ search: this.query(), page_size: 30, discover: true }).subscribe({
       next: (page) => {
         this.results.set(page.results);
         this.loading.set(false);

@@ -714,18 +714,6 @@ export class CompetitionCreatePage implements OnInit {
       icon: 'git-network-outline',
     },
     {
-      value: 'group_knockout',
-      label: 'Groups then knockout',
-      blurb: 'Group stage first, then a knockout from the top finishers.',
-      icon: 'grid-outline',
-    },
-    {
-      value: 'ladder',
-      label: 'Ladder',
-      blurb: 'Challenge the person above you. Rankings move after each result.',
-      icon: 'swap-vertical-outline',
-    },
-    {
       value: 'freeform',
       label: 'Freeform',
       blurb: 'No generated schedule. Add fixtures whenever you want.',
@@ -856,7 +844,8 @@ export class CompetitionCreatePage implements OnInit {
     const preset = this.activePreset();
     if (!preset) return '';
     if (preset.table_mode === 'points') {
-      return 'Entrants do not play each other. The table ranks by points accumulated from the scoring rules above, highest first.';
+      const direction = preset.accumulation_ranking === 'lowest_first' ? 'lowest first' : 'highest first';
+      return `Entrants do not play each other. The table ranks by points accumulated from the scoring rules above, ${direction}.`;
     }
     if (preset.format === 'knockout') {
       return 'Knockout. The winner of each fixture advances until a champion is decided. There is no league table.';
