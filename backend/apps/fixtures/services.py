@@ -60,19 +60,45 @@ def round_robin_rounds(participants: list[Participant]) -> list[list[Pairing]]:
     return rounds
 
 
-def knockout_pairs(participants: list[Participant]) -> list[tuple[Participant, Participant]]:
-    """Seed a single-elimination first round, pairing strongest against weakest."""
+def _bracket_order(size: int) -> list[int]:
+    """Standard seed positions: 1 v size, with seeds 1 and 2 only meeting in the final."""
+
+    order = [1]
+    while len(order) < size:
+        total = len(order) * 2 + 1
+        order = [value for seed in order for value in (seed, total - seed)]
+    return order
+
+
+def knockout_slots(
+    participants: list[Participant],
+) -> list[tuple[Participant, Participant | None]]:
+    """Seed a single-elimination first round in bracket order.
+
+    The top seeds get a bye (the second slot is `None`) when the field is not a
+    power of two, so every entrant stays in the bracket.
+    """
 
     ordered = sorted(participants, key=lambda p: (p.seed is None, p.seed or 0, p.name))
-    size = 2 ** math.ceil(math.log2(len(ordered))) if ordered else 0
-    padded: list[Participant | None] = [*ordered, *([None] * (size - len(ordered)))]
+    size = 2 ** math.ceil(math.log2(len(ordered))) if len(ordered) > 1 else 0
+    order = _bracket_order(size) if size else []
+    seeded: list[Participant | None] = [
+        ordered[seed - 1] if seed <= len(ordered) else None for seed in order
+    ]
+    slots: list[tuple[Participant, Participant | None]] = []
+    for index in range(0, len(seeded), 2):
+        home, away = seeded[index], seeded[index + 1]
+        if home is None:
+            home, away = away, home
+        if home is not None:
+            slots.append((home, away))
+    return slots
 
-    pairs = []
-    for index in range(size // 2):
-        home, away = padded[index], padded[size - 1 - index]
-        if home is not None and away is not None:
-            pairs.append((home, away))
-    return pairs
+
+def knockout_pairs(participants: list[Participant]) -> list[tuple[Participant, Participant]]:
+    """The first-round matches that are actually played (byes excluded)."""
+
+    return [(home, away) for home, away in knockout_slots(participants) if away is not None]
 
 
 def _slot_datetimes(options: ScheduleOptions, count: int) -> list[datetime]:
@@ -142,14 +168,35 @@ def generate_knockout(
 ) -> list[Fixture]:
     """Create the first round of a single-elimination bracket."""
 
-    pairs = knockout_pairs(participants)
+    pairs = knockout_slots(participants)
     slots = _slot_datetimes(options, max(len(pairs), 1))
     created: list[Fixture] = []
+    played = 0
 
     for index, (home, away) in enumerate(pairs):
+        if away is None:
+            # A bye: the top seed goes straight through, recorded so the bracket
+            # keeps its position and "advance" carries them into round 2.
+            bye = Fixture.objects.create(
+                competition=competition,
+                stage=options.stage,
+                round_number=1,
+                label=f"Round 1 — match {index + 1} (bye)",
+                status=Fixture.Status.COMPLETED,
+                completed_at=timezone.now(),
+            )
+            side = FixtureSide.objects.create(
+                fixture=bye, participant=home, position=0, is_home=True
+            )
+            side.outcome = FixtureSide.Outcome.WIN
+            side.save(update_fields=["outcome", "updated_at"])
+            created.append(bye)
+            continue
+
         kickoff = None
         if slots:
-            kickoff = slots[0] + timedelta(minutes=options.minutes_between_fixtures * index)
+            kickoff = slots[0] + timedelta(minutes=options.minutes_between_fixtures * played)
+        played += 1
 
         fixture = Fixture.objects.create(
             competition=competition,

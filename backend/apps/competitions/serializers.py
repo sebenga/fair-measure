@@ -23,7 +23,13 @@ from .models import (
     ScoringCategory,
     Stage,
 )
-from .presets import PRESETS, SCORING_LOCKED_MESSAGE, apply_preset, scoring_is_locked
+from .presets import (
+    PRESETS,
+    SCORING_LOCKED_MESSAGE,
+    apply_preset,
+    format_allowed,
+    scoring_is_locked,
+)
 
 
 def _validate_game_time(settings: dict, instance) -> None:
@@ -819,6 +825,21 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
                 raise PermissionDenied(SCORING_LOCKED_MESSAGE)
             if attrs.get("scoring_basis"):
                 raise PermissionDenied(SCORING_LOCKED_MESSAGE)
+        chosen_format = attrs.get("format")
+        if chosen_format:
+            if self.instance is None:
+                preset_key = attrs.get("preset")
+                rules = (
+                    {"formats_allowed": PRESETS[preset_key].get("formats_allowed")}
+                    if preset_key in PRESETS and preset_key != "custom"
+                    else None
+                )
+            else:
+                rules = self.instance.settings_json
+            if not format_allowed(rules, chosen_format):
+                raise serializers.ValidationError(
+                    {"format": "This kind of competition does not support that format."}
+                )
         settings = attrs.get("settings_json")
         if isinstance(settings, dict):
             _validate_game_time(settings, self.instance)
@@ -835,31 +856,45 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
             _apply_game_time_to_unstarted(competition)
         return competition
 
+    # Settings that stay editable once the scoring rules are locked. Everything
+    # else (score types, targets, bonuses, tie-breaks, ...) belongs to the rules.
+    LOCKED_EDITABLE_SETTINGS = (
+        "time_limit_minutes",
+        "overtime_minutes",
+        "team_entry",
+        "profile_entrants",
+    )
+
     def _update(self, instance: Competition, validated_data: dict) -> Competition:
-        if scoring_is_locked(instance) and "settings_json" in validated_data:
-            current = dict(instance.settings_json or {})
+        current = dict(instance.settings_json or {})
+        new_status = validated_data.get("status")
+        started_locks = current.get("lock_when_started") is True
+        if (
+            started_locks
+            and new_status == "draft"
+            and instance.status not in (None, "", "draft")
+        ):
+            raise serializers.ValidationError(
+                {"status": "A started competition cannot go back to draft; its rules are locked."}
+            )
+        if "settings_json" in validated_data:
             incoming = dict(validated_data.get("settings_json") or {})
-            for key in (
-                "preset",
-                "scoring_locked",
-                "locked",
-                "table_mode",
-                "scoring_basis",
-                "contest_type",
-                "participant_type",
-                "match_structure",
-                "win_condition",
-                "draw_allowed",
-                "draw_resolution",
-                "league_points",
-                "tiebreakers",
-                "accumulation_ranking",
-                "description",
-            ):
-                if key in current:
-                    incoming[key] = current[key]
-            incoming["scoring_locked"] = True
-            validated_data["settings_json"] = incoming
+            if "lock_when_started" in current:
+                incoming["lock_when_started"] = current["lock_when_started"]
+            else:
+                incoming.pop("lock_when_started", None)
+            if scoring_is_locked(instance):
+                # Start from what is stored so omitted keys are never deleted,
+                # then apply only the few settings that may change.
+                merged = dict(current)
+                for key in self.LOCKED_EDITABLE_SETTINGS:
+                    if key in incoming:
+                        merged[key] = incoming[key]
+                if not started_locks:
+                    merged["scoring_locked"] = True
+                validated_data["settings_json"] = merged
+            else:
+                validated_data["settings_json"] = incoming
         return super().update(instance, validated_data)
 
     @transaction.atomic

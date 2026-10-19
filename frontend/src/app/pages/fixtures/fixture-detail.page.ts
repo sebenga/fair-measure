@@ -19,7 +19,6 @@ import {
   IonContent,
   IonHeader,
   IonIcon,
-  IonSpinner,
   IonTitle,
   IonToolbar,
   ToastController,
@@ -40,6 +39,11 @@ import type {
 import { RealtimeService, fixtureRoom } from '../../core/realtime.service';
 import { RelativeTimePipe } from '../../shared/relative-time.pipe';
 
+interface Celebration {
+  title: string;
+  pieces: Array<{ dx: number; dy: number; rot: number; delay: number; color: string }>;
+}
+
 @Component({
   selector: 'fm-fixture-detail',
   standalone: true,
@@ -54,7 +58,6 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
     IonButton,
     IonIcon,
     IonContent,
-    IonSpinner,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -74,9 +77,29 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
       </ion-toolbar>
     </ion-header>
 
+    @if (celebration(); as moment) {
+      <div class="fm-celebrate" aria-live="polite">
+        <div class="fm-celebrate-banner">{{ moment.title }}</div>
+        @for (piece of moment.pieces; track $index) {
+          <span
+            class="fm-confetti"
+            [style.--dx]="piece.dx + 'px'"
+            [style.--dy]="piece.dy + 'px'"
+            [style.--rot]="piece.rot + 'deg'"
+            [style.--delay]="piece.delay + 'ms'"
+            [style.background]="piece.color"
+          ></span>
+        }
+      </div>
+    }
+
     <ion-content fullscreen="true">
       @if (loading()) {
-        <div class="centered"><ion-spinner name="crescent" /></div>
+        <div class="skeleton-board" aria-busy="true" aria-label="Loading the match">
+          <span class="fm-skeleton" style="width: 40%; height: 14px"></span>
+          <span class="fm-skeleton" style="height: 34px"></span>
+          <span class="fm-skeleton" style="height: 34px"></span>
+        </div>
       } @else if (error()) {
         <div class="fm-empty">
           <ion-icon name="alert-circle-outline" aria-hidden="true" />
@@ -85,7 +108,7 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
           <ion-button fill="clear" (click)="load()">Try again</ion-button>
         </div>
       } @else if (fixture(); as fx) {
-        <section class="scoreboard">
+        <section class="scoreboard fm-enter" [class.live]="fx.status === 'live'">
           <div class="status">
             @if (fx.status === 'live') {
               <span class="fm-live">Live</span>
@@ -129,7 +152,7 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
             @for (side of fx.sides; track side.id) {
               <div class="team" [class.winner]="side.outcome === 'win'">
                 <span class="name">{{ side.participant.name }}</span>
-                <span class="score">{{ trim(side.score) }}</span>
+                <span class="score" [class.fm-bump]="bumped().has(side.id)">{{ trim(side.score) }}</span>
                 @if (side.forfeited) {
                   <span class="ff">forfeit</span>
                 }
@@ -408,6 +431,11 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   readonly now = signal(Date.now());
   readonly clock = signal<MatchClock>({ running: false, elapsedMs: 0, runStartedAt: null });
   readonly unitIndex = signal(0);
+  /** Sides whose score just changed, so the number can pop. */
+  readonly bumped = signal<Set<string>>(new Set());
+  readonly celebration = signal<Celebration | null>(null);
+  private bumpTimer: ReturnType<typeof setTimeout> | undefined;
+  private celebrationTimer: ReturnType<typeof setTimeout> | undefined;
   readonly scorers = signal<Record<string, string>>({});
   readonly gameRatings = signal<Record<string, string>>({});
   readonly profiles = signal<ProfileSummary[]>([]);
@@ -458,6 +486,8 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    clearTimeout(this.bumpTimer);
+    clearTimeout(this.celebrationTimer);
     if (this.tickHandle !== null) {
       clearInterval(this.tickHandle);
     }
@@ -638,7 +668,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     this.api.getFixture(this.competitionId, this.fixtureId).subscribe({
       next: (fixture) => {
         if (fixture.status === 'scheduled') this.resetClock();
-        this.fixture.set(fixture);
+        this.applyFixture(fixture);
         this.loading.set(false);
       },
       error: (err: unknown) => {
@@ -648,9 +678,57 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     });
   }
 
+  /** Every fixture update comes through here so a changed score can react. */
+  private applyFixture(next: FixtureDetail): void {
+    const before = this.fixture();
+    if (before && before.id === next.id) {
+      const rose: string[] = [];
+      const changed = new Set<string>();
+      for (const side of next.sides) {
+        const previous = before.sides.find((item) => item.id === side.id);
+        if (previous && previous.score !== side.score) {
+          changed.add(side.id);
+          if (Number(side.score) > Number(previous.score)) rose.push(side.id);
+        }
+      }
+      clearTimeout(this.bumpTimer);
+      this.bumped.set(changed);
+      if (changed.size) {
+        this.bumpTimer = setTimeout(() => this.bumped.set(new Set()), 1200);
+      }
+      if (rose.length && next.status !== 'completed') this.celebrate(next, rose[0]);
+    }
+    this.fixture.set(next);
+  }
+
+  private celebrate(next: FixtureDetail, sideId: string): void {
+    const scoring = [...next.events]
+      .filter((event) => Number(event.points) > 0)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    const latest = scoring.at(-1);
+    const side = next.sides.find((item) => item.id === sideId);
+    const label = (latest?.scoring_category_name || 'Score').toUpperCase();
+    const who = latest?.player_name || side?.participant.short_name || side?.participant.name || '';
+    const colours = ['#f59e0b', '#14b8a6', '#2563eb', '#ec4899', '#22c55e', '#a855f7'];
+    const pieces = Array.from({ length: 36 }, (_, index) => {
+      const angle = (index / 36) * Math.PI * 2 + Math.random() * 0.4;
+      const reach = 140 + Math.random() * 220;
+      return {
+        dx: Math.round(Math.cos(angle) * reach),
+        dy: Math.round(Math.sin(angle) * reach * 0.8 + 120),
+        rot: Math.round(Math.random() * 720 - 360),
+        delay: Math.round(Math.random() * 120),
+        color: colours[index % colours.length],
+      };
+    });
+    clearTimeout(this.celebrationTimer);
+    this.celebration.set({ title: who ? `${label}! ${who}` : `${label}!`, pieces });
+    this.celebrationTimer = setTimeout(() => this.celebration.set(null), 2400);
+  }
+
   private reloadFixture(): void {
     this.api.getFixture(this.competitionId, this.fixtureId).subscribe({
-      next: (fixture) => this.fixture.set(fixture),
+      next: (fixture) => this.applyFixture(fixture),
       error: () => undefined,
     });
   }
@@ -669,6 +747,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     const structure = this.competition()?.settings_json?.['match_structure'];
     if (!Array.isArray(structure)) return [];
     const slots: Array<{ index: number; label: string }> = [];
+    const seen: Record<string, number> = {};
     for (const block of structure) {
       if (!block || typeof block !== 'object') continue;
       const record = block as { unit?: string; count?: number; best_of?: number; repeat?: boolean };
@@ -676,7 +755,9 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       if (record.repeat) count = Math.max(count, 3);
       const name = String(record.unit || 'unit').replaceAll('_', ' ');
       for (let offset = 0; offset < count; offset += 1) {
-        slots.push({ index: slots.length, label: `${name} ${offset + 1}` });
+        // Numbered across blocks so a deciding fifth set reads "set 5".
+        seen[name] = (seen[name] ?? 0) + 1;
+        slots.push({ index: slots.length, label: `${name} ${seen[name]}` });
       }
     }
     return slots;
@@ -720,7 +801,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     this.saving.set(true);
     this.api.assignReferee(this.competitionId, this.fixtureId, userId).subscribe({
       next: (fixture) => {
-        this.fixture.set(fixture);
+        this.applyFixture(fixture);
         this.refereeQuery.set('');
         this.saving.set(false);
       },
@@ -736,7 +817,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     this.saving.set(true);
     this.api.removeReferee(this.competitionId, this.fixtureId, userId).subscribe({
       next: (fixture) => {
-        this.fixture.set(fixture);
+        this.applyFixture(fixture);
         this.saving.set(false);
       },
       error: async (err: unknown) => {
@@ -960,7 +1041,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
 
   private setStatus(status: string): void {
     this.api.setFixtureStatus(this.competitionId, this.fixtureId, status).subscribe({
-      next: (fixture) => this.fixture.set(fixture),
+      next: (fixture) => this.applyFixture(fixture),
       error: async (err: unknown) => {
         await this.showToast(extractErrorMessage(err, 'Could not change the status.'), 'danger');
       },

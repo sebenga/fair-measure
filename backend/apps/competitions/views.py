@@ -186,6 +186,8 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         competition = self.get_object()
         if not has_at_least(competition, request.user, Role.ADMIN):
             raise PermissionDenied("Only competition admins can advance a bracket.")
+        if competition.format != "knockout":
+            raise ValidationError("Only knockout competitions have a bracket to advance.")
 
         latest = (
             Fixture.objects.filter(competition=competition)
@@ -401,6 +403,23 @@ class RuleViewSet(CompetitionScopedViewSet):
     queryset = Rule.objects.all()
     serializer_class = RuleSerializer
     basename = "rule"
+
+    def _assert_rules_editable(self) -> None:
+        if scoring_is_locked(self.get_competition()):
+            raise PermissionDenied(SCORING_LOCKED_MESSAGE)
+
+    def perform_create(self, serializer) -> None:
+        self._assert_rules_editable()
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer) -> None:
+        self._assert_rules_editable()
+        super().perform_update(serializer)
+
+    def perform_destroy(self, instance: Rule) -> None:
+        self._assert_can_write()
+        self._assert_rules_editable()
+        instance.delete()
 
 
 @extend_schema_view(

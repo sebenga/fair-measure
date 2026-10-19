@@ -70,8 +70,9 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
           </p>
         </div>
       } @else {
-        @for (competition of results(); track competition.id) {
+        @for (competition of results(); track competition.id; let index = $index) {
           <fm-competition-card
+            [style.--i]="index"
             [competition]="competition"
             (open)="open(competition)"
           />

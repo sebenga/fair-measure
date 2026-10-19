@@ -125,7 +125,7 @@ CATALOG: dict[str, dict] = {
             "the defence is also 2. Penalties are recorded and do not change the "
             "score. Eleven play on each side. A game is four quarters of 15 minutes, "
             "then a 10-minute overtime if the score is level. A league game can end "
-            "in a tie. A knockout plays on until one side leads. The table gives 2 "
+            "in a tie. A knockout plays on until one side leads. The table gives 3 "
             "for a win and 1 for a tie, then uses the head-to-head result, points "
             "difference, and points scored."
         ),
@@ -173,7 +173,7 @@ CATALOG: dict[str, dict] = {
             {"unit": "overtime", "count": 1, "minutes": 10, "repeat": True},
         ],
         draw_resolution="sudden_death",
-        league_points={"win": 2, "draw": 1, "loss": 0},
+        league_points={"win": 3, "draw": 1, "loss": 0},
         tiebreakers=["points", "head_to_head", "score_difference", "score_for"],
     ),
     "basketball": _sport(
@@ -325,7 +325,7 @@ CATALOG: dict[str, dict] = {
             "If the home side leads after the visitor has batted in the 9th, the "
             "game ends. A level score goes to extra innings, and from the 10th each "
             "half-inning starts with a runner on second. There is no draw. The table "
-            "uses wins, then the head-to-head result, then run difference, then runs scored."
+            "gives 3 for a win, then uses the head-to-head result, then run difference, then runs scored."
         ),
         score_types=[
             {"key": "run", "label": "Run", "value": 1, "affects_score": True},
@@ -349,7 +349,7 @@ CATALOG: dict[str, dict] = {
             {"unit": "extra_inning", "count": 1, "repeat": True},
         ],
         draw_resolution="sudden_death",
-        league_points={"win": 1, "draw": 0, "loss": 0},
+        league_points={"win": 3, "draw": 1, "loss": 0},
         tiebreakers=["points", "head_to_head", "score_difference", "score_for"],
     ),
     "tennis": _sport(
@@ -652,17 +652,27 @@ CATALOG: dict[str, dict] = {
         participant_types=["individual", "team"],
         formats_allowed=["league"],
         description=(
-            "A game is 10 frames. A strike is 10 plus the next two balls. A spare "
-            "is 10 plus the next ball. The tenth frame allows bonus balls. The "
-            "highest score is 300. Ranking is the total of 3 games, and a tie "
-            "uses the highest single game."
+            "Enter every ball in order. A strike is 10 plus the next two balls. "
+            "For a spare, enter the pins of the closing ball as Spare: it scores "
+            "those pins plus the next ball. Any other ball is Pins. In the tenth "
+            "frame, enter the extra balls as Bonus ball: they only pay the strike "
+            "or spare before them, so nothing counts twice. The highest score is "
+            "300. Ranking is the total of 3 games, and a tie uses the highest "
+            "single game."
         ),
         win_condition="highest_total",
         accumulation_ranking="highest_first",
         score_types=[
             {"key": "strike", "label": "Strike", "value": 10, "affects_score": True, "bonus_next": 2},
-            {"key": "spare", "label": "Spare", "value": 10, "affects_score": True, "bonus_next": 1},
+            {"key": "spare", "label": "Spare (pins)", "value": 1, "affects_score": True, "bonus_next": 1},
             {"key": "pins", "label": "Pins", "value": 1, "affects_score": True},
+            {
+                "key": "bonus-ball",
+                "label": "Bonus ball (pins)",
+                "value": 1,
+                "affects_score": True,
+                "bonus_only": True,
+            },
         ],
         match_structure=[{"unit": "frame", "count": 10}],
         league_points={"win": 0, "draw": 0, "loss": 0},
@@ -698,7 +708,7 @@ CATALOG: dict[str, dict] = {
         ],
         match_structure=[{"unit": "end", "count": 12}],
         league_points={"win": 0, "draw": 0, "loss": 0},
-        tiebreakers=["category:ring-10", "category:x"],
+        tiebreakers=["category:ring-10+x", "category:x"],
     ),
     "athletics": _sport(
         label="Athletics",

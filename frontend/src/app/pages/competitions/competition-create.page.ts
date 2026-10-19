@@ -164,7 +164,7 @@ function presetKind(preset: Preset): PresetKind {
             </p>
 
             @if (everydayPresets().length) {
-              <div class="presets">
+              <div class="presets fm-stagger">
                 @for (preset of everydayPresets(); track preset.key) {
                   <button
                     type="button"
@@ -182,7 +182,7 @@ function presetKind(preset: Preset): PresetKind {
 
             @if (sportPresets().length) {
               <p class="group-label">Sports</p>
-              <div class="presets">
+              <div class="presets fm-stagger">
                 @for (preset of sportPresets(); track preset.key) {
                   <button
                     type="button"
@@ -856,7 +856,8 @@ export class CompetitionCreatePage implements OnInit {
     const preset = this.activePreset();
     if (!preset) return '';
     if (preset.table_mode === 'points') {
-      return 'Entrants do not play each other. The table ranks by points accumulated from the scoring rules above, highest first.';
+      const order = preset.accumulation_ranking === 'lowest_first' ? 'lowest total first' : 'highest first';
+      return `Entrants do not play each other. The table ranks by points accumulated from the scoring rules above, ${order}.`;
     }
     if (preset.format === 'knockout') {
       return 'Knockout. The winner of each fixture advances until a champion is decided. There is no league table.';

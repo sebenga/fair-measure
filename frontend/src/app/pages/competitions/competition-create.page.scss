@@ -128,10 +128,31 @@
   background: var(--ion-background-color, #fff);
   cursor: pointer;
   text-align: left;
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 0.25s var(--fm-ease-spring),
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    box-shadow 0.25s ease;
+
+  @media (hover: hover) {
+    &:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    }
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
 
   ion-icon {
     font-size: 1.35rem;
     color: var(--ion-color-medium);
+    transition:
+      transform 0.35s var(--fm-ease-spring),
+      color 0.2s ease;
   }
 
   span {
@@ -148,9 +169,30 @@
   &.selected {
     border-color: var(--ion-color-primary);
     background: color-mix(in srgb, var(--ion-color-primary) 10%, transparent);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--ion-color-primary) 28%, transparent);
+    animation: preset-select 0.45s var(--fm-ease-spring);
 
     ion-icon {
       color: var(--ion-color-primary);
+      transform: scale(1.25) rotate(-6deg);
+    }
+
+    // A tick that pops in on the chosen card.
+    &::after {
+      content: '✓';
+      position: absolute;
+      top: 6px;
+      right: 8px;
+      display: grid;
+      place-items: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      font-size: 0.7rem;
+      font-weight: 800;
+      color: #fff;
+      background: var(--ion-color-primary);
+      animation: fm-pop 0.45s var(--fm-ease-spring);
     }
   }
 }
@@ -379,4 +421,16 @@
   justify-content: space-between;
   align-items: center;
   padding: 4px 8px 8px;
+}
+
+@keyframes preset-select {
+  0% {
+    transform: scale(0.92);
+  }
+  60% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+  }
 }

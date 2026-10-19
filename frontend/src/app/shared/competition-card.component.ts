@@ -64,8 +64,17 @@ import type { Competition } from '../core/models';
   `,
   styles: [
     `
+      :host {
+        display: block;
+        animation: fm-rise 0.5s var(--fm-ease-out) backwards;
+        animation-delay: calc(min(var(--i, 0), 10) * 60ms);
+      }
+
       .card {
         display: flex;
+        transition:
+          transform 0.25s var(--fm-ease-out),
+          box-shadow 0.25s var(--fm-ease-out);
         align-items: center;
         gap: 8px;
         width: calc(100% - 32px);
@@ -90,8 +99,19 @@ import type { Competition } from '../core/models';
         transition: transform 120ms ease;
       }
 
-      .card-main:active {
-        transform: scale(0.99);
+      .card:active {
+        transform: scale(0.985);
+      }
+
+      @media (hover: hover) {
+        .card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+        }
+
+        .card:hover .chevron {
+          transform: translateX(3px);
+        }
       }
 
       .crest {
@@ -175,6 +195,7 @@ import type { Competition } from '../core/models';
         flex: 0 0 auto;
         color: var(--ion-color-medium);
         font-size: 1.1rem;
+        transition: transform 0.25s var(--fm-ease-out);
       }
     `,
   ],

@@ -18,7 +18,6 @@ import {
   IonSegment,
   IonSegmentButton,
   IonLabel,
-  IonSpinner,
 } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../../core/api.service';
@@ -41,7 +40,6 @@ interface FixtureGroup {
   standalone: true,
   imports: [
     DatePipe,
-    IonSpinner,
     IonIcon,
     IonButton,
     IonBadge,
@@ -81,7 +79,17 @@ interface FixtureGroup {
     }
 
     @if (loading()) {
-      <div class="centered"><ion-spinner name="crescent" /></div>
+      <div aria-busy="true" aria-label="Loading fixtures">
+        @for (n of skeletons; track n) {
+          <div class="fixture fm-card skeleton-card">
+            <span class="fm-skeleton" style="width: 44px; height: 30px"></span>
+            <span class="skeleton-lines">
+              <span class="fm-skeleton" style="width: 70%"></span>
+              <span class="fm-skeleton" style="width: 55%"></span>
+            </span>
+          </div>
+        }
+      </div>
     } @else if (error()) {
       <div class="fm-empty">
         <ion-icon name="alert-circle-outline" aria-hidden="true" />
@@ -108,8 +116,14 @@ interface FixtureGroup {
       @for (group of groups(); track group.key) {
         <h3 class="fm-section-title">{{ group.label }}</h3>
 
-        @for (fixture of group.fixtures; track fixture.id) {
-          <button type="button" class="fixture fm-card" (click)="openFixture(fixture)">
+        @for (fixture of group.fixtures; track fixture.id; let index = $index) {
+          <button
+            type="button"
+            class="fixture fm-card fm-lift fm-enter"
+            [class.is-live]="fixture.status === 'live'"
+            [style.animation-delay.ms]="index * 50"
+            (click)="openFixture(fixture)"
+          >
             <div class="when">
               @if (fixture.status === 'live') {
                 <span class="fm-live">Live</span>
@@ -130,7 +144,9 @@ interface FixtureGroup {
                   @if (side.forfeited) {
                     <ion-badge color="danger">FF</ion-badge>
                   }
-                  <span class="score">{{ showScores(fixture) ? trim(side.score) : '–' }}</span>
+                  <span class="score" [class.fm-bump]="bumped().has(side.id)">{{
+                    showScores(fixture) ? trim(side.score) : '–'
+                  }}</span>
                 </div>
               }
 
@@ -222,10 +238,32 @@ interface FixtureGroup {
         font-weight: 700;
       }
 
-      .centered {
+      .skeleton-card {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+      }
+
+      .skeleton-lines {
+        flex: 1;
         display: grid;
-        place-items: center;
-        padding: 64px 0;
+        gap: 8px;
+      }
+
+      .fixture.is-live {
+        position: relative;
+        box-shadow:
+          var(--fm-shadow),
+          inset 3px 0 0 var(--ion-color-danger);
+      }
+
+      .fixture.is-live::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        animation: fm-ring 2.2s ease-out infinite;
       }
 
       .fixture {
@@ -421,6 +459,11 @@ export class CompetitionFixturesComponent implements OnInit {
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly filter = signal<Filter>('upcoming');
+  readonly skeletons = [0, 1, 2];
+  /** Sides whose score just changed, so the number can pop. */
+  readonly bumped = signal<Set<string>>(new Set());
+  private lastScores = new Map<string, string>();
+  private bumpTimer: ReturnType<typeof setTimeout> | undefined;
 
   readonly bracket = computed(() => {
     const rounds = new Map<number, Fixture[]>();
@@ -485,6 +528,7 @@ export class CompetitionFixturesComponent implements OnInit {
 
     this.api.listFixtures(this.competition().id, { page_size: 200 }).subscribe({
       next: (page) => {
+        this.noteScoreChanges(page.results);
         this.fixtures.set(page.results);
         this.loading.set(false);
       },
@@ -493,6 +537,22 @@ export class CompetitionFixturesComponent implements OnInit {
         this.loading.set(false);
       },
     });
+  }
+
+  private noteScoreChanges(next: Fixture[]): void {
+    const changed = new Set<string>();
+    const scores = new Map<string, string>();
+    for (const fixture of next) {
+      for (const side of fixture.sides) {
+        scores.set(side.id, side.score);
+        const before = this.lastScores.get(side.id);
+        if (before !== undefined && before !== side.score) changed.add(side.id);
+      }
+    }
+    this.lastScores = scores;
+    clearTimeout(this.bumpTimer);
+    this.bumped.set(changed);
+    if (changed.size) this.bumpTimer = setTimeout(() => this.bumped.set(new Set()), 1200);
   }
 
   setFilter(value: string | undefined): void {

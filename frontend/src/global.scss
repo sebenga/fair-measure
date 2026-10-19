@@ -89,16 +89,242 @@
   }
 }
 
+// --- Motion system ----------------------------------------------------------
+// Small, fast, purposeful: things rise in, react to a touch, and celebrate
+// when something exciting happens. Everything is switched off for users who
+// ask for reduced motion (see the media query at the end of this block).
+
+:root {
+  --fm-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --fm-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes fm-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fm-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fm-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes fm-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fm-shimmer {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+@keyframes fm-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(var(--ion-color-danger-rgb, 235, 68, 90), 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 14px rgba(var(--ion-color-danger-rgb, 235, 68, 90), 0);
+  }
+}
+
+@keyframes fm-glow {
+  0% {
+    background-color: rgba(var(--ion-color-success-rgb, 45, 211, 111), 0.35);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes fm-confetti {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(0.6);
+  }
+}
+
+@keyframes fm-banner {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.9);
+  }
+  12%,
+  80% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+
+// Staggered entrance: put `fm-stagger` on a list and every direct child rises
+// in turn. Children can set `--i` themselves; otherwise the first twelve are
+// spaced automatically.
+.fm-stagger > * {
+  animation: fm-rise 0.5s var(--fm-ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 55ms);
+}
+
+@for $i from 1 through 12 {
+  .fm-stagger > *:nth-child(#{$i}) {
+    --i: #{$i - 1};
+  }
+}
+
+.fm-enter {
+  animation: fm-rise 0.45s var(--fm-ease-out) backwards;
+}
+
+// A card that responds to touch and pointer.
+.fm-lift {
+  transition:
+    transform 0.2s var(--fm-ease-out),
+    box-shadow 0.2s var(--fm-ease-out);
+
+  @media (hover: hover) {
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.12);
+    }
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
+// Every button gets a tactile squeeze.
+ion-button {
+  transition: transform 0.15s var(--fm-ease-spring);
+
+  &:active {
+    transform: scale(0.95);
+  }
+}
+
+// A value that just changed: scales up and settles.
+.fm-bump {
+  display: inline-block;
+  animation: fm-pop 0.5s var(--fm-ease-spring);
+}
+
+// A row that just moved or updated glows briefly.
+.fm-flash {
+  animation: fm-glow 1.4s ease-out;
+}
+
+.fm-live-ring {
+  animation: fm-ring 1.8s ease-out infinite;
+}
+
+// Loading placeholders instead of bare spinners.
+.fm-skeleton {
+  display: block;
+  border-radius: 10px;
+  min-height: 16px;
+  background: linear-gradient(
+    100deg,
+    rgba(127, 127, 127, 0.12) 30%,
+    rgba(127, 127, 127, 0.26) 50%,
+    rgba(127, 127, 127, 0.12) 70%
+  );
+  background-size: 250% 100%;
+  animation: fm-shimmer 1.4s linear infinite;
+}
+
+// Goal celebration: a banner and a burst of confetti pieces.
+.fm-celebrate {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  pointer-events: none;
+  overflow: hidden;
+
+  .fm-celebrate-banner {
+    position: absolute;
+    top: 14%;
+    left: 50%;
+    translate: -50% 0;
+    padding: 12px 26px;
+    border-radius: 999px;
+    font-weight: 800;
+    font-size: 1.25rem;
+    letter-spacing: 0.04em;
+    color: #fff;
+    background: linear-gradient(135deg, #14b8a6, #2563eb);
+    box-shadow: 0 12px 34px rgba(37, 99, 235, 0.45);
+    animation: fm-banner 2.4s var(--fm-ease-spring) both;
+    white-space: nowrap;
+  }
+
+  .fm-confetti {
+    position: absolute;
+    top: 22%;
+    left: 50%;
+    width: 9px;
+    height: 14px;
+    border-radius: 2px;
+    animation: fm-confetti 1.6s var(--fm-ease-out) forwards;
+    animation-delay: var(--delay, 0ms);
+  }
+}
+
 // Respect a user's reduced-motion preference rather than animating regardless.
 @media (prefers-reduced-motion: reduce) {
-  .fm-live::before {
+  .fm-live::before,
+  .fm-live-ring,
+  .fm-skeleton {
     animation: none;
+  }
+
+  .fm-celebrate {
+    display: none;
   }
 
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
     transition-duration: 0.01ms !important;
   }
 }

@@ -15,7 +15,6 @@ import {
   IonIcon,
   IonSelect,
   IonSelectOption,
-  IonSpinner,
 } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../../core/api.service';
@@ -27,7 +26,7 @@ import { RealtimeService } from '../../../core/realtime.service';
 @Component({
   selector: 'fm-competition-standings',
   standalone: true,
-  imports: [IonSpinner, IonIcon, IonButton, IonSelect, IonSelectOption],
+  imports: [IonIcon, IonButton, IonSelect, IonSelectOption],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (pointsTable() && scoringGuide().length) {
@@ -70,7 +69,11 @@ import { RealtimeService } from '../../../core/realtime.service';
         <p>The winner of each fixture advances until a champion is decided.</p>
       </div>
     } @else if (loading()) {
-      <div class="centered"><ion-spinner name="crescent" /></div>
+      <div class="table-wrap fm-card" aria-busy="true" aria-label="Loading the table">
+        @for (n of skeletonRows; track n) {
+          <span class="fm-skeleton skeleton-row" [style.width.%]="100 - n * 6"></span>
+        }
+      </div>
     } @else if (error()) {
       <div class="fm-empty">
         <ion-icon name="alert-circle-outline" aria-hidden="true" />
@@ -112,11 +115,24 @@ import { RealtimeService } from '../../../core/realtime.service';
           <tbody>
             @for (row of rows(); track row.participant.id) {
               <tr
+                class="row-in"
+                [style.--i]="$index"
                 [class.promoted]="row.position <= advancesCount()"
                 [class.expandable]="pointsTable()"
+                [class.fm-flash]="!!changes()[row.participant.id]"
+                [class.leader]="row.position === 1"
                 (click)="pointsTable() && toggle(row.participant.id)"
               >
-                <td class="pos">{{ row.position }}</td>
+                <td class="pos">
+                  <span class="badge" [class]="'badge place-' + (row.position <= 3 ? row.position : 'n')">
+                    {{ row.position }}
+                  </span>
+                  @if (changes()[row.participant.id]?.delta; as delta) {
+                    <i class="move" [class.up]="delta > 0" [class.down]="delta < 0" aria-hidden="true">
+                      {{ delta > 0 ? '▲' : '▼' }}
+                    </i>
+                  }
+                </td>
                 <td class="team">
                   <span class="name">{{ row.participant.short_name || row.participant.name }}</span>
                   @if (pointsTable()) {
@@ -140,7 +156,9 @@ import { RealtimeService } from '../../../core/realtime.service';
                     {{ signed(row.score_difference) }}
                   </td>
                 }
-                <td class="pts">{{ trim(row.points) }}</td>
+                <td class="pts">
+                  <span [class.fm-bump]="changes()[row.participant.id]?.points">{{ trim(row.points) }}</span>
+                </td>
               </tr>
               @if (pointsTable() && expanded() === row.participant.id) {
                 <tr class="breakdown">
@@ -303,6 +321,70 @@ import { RealtimeService } from '../../../core/realtime.service';
         color: var(--ion-color-danger);
       }
 
+      .skeleton-row {
+        height: 20px;
+        margin: 14px 16px;
+      }
+
+      tr.row-in {
+        animation: fm-slide-in 0.45s var(--fm-ease-out) both;
+        animation-delay: calc(min(var(--i, 0), 14) * 45ms);
+        transition: background-color 0.2s ease;
+      }
+
+      tr.expandable:hover,
+      tr.expandable:active {
+        background: var(--ion-color-step-50, #f7f8fa);
+      }
+
+      .badge {
+        display: inline-grid;
+        place-items: center;
+        min-width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        font-weight: 700;
+        font-size: 0.75rem;
+      }
+
+      .badge.place-1 {
+        background: linear-gradient(135deg, #fde68a, #f59e0b);
+        color: #4a3200;
+      }
+
+      .badge.place-2 {
+        background: linear-gradient(135deg, #f1f5f9, #94a3b8);
+        color: #1e293b;
+      }
+
+      .badge.place-3 {
+        background: linear-gradient(135deg, #fed7aa, #c2410c);
+        color: #fff;
+      }
+
+      tr.leader .name {
+        background: linear-gradient(90deg, var(--ion-color-primary), var(--ion-color-tertiary, #6a64f1));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      .move {
+        display: block;
+        font-style: normal;
+        font-size: 0.55rem;
+        line-height: 1;
+        animation: fm-rise 0.4s var(--fm-ease-out) both;
+      }
+
+      .move.up {
+        color: var(--ion-color-success);
+      }
+
+      .move.down {
+        color: var(--ion-color-danger);
+      }
+
       .promoted .pos {
         position: relative;
         font-weight: 700;
@@ -362,6 +444,12 @@ export class CompetitionStandingsComponent implements OnInit {
   readonly error = signal<string | null>(null);
   readonly stageId = signal<string | null>(null);
 
+  /** Who just moved or scored, so the table can flash and show an arrow for a moment. */
+  readonly changes = signal<Record<string, { delta: number; points: boolean }>>({});
+  readonly skeletonRows = [0, 1, 2, 3, 4];
+  private previous = new Map<string, { position: number; points: string }>();
+  private clearTimer: ReturnType<typeof setTimeout> | undefined;
+
   readonly scoringGuide = computed(() =>
     this.competition().scoring_categories.filter((category) => category.affects_score),
   );
@@ -385,6 +473,7 @@ export class CompetitionStandingsComponent implements OnInit {
       .getStandings(this.competition().id, { stage: this.stageId(), refresh: true })
       .subscribe({
         next: (response) => {
+          this.noteChanges(response.rows);
           this.rows.set(response.rows);
           this.breakdown.set(response.breakdown ?? {});
           this.loading.set(false);
@@ -394,6 +483,27 @@ export class CompetitionStandingsComponent implements OnInit {
           this.loading.set(false);
         },
       });
+  }
+
+  private noteChanges(next: StandingRow[]): void {
+    const changed: Record<string, { delta: number; points: boolean }> = {};
+    if (this.previous.size) {
+      for (const row of next) {
+        const before = this.previous.get(row.participant.id);
+        if (!before) continue;
+        const delta = before.position - row.position;
+        const points = before.points !== row.points;
+        if (delta !== 0 || points) changed[row.participant.id] = { delta, points };
+      }
+    }
+    this.previous = new Map(
+      next.map((row) => [row.participant.id, { position: row.position, points: row.points }]),
+    );
+    clearTimeout(this.clearTimer);
+    this.changes.set(changed);
+    if (Object.keys(changed).length) {
+      this.clearTimer = setTimeout(() => this.changes.set({}), 3500);
+    }
   }
 
   selectStage(value: string | null): void {

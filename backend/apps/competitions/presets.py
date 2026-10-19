@@ -50,6 +50,22 @@ FORMAT_TO_MODEL = {
 }
 
 
+def allowed_model_formats(settings: dict | None) -> set[str] | None:
+    """Model formats a competition may use, or None when anything goes."""
+
+    allowed = (settings or {}).get("formats_allowed")
+    if not allowed:
+        return None
+    return {FORMAT_TO_MODEL.get(item, item) for item in allowed}
+
+
+def format_allowed(settings: dict | None, model_format: str | None) -> bool:
+    allowed = allowed_model_formats(settings)
+    if allowed is None or not model_format or model_format == "freeform":
+        return True
+    return model_format in allowed
+
+
 def _categories(score_types: list[dict]) -> list[dict]:
     rows = []
     for item in score_types:
@@ -295,20 +311,23 @@ def apply_preset(competition, preset_key: str) -> None:
     if preset is None:
         raise ValueError(f"Unknown preset '{preset_key}'.")
 
-    ScoringCategory.objects.bulk_create(
-        [
-            ScoringCategory(
-                competition=competition,
-                name=item["name"],
-                code=item["code"],
-                description=item.get("description", ""),
-                points=item["points"],
-                affects_score=item.get("affects_score", True),
-                display_order=index,
-            )
-            for index, item in enumerate(_categories(preset.get("score_types") or []))
-        ]
-    )
+    # Re-applying a preset updates categories it already added instead of
+    # stacking a second copy of every score type.
+    for index, item in enumerate(_categories(preset.get("score_types") or [])):
+        values = {
+            "name": item["name"],
+            "description": item.get("description", ""),
+            "points": item["points"],
+            "affects_score": item.get("affects_score", True),
+            "display_order": index,
+        }
+        current = competition.scoring_categories.filter(code=item["code"]).first()
+        if current is None:
+            ScoringCategory.objects.create(competition=competition, code=item["code"], **values)
+        else:
+            for field, value in values.items():
+                setattr(current, field, value)
+            current.save()
 
     PointsPolicy.objects.update_or_create(
         competition=competition, defaults=_policy(preset)
@@ -383,6 +402,7 @@ def apply_preset(competition, preset_key: str) -> None:
     competition.settings_json = settings
     competition.save(update_fields=["settings_json", "updated_at"])
 
+    existing_rules = set(competition.rules.values_list("name", flat=True))
     Rule.objects.bulk_create(
         [
             Rule(
@@ -392,5 +412,6 @@ def apply_preset(competition, preset_key: str) -> None:
                 display_order=index,
             )
             for index, item in enumerate(preset.get("rules") or [])
+            if item["name"] not in existing_rules
         ]
     )

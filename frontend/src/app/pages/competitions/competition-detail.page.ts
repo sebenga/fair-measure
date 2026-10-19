@@ -74,7 +74,9 @@ type Tab = 'feed' | 'fixtures' | 'standings';
           }
           @if (canScore()) {
             @if (pointsLeague()) {
-              <ion-button (click)="openScore()">Add points</ion-button>
+              <ion-button (click)="openScore()">
+                <ion-icon slot="icon-only" name="add-outline" aria-label="Add points" />
+              </ion-button>
             } @else {
               <ion-button (click)="openScore()">
                 <ion-icon slot="icon-only" name="create-outline" aria-label="Record scores" />
@@ -134,7 +136,26 @@ type Tab = 'feed' | 'fixtures' | 'standings';
           </div>
         }
         @if (howItScores()) {
-          <p class="how-points">{{ howItScores() }}</p>
+          <p class="how-points fm-enter">{{ howItScores() }}</p>
+        }
+        @if (comp.rules.length) {
+          <details class="rules fm-card fm-enter">
+            <summary>
+              <ion-icon name="book-outline" aria-hidden="true" />
+              Rules of play
+              <span class="count">{{ comp.rules.length }}</span>
+            </summary>
+            <ol class="fm-stagger">
+              @for (rule of comp.rules; track rule.id) {
+                <li>
+                  <strong>{{ rule.name }}</strong>
+                  @if (rule.description) {
+                    <p>{{ rule.description }}</p>
+                  }
+                </li>
+              }
+            </ol>
+          </details>
         }
         @switch (tab()) {
           @case ('feed') {
@@ -173,6 +194,68 @@ type Tab = 'feed' | 'fixtures' | 'standings';
         margin: 16px 32px 0;
         color: var(--ion-color-medium);
         font-size: 0.95rem;
+        line-height: 1.45;
+      }
+
+      .rules {
+        padding: 0;
+        overflow: hidden;
+      }
+
+      .rules summary {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 16px;
+        font-weight: 650;
+        cursor: pointer;
+        list-style: none;
+        transition: background-color 0.2s ease;
+      }
+
+      .rules summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .rules summary::after {
+        content: '';
+        margin-left: auto;
+        width: 8px;
+        height: 8px;
+        border-right: 2px solid var(--ion-color-medium);
+        border-bottom: 2px solid var(--ion-color-medium);
+        transform: rotate(45deg);
+        transition: transform 0.3s var(--fm-ease-spring);
+      }
+
+      .rules[open] summary::after {
+        transform: rotate(225deg);
+      }
+
+      .rules summary:active {
+        background: var(--ion-color-step-50, #f4f5f8);
+      }
+
+      .rules .count {
+        padding: 1px 8px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        background: var(--ion-color-step-100, #e9ecf1);
+      }
+
+      .rules ol {
+        margin: 0;
+        padding: 0 16px 14px 36px;
+      }
+
+      .rules li + li {
+        margin-top: 10px;
+      }
+
+      .rules li p {
+        margin: 2px 0 0;
+        color: var(--ion-color-medium);
+        font-size: 0.86rem;
         line-height: 1.45;
       }
 

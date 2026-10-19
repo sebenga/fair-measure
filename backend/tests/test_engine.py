@@ -250,3 +250,100 @@ def test_locked_preset_refuses_structure_edits(api):
         format="json",
     )
     assert edited.status_code == 403
+
+
+def test_started_preset_cannot_be_unlocked_through_settings(api):
+    created = api.post("/api/v1/competitions", {"name": "Locked", "preset": "soccer"}, format="json")
+    competition_id = created.data["id"]
+    original = created.data["settings_json"]
+
+    for payload in (
+        {"settings_json": {"lock_when_started": True}},
+        {"settings_json": {"score_types": [], "league_points": {"win": 99}}},
+        {"settings_json": {}},
+    ):
+        response = api.patch(f"/api/v1/competitions/{competition_id}", payload, format="json")
+        assert response.status_code == 200, response.data
+        settings = response.data["settings_json"]
+        assert settings["score_types"] == original["score_types"]
+        assert settings["league_points"] == original["league_points"]
+        assert settings["match_structure"] == original["match_structure"]
+        assert settings["tiebreakers"] == original["tiebreakers"]
+        assert settings.get("lock_when_started") == original.get("lock_when_started")
+
+    kept = api.patch(
+        f"/api/v1/competitions/{competition_id}",
+        {"settings_json": {"time_limit_minutes": 45}},
+        format="json",
+    )
+    assert kept.status_code == 200
+    assert kept.data["settings_json"]["time_limit_minutes"] == 45
+    assert kept.data["settings_json"]["score_types"] == original["score_types"]
+
+
+def test_locked_competition_refuses_rule_edits(api):
+    created = api.post("/api/v1/competitions", {"name": "Locked", "preset": "soccer"}, format="json")
+    competition_id = created.data["id"]
+    added = api.post(
+        f"/api/v1/competitions/{competition_id}/rules",
+        {"name": "House rule", "description": "x"},
+        format="json",
+    )
+    assert added.status_code == 403
+
+
+def test_knockout_byes_stay_in_the_bracket(api):
+    created = api.post(
+        "/api/v1/competitions",
+        {"name": "Five a side", "preset": "soccer", "format": "knockout"},
+        format="json",
+    )
+    from apps.competitions.models import Competition
+    from apps.fixtures.services import knockout_slots
+
+    competition = Competition.objects.get(pk=created.data["id"])
+    teams = [
+        Participant.objects.create(competition=competition, name=f"T{n}", kind="team", seed=n)
+        for n in range(1, 6)
+    ]
+    slots = knockout_slots(teams)
+    assert len(slots) == 4
+    byes = [home.name for home, away in slots if away is None]
+    assert byes == ["T1", "T2", "T3"]
+    # Seeds 1 and 2 are in opposite halves of the draw.
+    order = [home.name for home, _ in slots]
+    assert order.index("T1") < 2 <= order.index("T2")
+
+    generated = api.post(
+        f"/api/v1/competitions/{competition.id}/fixtures/generate",
+        {"method": "knockout", "starts_on": "2026-11-01", "kickoff": "10:00"},
+        format="json",
+    )
+    assert generated.status_code == 201, generated.data
+    first_round = Fixture.objects.filter(competition=competition, round_number=1)
+    assert first_round.count() == 4
+    assert first_round.filter(status=Fixture.Status.COMPLETED).count() == 3
+    entered = set(
+        FixtureSide.objects.filter(fixture__in=first_round).values_list("participant__name", flat=True)
+    )
+    assert entered == {"T1", "T2", "T3", "T4", "T5"}
+
+
+def test_golf_unplayed_entrants_rank_last(api):
+    created = api.post("/api/v1/competitions", {"name": "Medal", "preset": "golf_stroke"}, format="json")
+    from apps.competitions.models import Competition
+
+    competition = Competition.objects.get(pk=created.data["id"])
+    ada = Participant.objects.create(competition=competition, name="Ada", kind="individual")
+    Participant.objects.create(competition=competition, name="No card", kind="individual")
+    fixture = Fixture.objects.create(competition=competition, status=Fixture.Status.COMPLETED)
+    side = FixtureSide.objects.create(fixture=fixture, participant=ada, position=0)
+    ScoreEvent.objects.create(
+        fixture=fixture,
+        side=side,
+        scoring_category=competition.scoring_categories.get(code="stroke"),
+        quantity=Decimal("80"),
+        unit_index=0,
+    )
+    fixture.recalculate_scores()
+    assert [row.name for row in compute_standings(competition)] == ["Ada", "No card"]

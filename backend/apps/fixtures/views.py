@@ -58,6 +58,8 @@ def _assert_ready_for_kickoff(fixture: Fixture) -> None:
         raise ValidationError(" ".join(problems))
 
 
+from apps.competitions.presets import format_allowed
+
 from .services import ScheduleOptions, award_criterion, generate_knockout, generate_round_robin, record_result
 
 
@@ -217,6 +219,12 @@ class FixtureViewSet(viewsets.ModelViewSet):
 
         if len(participants) < 2:
             raise ValidationError("Add at least two participants before generating fixtures.")
+
+        scheduled_as = "knockout" if data["method"] == "knockout" else "league"
+        if not format_allowed(competition.settings_json, scheduled_as):
+            raise ValidationError(
+                f"This kind of competition cannot be scheduled as a {scheduled_as.replace('_', ' ')}."
+            )
 
         if team_entry_mode(competition) in {"pick", "draft"}:
             short = [

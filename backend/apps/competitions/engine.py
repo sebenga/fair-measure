@@ -24,17 +24,20 @@ def expand_units(structure: list[dict] | None) -> list[dict]:
     """
 
     slots: list[dict] = []
+    seen: dict[str, int] = {}
     for block in structure or []:
         count = int(block.get("count") or block.get("best_of") or 1)
         if block.get("repeat"):
             count = max(count, 3)
-        for offset in range(max(count, 1)):
+        for _ in range(max(count, 1)):
             name = str(block.get("unit") or "unit")
+            # Number across blocks, so a deciding fifth set is "set 5", not "set 1".
+            seen[name] = seen.get(name, 0) + 1
             slots.append(
                 {
                     "index": len(slots),
                     "unit": name,
-                    "label": f"{name.replace('_', ' ')} {offset + 1}",
+                    "label": f"{name.replace('_', ' ')} {seen[name]}",
                     "minutes": block.get("minutes"),
                     "affects_total": bool(block.get("affects_total", True)),
                     "resolves_draw": bool(block.get("resolves_draw", False)),
@@ -110,14 +113,22 @@ def split_scores(sides, events, slots: list[dict], settings: dict | None = None)
         if event.scoring_category is not None and event.scoring_category.affects_score
     ]
     bonus_extra: dict = {}
-    for index, event in enumerate(affecting):
-        rule = rules.get(event.scoring_category.code, {})
-        follow = int(rule.get("bonus_next") or 0)
-        if follow:
-            bonus_extra[id(event)] = sum(
-                (_event_amount(other) for other in affecting[index + 1 : index + 1 + follow]),
-                ZERO,
-            )
+    # "Next balls" belong to the same side: an opponent's turn never pays a bonus.
+    by_side: dict = {}
+    for event in affecting:
+        by_side.setdefault(event.side_id, []).append(event)
+    for side_events in by_side.values():
+        for index, event in enumerate(side_events):
+            rule = rules.get(event.scoring_category.code, {})
+            follow = int(rule.get("bonus_next") or 0)
+            if follow:
+                bonus_extra[id(event)] = sum(
+                    (
+                        _event_amount(other)
+                        for other in side_events[index + 1 : index + 1 + follow]
+                    ),
+                    ZERO,
+                )
 
     unit_factor: dict[tuple, Decimal] = {}
     for event in ordered:
@@ -135,6 +146,9 @@ def split_scores(sides, events, slots: list[dict], settings: dict | None = None)
             continue
         rule = rules.get(event.scoring_category.code, {})
         if rule.get("role") == "no_result":
+            continue
+        if rule.get("bonus_only"):
+            # Counts only as the "next ball" of an earlier bonus, never on its own.
             continue
         amount = _event_amount(event) + bonus_extra.get(id(event), ZERO)
         slot = _slot_for(event.unit_index, slots)

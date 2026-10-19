@@ -96,8 +96,9 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
         <p class="lede">
           You can run as many competitions as you need. Each has its own scoring.
         </p>
-        @for (competition of competitions(); track competition.id) {
+        @for (competition of competitions(); track competition.id; let index = $index) {
           <fm-competition-card
+            [style.--i]="index"
             [competition]="competition"
             [canDelete]="competition.my_role === 'owner'"
             (open)="openCompetition(competition.id)"

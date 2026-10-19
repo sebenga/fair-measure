@@ -455,6 +455,7 @@ export interface Preset {
   format: CompetitionFormat;
   formats_allowed?: string[];
   contest_type?: 'head_to_head' | 'accumulation';
+  accumulation_ranking?: 'highest_first' | 'lowest_first' | null;
   participant_type?: 'team' | 'individual' | 'pair';
   table_mode?: TableMode;
   scoring_locked?: boolean;

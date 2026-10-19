@@ -149,7 +149,8 @@ def _sort_key(row: Row, tiebreakers: list[str], settings: dict | None = None) ->
             key.append(-row.last_activity)
         elif str(rule).startswith("category:"):
             code = str(rule).split(":", 1)[1]
-            total = row.category_totals.get(code, ZERO)
+            # "a+b" adds several categories, e.g. every 10 whether or not it was an X.
+            total = sum((row.category_totals.get(part, ZERO) for part in code.split("+")), ZERO)
             better = ((settings or {}).get("category_better") or {}).get(code)
             key.append(total if better == "lower" else -total)
         elif rule == PointsPolicy.Tiebreaker.COUNTBACK:
@@ -598,8 +599,17 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
         lowest = settings.get("accumulation_ranking") == "lowest_first"
 
         def accumulation_key(row: Row) -> tuple:
-            primary = row.score_for if lowest else -row.score_for
-            return (primary, _sort_key(row, tiebreakers, settings))
+            if lowest:
+                # Lowest total wins, but only among entrants who have played the
+                # most rounds: an empty card (0) must never beat a finished one,
+                # and a shorter card is not "better" for being shorter.
+                return (
+                    row.played == 0,
+                    -row.played,
+                    row.score_for,
+                    _sort_key(row, tiebreakers, settings),
+                )
+            return (-row.score_for, _sort_key(row, tiebreakers, settings))
 
         ordered = sorted(rows.values(), key=accumulation_key)
     else:

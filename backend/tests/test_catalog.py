@@ -196,7 +196,7 @@ def test_rugby_league_points_for_and_golden_point(api):
     assert _outcome(decided, "Home") == "win"
 
 
-def test_american_football_scores_a_tie_as_half_a_win(api):
+def test_american_football_uses_three_one_zero(api):
     competition, p = _open(api, "american_football", ["Ada", "Bo", "Cy", "Dee"])
     played = _play(
         competition,
@@ -213,7 +213,7 @@ def test_american_football_scores_a_tie_as_half_a_win(api):
         [(p["Bo"], [("touchdown", 1, 0)]), (p["Dee"], [("touchdown", 1, 1)])],
     )
     rows = _table(competition)
-    assert rows["Ada"].points == Decimal("2")
+    assert rows["Ada"].points == Decimal("3")
     assert rows["Bo"].points == rows["Dee"].points == Decimal("1")
     assert _order(competition).index("Ada") < _order(competition).index("Bo")
 
@@ -244,7 +244,7 @@ def test_baseball_runs_and_extra_innings(api):
     assert _outcome(played, "Ada") == "win"
     _play(competition, [(p["Bo"], [("run", 6, 0)]), (p["Dee"], [("run", 2, 1)])])
     rows = _table(competition)
-    assert rows["Ada"].points == rows["Bo"].points == Decimal("1")
+    assert rows["Ada"].points == rows["Bo"].points == Decimal("3")
     assert rows["Bo"].score_difference > rows["Ada"].score_difference
     assert _order(competition).index("Bo") < _order(competition).index("Ada")
 
@@ -686,6 +686,43 @@ def test_bowling_bonus_balls_and_best_game(api):
     assert _order(competition)[0] == "Ada"
 
 
+def test_bowling_bonus_only_pays_the_same_side(api):
+    competition, p = _open(api, "bowling", ["Ada", "Bo"])
+    game = _play(
+        competition,
+        [
+            (p["Ada"], [("strike", 1, 0), ("pins", 3, 1), ("pins", 4, 2)]),
+            (p["Bo"], [("pins", 9, 0)]),
+        ],
+    )
+    # Ada: 10 + 3 + 4 bonus, then the 3 and 4 as their own frames = 24.
+    assert _score(game, "Ada") == Decimal("24")
+    assert _score(game, "Bo") == Decimal("9")
+
+
+def test_bowling_perfect_game_is_300(api):
+    competition, p = _open(api, "bowling", ["Ada", "Bo"])
+    strikes = [("strike", 1, frame) for frame in range(10)]
+    bonus = [("bonus-ball", 10, 9), ("bonus-ball", 10, 9)]
+    game = _play(competition, [(p["Ada"], strikes + bonus), (p["Bo"], [("pins", 1, 0)])])
+    assert _score(game, "Ada") == Decimal("300")
+
+
+def test_bowling_spare_counts_the_closing_ball_once(api):
+    competition, p = _open(api, "bowling", ["Ada", "Bo"])
+    game = _play(
+        competition,
+        [
+            # Frame 1: a 7, then a spare closed with 3 pins. Frame 2: a 5 and a 2.
+            # The 5 after the spare is also its one bonus ball.
+            (p["Ada"], [("pins", 7, 0), ("spare", 3, 0), ("pins", 5, 1), ("pins", 2, 1)]),
+            (p["Bo"], [("pins", 1, 0)]),
+        ],
+    )
+    # 7 + (3 + bonus 5) + 5 + 2 = 22
+    assert _score(game, "Ada") == Decimal("22")
+
+
 def test_archery_tens_then_xs(api):
     competition, p = _open(api, "archery", ["Ada", "Bo"])
     event = _play(
@@ -699,7 +736,22 @@ def test_archery_tens_then_xs(api):
     rows = _table(competition)
     assert rows["Bo"].category_totals["ring-10"] == Decimal("1")
     assert rows["Ada"].category_totals["x"] == Decimal("1")
-    assert _order(competition)[0] == "Bo"
+    # An X is a ten, so the tens tie (1 each) and the Xs decide it.
+    assert _order(competition)[0] == "Ada"
+
+
+def test_archery_counts_xs_among_the_tens(api):
+    competition, p = _open(api, "archery", ["Ada", "Bo"])
+    _play(
+        competition,
+        [
+            # Both score 30. Ada has three tens (one an X); Bo has one ten.
+            (p["Ada"], [("ring-10", 2, 0), ("x", 1, 0)]),
+            (p["Bo"], [("ring-10", 1, 0), ("ring-9", 2, 0), ("ring-2", 1, 0)]),
+        ],
+    )
+    # More tens wins, even though Bo has no X to lose on and Ada's X is "extra".
+    assert _order(competition)[0] == "Ada"
 
 
 def test_athletics_track_and_field_directions(api):
