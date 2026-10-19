@@ -357,10 +357,136 @@ function presetKind(preset: Preset): PresetKind {
             <p class="hint">{{ formatHint() }}</p>
 
             @if (isCustom()) {
-              <p class="hint">
-                An admin adds points against the criteria you defined. Entrants do not
-                play each other, and there is no fixture schedule.
-              </p>
+              <div class="formats">
+                <button
+                  type="button"
+                  class="format"
+                  [class.selected]="pointsTable()"
+                  (click)="setCustomMode('points')"
+                >
+                  <ion-icon name="stats-chart-outline" aria-hidden="true" />
+                  <div>
+                    <strong>Points accumulation</strong>
+                    <p>
+                      An admin adds points against the criteria you defined. Entrants do not
+                      play each other, and there is no fixture schedule.
+                    </p>
+                  </div>
+                  @if (pointsTable()) {
+                    <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                  }
+                </button>
+                <button
+                  type="button"
+                  class="format"
+                  [class.selected]="!pointsTable()"
+                  (click)="setCustomMode('versus')"
+                >
+                  <ion-icon name="people-outline" aria-hidden="true" />
+                  <div>
+                    <strong>VS competition</strong>
+                    <p>
+                      Entrants play each other in fixtures. Your criteria score each match, the
+                      higher total wins, and the table awards the points you set for a win, draw and loss.
+                    </p>
+                  </div>
+                  @if (!pointsTable()) {
+                    <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                  }
+                </button>
+              </div>
+
+              @if (!pointsTable()) {
+                <h3 class="fm-section-title">Who plays</h3>
+                <div class="formats">
+                  <button
+                    type="button"
+                    class="format"
+                    [class.selected]="versusEntrants() === 'team'"
+                    (click)="versusEntrants.set('team')"
+                  >
+                    <ion-icon name="people-outline" aria-hidden="true" />
+                    <div>
+                      <strong>Teams</strong>
+                      <p>Teams play each other. Players join a team, and each event names the player.</p>
+                    </div>
+                    @if (versusEntrants() === 'team') {
+                      <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                    }
+                  </button>
+                  <button
+                    type="button"
+                    class="format"
+                    [class.selected]="versusEntrants() === 'individual'"
+                    (click)="versusEntrants.set('individual')"
+                  >
+                    <ion-icon name="person-circle-outline" aria-hidden="true" />
+                    <div>
+                      <strong>Individuals</strong>
+                      <p>One person plays another. Each entrant is a single player.</p>
+                    </div>
+                    @if (versusEntrants() === 'individual') {
+                      <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                    }
+                  </button>
+                </div>
+
+                <h3 class="fm-section-title">Table points</h3>
+                <p class="hint">Points each entrant earns on the table for a result.</p>
+                <ion-list inset="true">
+                  <ion-item>
+                    <ion-input
+                      label="Win"
+                      labelPlacement="stacked"
+                      type="number"
+                      inputmode="decimal"
+                      [value]="winPoints()"
+                      (ionInput)="winPoints.set(stringValue($event))"
+                    />
+                  </ion-item>
+                  <ion-item>
+                    <ion-input
+                      label="Draw"
+                      labelPlacement="stacked"
+                      type="number"
+                      inputmode="decimal"
+                      [value]="drawPoints()"
+                      (ionInput)="drawPoints.set(stringValue($event))"
+                    />
+                  </ion-item>
+                  <ion-item>
+                    <ion-input
+                      label="Loss"
+                      labelPlacement="stacked"
+                      type="number"
+                      inputmode="decimal"
+                      [value]="lossPoints()"
+                      (ionInput)="lossPoints.set(stringValue($event))"
+                    />
+                  </ion-item>
+                </ion-list>
+
+                <h3 class="fm-section-title">Format</h3>
+                <div class="formats">
+                  @for (option of versusFormats; track option.value) {
+                    <button
+                      type="button"
+                      class="format"
+                      [class.selected]="form.controls.format.value === option.value"
+                      (click)="form.controls.format.setValue(option.value)"
+                    >
+                      <ion-icon [name]="option.icon" aria-hidden="true" />
+                      <div>
+                        <strong>{{ option.label }}</strong>
+                        <p>{{ option.blurb }}</p>
+                      </div>
+                      @if (form.controls.format.value === option.value) {
+                        <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                      }
+                    </button>
+                  }
+                </div>
+              }
             } @else if (scoringLocked()) {
               <p class="hint">{{ lockedStructureHint() }}</p>
             } @else {
@@ -431,7 +557,7 @@ function presetKind(preset: Preset): PresetKind {
               <p class="fm-form-error" role="alert">The end date is before the start date.</p>
             }
 
-            @if (!isCustom() && !pointsTable()) {
+            @if (!pointsTable()) {
             <div class="weekdays">
               <p class="label">Usual match days</p>
               <div class="days">
@@ -500,13 +626,27 @@ function presetKind(preset: Preset): PresetKind {
                 <div>
                   <dt>Format</dt>
                   <dd>
-                    @if (isCustom() || scoringBasis() === 'criteria') {
+                    @if (pointsTable()) {
                       Points accumulation
+                    } @else if (isCustom()) {
+                      VS competition · {{ formatShort(form.controls.format.value) }}
                     } @else {
                       {{ formatShort(form.controls.format.value) }}
                     }
                   </dd>
                 </div>
+                @if (isCustom() && !pointsTable()) {
+                  <div>
+                    <dt>Who plays</dt>
+                    <dd>{{ versusEntrants() === 'team' ? 'Teams' : 'Individuals' }}</dd>
+                  </div>
+                  <div>
+                    <dt>Table points</dt>
+                    <dd>
+                      Win {{ winPoints() || 0 }} · Draw {{ drawPoints() || 0 }} · Loss {{ lossPoints() || 0 }}
+                    </dd>
+                  </div>
+                }
                 <div>
                   <dt>Visibility</dt>
                   <dd>{{ form.controls.is_private.value ? 'Private' : 'Public' }}</dd>
@@ -592,6 +732,13 @@ export class CompetitionCreatePage implements OnInit {
       icon: 'sparkles-outline',
     },
   ];
+
+  readonly versusFormats = this.formats.filter((option) => option.value !== 'freeform');
+
+  readonly winPoints = signal('3');
+  readonly drawPoints = signal('1');
+  readonly lossPoints = signal('0');
+  readonly versusEntrants = signal<'team' | 'individual'>('team');
 
   readonly presets = signal<Preset[]>([]);
   readonly selectedPreset = signal<string>('custom');
@@ -680,9 +827,24 @@ export class CompetitionCreatePage implements OnInit {
     }
   }
 
+  setCustomMode(mode: 'points' | 'versus'): void {
+    if (mode === 'versus') {
+      this.scoringBasis.set('results');
+      if (this.form.controls.format.value === 'freeform') {
+        this.form.controls.format.setValue('league');
+      }
+      return;
+    }
+    this.scoringBasis.set('criteria');
+    this.form.controls.format.setValue('freeform');
+    this.form.controls.match_weekdays.setValue([]);
+  }
+
   formatHint(): string {
     if (this.isCustom()) {
-      return 'Custom competitions collect points. They do not use a match schedule.';
+      return this.pointsTable()
+        ? 'Choose how the table is built. Points accumulation collects points without a match schedule.'
+        : 'Choose how the table is built. A VS competition plays fixtures and ranks on match results.';
     }
     if (this.scoringLocked()) {
       return 'This follows the official structure for the preset. It cannot be changed.';
@@ -879,6 +1041,16 @@ export class CompetitionCreatePage implements OnInit {
         sport: raw.sport.trim(),
         format: raw.format,
         ...(locked ? {} : { scoring_basis: this.scoringBasis(), scoring_categories }),
+        ...(this.isCustom() && !this.pointsTable()
+          ? {
+              participant_type: this.versusEntrants(),
+              league_points: {
+                win: Number(this.winPoints() || 0),
+                draw: Number(this.drawPoints() || 0),
+                loss: Number(this.lossPoints() || 0),
+              },
+            }
+          : {}),
         is_private: raw.is_private,
         starts_on: raw.starts_on || null,
         ends_on: raw.ends_on || null,

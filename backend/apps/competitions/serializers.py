@@ -26,6 +26,48 @@ from .models import (
 from .presets import PRESETS, SCORING_LOCKED_MESSAGE, apply_preset, scoring_is_locked
 
 
+def _validate_game_time(settings: dict, instance) -> None:
+    """A time limit, once set, stays set. Overtime can be 0, which removes it."""
+
+    current = (getattr(instance, "settings_json", None) or {}) if instance is not None else {}
+    for key in ("time_limit_minutes", "overtime_minutes"):
+        if key not in settings and key in current:
+            settings[key] = current[key]
+
+    if "time_limit_minutes" in settings:
+        try:
+            limit = int(settings["time_limit_minutes"])
+        except (TypeError, ValueError):
+            limit = 0
+        if limit < 1:
+            raise serializers.ValidationError(
+                {"settings_json": "A game needs a time limit of at least 1 minute."}
+            )
+        settings["time_limit_minutes"] = limit
+    if "overtime_minutes" in settings:
+        raw = settings["overtime_minutes"]
+        try:
+            overtime = 0 if raw in (None, "") else int(raw)
+        except (TypeError, ValueError):
+            overtime = -1
+        if overtime < 0:
+            raise serializers.ValidationError(
+                {"settings_json": "Overtime cannot be negative. Use 0 for no overtime."}
+            )
+        settings["overtime_minutes"] = overtime
+
+
+def _apply_game_time_to_unstarted(competition) -> None:
+    from apps.fixtures.models import Fixture
+
+    from .presets import default_game_time
+
+    limit, overtime = default_game_time(competition.settings_json)
+    competition.fixtures.filter(
+        status__in=[Fixture.Status.SCHEDULED, Fixture.Status.POSTPONED]
+    ).update(duration_minutes=limit, overtime_minutes=overtime)
+
+
 def _preset_locks_scoring(preset_key: str | None) -> bool:
     if not preset_key or preset_key == "custom":
         return False
@@ -385,6 +427,11 @@ class ParticipantSerializer(serializers.ModelSerializer):
     member_ids = serializers.ListField(
         child=serializers.UUIDField(), write_only=True, required=False
     )
+    user = serializers.UUIDField(
+        write_only=True,
+        required=False,
+        help_text="The profile entering, for competitions whose individuals are profiles.",
+    )
 
     class Meta:
         model = Participant
@@ -404,7 +451,9 @@ class ParticipantSerializer(serializers.ModelSerializer):
             "pending_count",
             "pending_user_ids",
             "member_ids",
+            "user",
         ]
+        extra_kwargs = {"name": {"required": False}}
 
     def _pending_picks(self, obj: Participant):
         cached = getattr(obj, "_prefetched_objects_cache", {}).get("picks")
@@ -439,19 +488,26 @@ class ParticipantSerializer(serializers.ModelSerializer):
     def validate(self, attrs: dict) -> dict:
         entrant_type = self._entrant_type()
         allowed = self._allowed_entrants()
+        competition = self.context.get("competition")
+        named = bool((attrs.get("name") or "").strip())
         if self.instance is None and "individual" in allowed and "pair" in allowed:
             member_ids = list(dict.fromkeys(attrs.get("member_ids") or []))
             if len(member_ids) == 2:
+                if not named:
+                    raise serializers.ValidationError({"name": "Name the pair."})
                 attrs["kind"] = Participant.Kind.TEAM
                 attrs["member_ids"] = member_ids
                 return attrs
             attrs["kind"] = Participant.Kind.INDIVIDUAL
             attrs.pop("member_ids", None)
-            return attrs
+            return _as_profile_entrant(competition, attrs)
         if self.instance is None and entrant_type == "individual":
             attrs["kind"] = Participant.Kind.INDIVIDUAL
             attrs.pop("member_ids", None)
-            return attrs
+            return _as_profile_entrant(competition, attrs)
+        attrs.pop("user", None)
+        if self.instance is None and not named:
+            raise serializers.ValidationError({"name": "Give the entrant a name."})
         if self.instance is None and entrant_type == "pair":
             attrs["kind"] = Participant.Kind.TEAM
             attrs.pop("member_ids", None)
@@ -492,8 +548,14 @@ class ParticipantSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data: dict) -> Participant:
         member_ids = [str(value) for value in validated_data.pop("member_ids", []) or []]
+        entrant_user = validated_data.pop("entrant_user", None)
+        validated_data.pop("user", None)
         with transaction.atomic():
+            if entrant_user is not None:
+                validated_data["managed_by"] = entrant_user
             participant = super().create(validated_data)
+            if entrant_user is not None:
+                _enter_profile(participant, entrant_user, self.context["request"].user)
             if member_ids:
                 actor = self.context["request"].user
                 users = {str(user.id): user for user in User.objects.filter(id__in=member_ids)}
@@ -507,7 +569,65 @@ class ParticipantSerializer(serializers.ModelSerializer):
 
     def update(self, instance: Participant, validated_data: dict) -> Participant:
         validated_data.pop("member_ids", None)
+        validated_data.pop("user", None)
         return super().update(instance, validated_data)
+
+
+def _as_profile_entrant(competition, attrs: dict) -> dict:
+    """An individual entrant is a profile: its name comes from the profile."""
+
+    attrs["entrant_user"] = _profile_entrant(competition, attrs.pop("user", None))
+    attrs["name"] = _entrant_name(competition, attrs["entrant_user"])
+    return attrs
+
+
+def _profile_entrant(competition, user_id):
+    """The profile entering an individual competition, once per competition."""
+
+    if not user_id:
+        raise serializers.ValidationError({"user": "Search for a profile and choose who is entering."})
+    user = User.objects.filter(pk=user_id, is_active=True).first()
+    if user is None:
+        raise serializers.ValidationError({"user": "Choose a profile that exists."})
+    entered = RosterMember.objects.filter(
+        participant__competition=competition, user=user
+    ).exists() or competition.participants.filter(managed_by=user).exists()
+    if entered:
+        raise serializers.ValidationError({"user": "That profile is already in this competition."})
+    return user
+
+
+def _entrant_name(competition, user) -> str:
+    name = (user.get_full_name() or user.email).strip()
+    if competition.participants.filter(name=name).exists():
+        name = f"{name} ({user.email})"
+    return name[:200]
+
+
+def _enter_profile(participant: Participant, user, actor) -> RosterMember:
+    """Make the profile a member and link it to its entrant so events name them."""
+
+    membership = Membership.objects.filter(competition=participant.competition, user=user).first()
+    if membership is None:
+        invited_by = actor if getattr(actor, "is_authenticated", False) else None
+        Membership.objects.create(
+            competition=participant.competition,
+            user=user,
+            role=Role.MEMBER,
+            invited_by=invited_by,
+        )
+    elif membership.role in (Role.OWNER, Role.ADMIN):
+        if getattr(actor, "id", None) != user.id:
+            raise serializers.ValidationError(
+                {"user": "An admin can only enter themselves."}
+            )
+    elif membership.role != Role.MEMBER:
+        raise serializers.ValidationError(
+            {"user": f"{user.get_full_name()} scores this competition and cannot enter it."}
+        )
+    return RosterMember.objects.create(
+        participant=participant, user=user, name=user.get_full_name() or user.email
+    )
 
 
 class MembershipSerializer(serializers.ModelSerializer):
@@ -624,6 +744,25 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         write_only=True,
         help_text="results scores fixtures as win/draw/loss. criteria sums the scoring criteria.",
     )
+    league_points = serializers.DictField(
+        child=serializers.DecimalField(max_digits=6, decimal_places=2),
+        required=False,
+        write_only=True,
+        help_text="Custom VS competitions only: table points for a win, draw and loss.",
+    )
+
+    participant_type = serializers.ChoiceField(
+        choices=["team", "individual"],
+        required=False,
+        write_only=True,
+        help_text="Custom VS competitions only: whether teams or individuals play each other.",
+    )
+
+    def validate_league_points(self, value: dict) -> dict:
+        unknown = set(value) - {"win", "draw", "loss"}
+        if unknown:
+            raise serializers.ValidationError("Use win, draw and loss.")
+        return value
 
     class Meta:
         model = Competition
@@ -646,6 +785,8 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
             "preset",
             "scoring_categories",
             "scoring_basis",
+            "league_points",
+            "participant_type",
         ]
         read_only_fields = ["id", "slug"]
 
@@ -678,9 +819,23 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
                 raise PermissionDenied(SCORING_LOCKED_MESSAGE)
             if attrs.get("scoring_basis"):
                 raise PermissionDenied(SCORING_LOCKED_MESSAGE)
+        settings = attrs.get("settings_json")
+        if isinstance(settings, dict):
+            _validate_game_time(settings, self.instance)
         return attrs
 
     def update(self, instance: Competition, validated_data: dict) -> Competition:
+        before = (instance.settings_json or {}).copy()
+        competition = self._update(instance, validated_data)
+        after = competition.settings_json or {}
+        if any(
+            before.get(key) != after.get(key)
+            for key in ("time_limit_minutes", "overtime_minutes")
+        ):
+            _apply_game_time_to_unstarted(competition)
+        return competition
+
+    def _update(self, instance: Competition, validated_data: dict) -> Competition:
         if scoring_is_locked(instance) and "settings_json" in validated_data:
             current = dict(instance.settings_json or {})
             incoming = dict(validated_data.get("settings_json") or {})
@@ -712,12 +867,17 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         preset_key = validated_data.pop("preset", None)
         custom_categories = validated_data.pop("scoring_categories", None)
         scoring_basis = validated_data.pop("scoring_basis", None)
+        league_points = validated_data.pop("league_points", None)
+        participant_type = validated_data.pop("participant_type", None)
         user = self.context["request"].user
 
-        if preset_key == "custom":
+        versus = preset_key == "custom" and scoring_basis == "results"
+        if preset_key == "custom" and not versus:
             scoring_basis = "criteria"
             validated_data["match_weekdays"] = []
             validated_data["format"] = "freeform"
+        if versus and validated_data.get("format") in (None, "", "freeform"):
+            validated_data["format"] = "league"
 
         if preset_key and not validated_data.get("sport"):
             validated_data["sport"] = PRESETS[preset_key]["sport"]
@@ -763,6 +923,23 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
             settings = dict(competition.settings_json or {})
             settings["scoring_basis"] = scoring_basis
             settings["table_mode"] = "points" if scoring_basis == "criteria" else "head_to_head"
+            if versus:
+                points = {"win": 3, "draw": 1, "loss": 0, **(league_points or {})}
+                settings["contest_type"] = "head_to_head"
+                settings["participant_type"] = participant_type or "team"
+                settings["participant_types"] = [settings["participant_type"]]
+                if settings["participant_type"] == "individual":
+                    settings["profile_entrants"] = True
+                settings["league_points"] = {key: float(value) for key, value in points.items()}
+                settings["formats_allowed"] = ["league", "knockout", "groups_knockout", "ladder"]
+                PointsPolicy.objects.update_or_create(
+                    competition=competition,
+                    defaults={
+                        "win_points": points["win"],
+                        "draw_points": points["draw"],
+                        "loss_points": points["loss"],
+                    },
+                )
             competition.settings_json = settings
             competition.save(update_fields=["settings_json", "updated_at"])
 

@@ -58,8 +58,22 @@
         letter-spacing: 0.04em;
         text-transform: uppercase;
         cursor: pointer;
+
+        &:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
       }
     }
+  }
+
+  .kickoff-problems {
+    margin: 0 0 14px;
+    padding: 10px 12px 10px 28px;
+    border-radius: 10px;
+    background: rgb(255 255 255 / 0.16);
+    font-size: 0.82rem;
+    line-height: 1.5;
   }
 
   .line {
@@ -381,6 +395,50 @@
   margin: 0 20px 12px;
   color: var(--ion-color-medium);
   font-size: 0.85rem;
+}
+
+.game-time {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0 16px 16px;
+
+  label {
+    display: grid;
+    gap: 4px;
+    font-size: 0.75rem;
+    font-weight: 650;
+    color: var(--ion-color-medium);
+  }
+
+  input {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--ion-color-step-200, #d7d8da);
+    font: inherit;
+    color: inherit;
+  }
+
+  .actions {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 8px;
+  }
+
+  button {
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--ion-color-primary);
+    color: var(--ion-color-primary-contrast);
+    font: inherit;
+    font-weight: 650;
+  }
+
+  button.secondary {
+    background: var(--ion-color-light);
+    color: inherit;
+  }
 }
 
 .referees {

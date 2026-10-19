@@ -472,7 +472,8 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
                 row.draws += 1
                 row.points += no_result_points
             continue
-        if any(side.outcome == FixtureSide.Outcome.PENDING for side in sides):
+        # A one-entrant fixture is an awarded criterion; it has no opponent to beat.
+        if len(sides) > 1 and any(side.outcome == FixtureSide.Outcome.PENDING for side in sides):
             continue
         if placing and len(sides) >= 2:
             lower = _performance_is_lower(settings, fixture)

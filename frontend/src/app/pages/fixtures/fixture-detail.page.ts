@@ -4,6 +4,7 @@ import {
   DestroyRef,
   OnDestroy,
   OnInit,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -104,7 +105,7 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
                   <span class="chip">Overtime</span>
                 }
                 @if (canScore()) {
-                  <button type="button" (click)="startOrPause()">
+                  <button type="button" [disabled]="kickoffBlocked()" (click)="startOrPause()">
                     {{ clockButtonLabel() }}
                   </button>
                   @if (canEndGame()) {
@@ -113,7 +114,16 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
                 }
               </div>
             }
+            <span class="kickoff">{{ gameTimeLabel() }}</span>
           </div>
+
+          @if (kickoffBlocked()) {
+            <ul class="kickoff-problems">
+              @for (problem of fx.kickoff_problems; track problem) {
+                <li>{{ problem }}</li>
+              }
+            </ul>
+          }
 
           <div class="line">
             @for (side of fx.sides; track side.id) {
@@ -153,8 +163,44 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
         }
 
         @if (canManage()) {
+          <h3 class="fm-section-title">Game time</h3>
+          <p class="hint">
+            A time limit is required before kickoff. Overtime is optional; remove it for a game that ends at full time.
+          </p>
+          <form class="game-time" (submit)="saveGameTime($event)">
+            <label>
+              Time limit (minutes)
+              <input
+                type="number"
+                min="1"
+                required
+                [value]="timeLimitDraft()"
+                (input)="timeLimitDraft.set($any($event.target).value)"
+              />
+            </label>
+            <label>
+              Overtime (minutes)
+              <input
+                type="number"
+                min="0"
+                [value]="overtimeDraft()"
+                (input)="overtimeDraft.set($any($event.target).value)"
+              />
+            </label>
+            <div class="actions">
+              <button type="submit" [disabled]="saving()">Save</button>
+              @if ((fx.overtime_minutes ?? 0) > 0) {
+                <button type="button" class="secondary" [disabled]="saving()" (click)="removeOvertime()">
+                  Remove overtime
+                </button>
+              }
+            </div>
+          </form>
+
           <h3 class="fm-section-title">Referee</h3>
-          <p class="hint">The referee scores this game. An admin can still score it too.</p>
+          <p class="hint">
+            Every game needs a referee before kickoff. The referee scores this game; an admin can still score it too.
+          </p>
           <div class="referees">
             @for (referee of fx.referees ?? []; track referee.id) {
               <div class="referee">
@@ -238,7 +284,7 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
                     <button
                       type="button"
                       class="chip-button"
-                      [disabled]="saving()"
+                      [disabled]="saving() || kickoffBlocked()"
                       (click)="record(side, category)"
                     >
                       <span class="label">{{ category.name }}</span>
@@ -366,6 +412,21 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   readonly gameRatings = signal<Record<string, string>>({});
   readonly profiles = signal<ProfileSummary[]>([]);
   readonly refereeQuery = signal('');
+  readonly timeLimitDraft = signal('');
+  readonly overtimeDraft = signal('');
+  private syncedGameTime = '';
+
+  constructor() {
+    effect(() => {
+      const fixture = this.fixture();
+      if (!fixture) return;
+      const key = `${fixture.id}:${fixture.duration_minutes}:${fixture.overtime_minutes}`;
+      if (key === this.syncedGameTime) return;
+      this.syncedGameTime = key;
+      this.timeLimitDraft.set(fixture.duration_minutes ? String(fixture.duration_minutes) : '');
+      this.overtimeDraft.set(String(fixture.overtime_minutes ?? 0));
+    });
+  }
 
   private tickHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -422,11 +483,61 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   }
 
   timeLimits(): { regulation: number; overtime: number } | null {
+    const fixture = this.fixture();
     const settings = this.competition()?.settings_json ?? {};
-    const regulation = Number(settings['time_limit_minutes']);
-    const overtime = Number(settings['overtime_minutes'] ?? 0);
+    const regulation = Number(fixture?.duration_minutes ?? settings['time_limit_minutes']);
+    const overtime = Number(fixture?.overtime_minutes ?? settings['overtime_minutes'] ?? 0);
     if (!Number.isFinite(regulation) || regulation <= 0) return null;
     return { regulation, overtime: Number.isFinite(overtime) && overtime > 0 ? overtime : 0 };
+  }
+
+  /** A scheduled game cannot start until it has a time limit and a referee. */
+  kickoffBlocked(): boolean {
+    const fixture = this.fixture();
+    return fixture?.status === 'scheduled' && (fixture.kickoff_problems?.length ?? 0) > 0;
+  }
+
+  gameTimeLabel(): string {
+    const limits = this.timeLimits();
+    if (!limits) return 'No time limit set';
+    return limits.overtime > 0
+      ? `${limits.regulation} min + ${limits.overtime} overtime`
+      : `${limits.regulation} min · no overtime`;
+  }
+
+  saveGameTime(event: Event): void {
+    event.preventDefault();
+    const limit = Number(this.timeLimitDraft());
+    const overtime = Number(this.overtimeDraft() || 0);
+    if (!Number.isInteger(limit) || limit < 1) {
+      void this.showToast('Enter a time limit of at least 1 minute.', 'danger');
+      return;
+    }
+    if (!Number.isInteger(overtime) || overtime < 0) {
+      void this.showToast('Overtime cannot be negative. Use 0 for no overtime.', 'danger');
+      return;
+    }
+    this.updateGameTime({ duration_minutes: limit, overtime_minutes: overtime }, 'Game time saved.');
+  }
+
+  removeOvertime(): void {
+    this.updateGameTime({ overtime_minutes: 0 }, 'Overtime removed for this game.');
+  }
+
+  private updateGameTime(body: Record<string, number>, message: string): void {
+    if (this.saving()) return;
+    this.saving.set(true);
+    this.api.updateFixture(this.competitionId, this.fixtureId, body).subscribe({
+      next: async () => {
+        this.saving.set(false);
+        this.reloadFixture();
+        await this.showToast(message, 'success');
+      },
+      error: async (err: unknown) => {
+        this.saving.set(false);
+        await this.showToast(extractErrorMessage(err, 'Could not save the game time.'), 'danger');
+      },
+    });
   }
 
   inOvertime(): boolean {
@@ -490,6 +601,12 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     }
   }
 
+  private resetClock(): void {
+    const empty: MatchClock = { running: false, elapsedMs: 0, runStartedAt: null };
+    this.clock.set(empty);
+    localStorage.removeItem(clockKey(this.fixtureId));
+  }
+
   private pauseClock(): void {
     const next: MatchClock = {
       running: false,
@@ -520,6 +637,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
 
     this.api.getFixture(this.competitionId, this.fixtureId).subscribe({
       next: (fixture) => {
+        if (fixture.status === 'scheduled') this.resetClock();
         this.fixture.set(fixture);
         this.loading.set(false);
       },
@@ -648,7 +766,11 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   }
 
   scorerFor(sideId: string): string {
-    return this.scorers()[sideId] ?? '';
+    const chosen = this.scorers()[sideId];
+    if (chosen) return chosen;
+    const side = this.fixture()?.sides.find((item) => item.id === sideId);
+    const roster = side ? this.rosterFor(side) : [];
+    return roster.length === 1 ? roster[0].id : '';
   }
 
   ratingFor(sideId: string): string {

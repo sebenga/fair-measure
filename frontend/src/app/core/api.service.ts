@@ -156,7 +156,7 @@ export class ApiService {
 
   createParticipant(
     competitionId: string,
-    body: Partial<Participant> & { member_ids?: string[] },
+    body: Partial<Participant> & { member_ids?: string[]; user?: string },
   ) {
     return this.http.post<Participant>(
       `${this.base}/competitions/${competitionId}/participants`,

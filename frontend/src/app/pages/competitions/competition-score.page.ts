@@ -104,7 +104,7 @@ import { isPointsTable } from '../../core/models';
             </ion-item>
             <ion-item>
               <ion-textarea
-                label="How these points were accumulated"
+                label="How these points were accumulated (required)"
                 labelPlacement="stacked"
                 [(ngModel)]="note"
                 name="note"

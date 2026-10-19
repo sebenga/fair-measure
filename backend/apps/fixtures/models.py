@@ -47,7 +47,10 @@ class Fixture(BaseModel):
         max_length=160, blank=True, help_text=_("e.g. 'Quarter-final 1' or 'Week 3'.")
     )
     scheduled_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # The game's time limit. A game cannot kick off without one.
     duration_minutes = models.PositiveIntegerField(null=True, blank=True)
+    # 0 means an admin removed overtime for this game.
+    overtime_minutes = models.PositiveIntegerField(null=True, blank=True)
     location = models.CharField(max_length=240, blank=True)
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.SCHEDULED, db_index=True
@@ -73,6 +76,27 @@ class Fixture(BaseModel):
     def __str__(self) -> str:
         names = " v ".join(side.participant.name for side in self.sides.all()[:4])
         return names or f"Fixture {self.id}"
+
+    def save(self, *args, **kwargs) -> None:
+        if self._state.adding and (self.duration_minutes is None or self.overtime_minutes is None):
+            from apps.competitions.presets import default_game_time
+
+            limit, overtime = default_game_time(self.competition.settings_json)
+            if self.duration_minutes is None:
+                self.duration_minutes = limit
+            if self.overtime_minutes is None:
+                self.overtime_minutes = overtime
+        super().save(*args, **kwargs)
+
+    def kickoff_problems(self) -> list[str]:
+        """What still has to be set before this game can start."""
+
+        problems = []
+        if not self.duration_minutes:
+            problems.append("Set this game's time limit before kickoff.")
+        if not self.referees.exists():
+            problems.append("Assign a referee before kickoff.")
+        return problems
 
     @property
     def is_counted(self) -> bool:

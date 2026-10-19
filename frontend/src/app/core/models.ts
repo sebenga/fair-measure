@@ -251,11 +251,24 @@ export interface Fixture {
   label: string;
   scheduled_at: string | null;
   duration_minutes: number | null;
+  overtime_minutes: number | null;
   location: string;
   status: FixtureStatus;
   sides: FixtureSide[];
+  highlights?: FixtureHighlight[];
   started_at: string | null;
   completed_at: string | null;
+}
+
+export interface FixtureHighlight {
+  id: string;
+  side: string;
+  minute: number | null;
+  /** goal-like scores are "score"; cards are their colour. */
+  kind: 'score' | 'own_goal' | 'yellow' | 'red' | 'green' | string;
+  label: string;
+  player_name: string;
+  created_at: string;
 }
 
 export interface MatchRating {
@@ -271,6 +284,7 @@ export interface FixtureDetail extends Fixture {
   events: ScoreEvent[];
   ratings: MatchRating[];
   referees: Array<{ id: string; display_name: string; email: string }>;
+  kickoff_problems: string[];
   created_at: string;
 }
 

@@ -182,8 +182,47 @@ class ScoreEventSerializer(serializers.ModelSerializer):
         return event
 
 
+_HIGHLIGHT_CODES = _PROFILE_EVENT_CODES | {"try", "penalty-try"}
+
+
+def _highlight_kind(category) -> str | None:
+    """The live-ticker type for an event, or None when it is too routine to list."""
+
+    code = (category.code or "").strip().lower()
+    if code.endswith("-card"):
+        return code.removesuffix("-card")
+    if code == "own-goal":
+        return "own_goal"
+    if code in _HIGHLIGHT_CODES or _event_needs_profile(category):
+        return "score"
+    return None
+
+
 class FixtureListSerializer(serializers.ModelSerializer):
     sides = FixtureSideSerializer(many=True, read_only=True)
+    highlights = serializers.SerializerMethodField()
+
+    def get_highlights(self, obj) -> list[dict]:
+        if obj.status == Fixture.Status.SCHEDULED:
+            return []
+        rows = []
+        for event in obj.events.all():
+            kind = _highlight_kind(event.scoring_category)
+            if kind is None:
+                continue
+            rows.append(
+                {
+                    "id": str(event.id),
+                    "side": str(event.side_id),
+                    "minute": event.minute,
+                    "kind": kind,
+                    "label": event.scoring_category.name,
+                    "player_name": event.player_name,
+                    "created_at": event.created_at,
+                }
+            )
+        rows.sort(key=lambda row: (row["minute"] is None, row["minute"] or 0, row["created_at"]))
+        return rows
 
     class Meta:
         model = Fixture
@@ -195,9 +234,11 @@ class FixtureListSerializer(serializers.ModelSerializer):
             "label",
             "scheduled_at",
             "duration_minutes",
+            "overtime_minutes",
             "location",
             "status",
             "sides",
+            "highlights",
             "started_at",
             "completed_at",
         ]
@@ -218,6 +259,7 @@ class FixtureDetailSerializer(FixtureListSerializer):
     events = ScoreEventSerializer(many=True, read_only=True)
     ratings = PlayerMatchRatingSerializer(many=True, read_only=True)
     referees = serializers.SerializerMethodField()
+    kickoff_problems = serializers.SerializerMethodField()
 
     class Meta(FixtureListSerializer.Meta):
         fields = [
@@ -226,8 +268,14 @@ class FixtureDetailSerializer(FixtureListSerializer):
             "events",
             "ratings",
             "referees",
+            "kickoff_problems",
             "created_at",
         ]
+
+    def get_kickoff_problems(self, obj) -> list[str]:
+        if obj.status != Fixture.Status.SCHEDULED:
+            return []
+        return obj.kickoff_problems()
 
     def get_referees(self, obj) -> list[dict]:
         rows = obj.referees.all()
@@ -253,12 +301,18 @@ class FixtureWriteSerializer(serializers.ModelSerializer):
             "label",
             "scheduled_at",
             "duration_minutes",
+            "overtime_minutes",
             "location",
             "status",
             "notes",
             "sides",
         ]
         read_only_fields = ["id"]
+
+    def validate_duration_minutes(self, value: int | None) -> int | None:
+        if value is None or value < 1:
+            raise serializers.ValidationError("A game needs a time limit of at least 1 minute.")
+        return value
 
     def validate_sides(self, sides: list[dict]) -> list[dict]:
         competition = self.context["competition"]

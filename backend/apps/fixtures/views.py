@@ -52,6 +52,12 @@ def user_can_score_fixture(fixture: Fixture, user) -> bool:
     return has_at_least(fixture.competition, user, Role.SCORER)
 
 
+def _assert_ready_for_kickoff(fixture: Fixture) -> None:
+    problems = fixture.kickoff_problems()
+    if problems:
+        raise ValidationError(" ".join(problems))
+
+
 from .services import ScheduleOptions, award_criterion, generate_knockout, generate_round_robin, record_result
 
 
@@ -113,7 +119,7 @@ class FixtureViewSet(viewsets.ModelViewSet):
         queryset = (
             Fixture.objects.filter(competition=self.get_competition())
             .select_related("stage")
-            .prefetch_related("sides__participant")
+            .prefetch_related("sides__participant", "events__scoring_category")
         )
         params = self.request.query_params
         if participant_id := params.get("participant"):
@@ -155,6 +161,8 @@ class FixtureViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer) -> None:
         self._assert_can_score()
+        if {"duration_minutes", "overtime_minutes"} & set(serializer.validated_data):
+            self._assert_is_admin()
         serializer.save()
         self._broadcast(serializer.instance, "fixture.updated")
 
@@ -283,6 +291,8 @@ class FixtureViewSet(viewsets.ModelViewSet):
         serializer = FixtureStatusSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         new_status = serializer.validated_data["status"]
+        if new_status == Fixture.Status.LIVE and fixture.status == Fixture.Status.SCHEDULED:
+            _assert_ready_for_kickoff(fixture)
 
         with transaction.atomic():
             fixture.status = new_status
@@ -348,6 +358,8 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer) -> None:
         self._assert_can_score()
         fixture = self.get_fixture()
+        if fixture.status == Fixture.Status.SCHEDULED:
+            _assert_ready_for_kickoff(fixture)
         with transaction.atomic():
             serializer.save(fixture=fixture, recorded_by=self.request.user)
             if fixture.status == Fixture.Status.SCHEDULED:
@@ -383,6 +395,8 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
     def bulk(self, request: Request, **kwargs) -> Response:
         self._assert_can_score()
         fixture = self.get_fixture()
+        if fixture.status == Fixture.Status.SCHEDULED:
+            _assert_ready_for_kickoff(fixture)
 
         serializer = BulkScoreEventSerializer(
             data=request.data, context=self.get_serializer_context()

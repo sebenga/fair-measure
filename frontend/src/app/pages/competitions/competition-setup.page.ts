@@ -128,8 +128,14 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
             @if (entrantKind() !== 'team' || teamEntry()) {
               <form class="add-row" (submit)="addParticipant($event)">
                 <p class="hint">
-                  @if (entrantKind() === 'individual') {
+                  @if (profileEntrants() && pointsTable()) {
+                    Search for a profile and add them. Each profile enters once, and the table ranks them on their total.
+                  } @else if (profileEntrants()) {
+                    Search for a profile and add them. Each profile enters once, plays the others, and the table ranks them on match results.
+                  } @else if (entrantKind() === 'individual' && pointsTable()) {
                     Add each person by name. The table ranks them on their total.
+                  } @else if (entrantKind() === 'individual') {
+                    Add each person by name. They play each other, and the table ranks them on match results.
                   } @else if (entrantKind() === 'pair') {
                     Name the pair first. Open it and pick two profiles. Each person accepts before they are in.
                   } @else if (teamEntry() === 'draft') {
@@ -162,21 +168,47 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
                     }
                   </ion-list>
                 }
-                <div class="add-name">
-                  <ion-input
-                    [(ngModel)]="newParticipantName"
-                    name="participant"
-                    [placeholder]="entrantKind() === 'individual' ? 'Player name' : 'Team name'"
-                    maxlength="200"
+                @if (profileEntrants()) {
+                  <ion-searchbar
+                    placeholder="Search profiles"
+                    [debounce]="150"
+                    (ionInput)="profileQuery.set($any($event.detail.value) ?? '')"
                   />
-                  <ion-button
-                    type="submit"
-                    size="small"
-                    [disabled]="!canAddParticipant() || busy()"
-                  >
-                    Add
-                  </ion-button>
-                </div>
+                  <ion-list class="profiles" lines="none">
+                    @for (profile of visibleProfiles(); track profile.id) {
+                      <ion-item>
+                        <ion-label>
+                          <h2>{{ profile.display_name || profile.email }}</h2>
+                          <p>{{ profileNote(profile) }}</p>
+                        </ion-label>
+                        <ion-button
+                          slot="end"
+                          size="small"
+                          [disabled]="profileBlocked(profile.id) || busy()"
+                          (click)="addProfileEntrant(profile)"
+                        >
+                          Add
+                        </ion-button>
+                      </ion-item>
+                    }
+                  </ion-list>
+                } @else {
+                  <div class="add-name">
+                    <ion-input
+                      [(ngModel)]="newParticipantName"
+                      name="participant"
+                      [placeholder]="entrantKind() === 'individual' ? 'Player name' : 'Team name'"
+                      maxlength="200"
+                    />
+                    <ion-button
+                      type="submit"
+                      size="small"
+                      [disabled]="!canAddParticipant() || busy()"
+                    >
+                      Add
+                    </ion-button>
+                  </div>
+                }
               </form>
             }
 
@@ -237,9 +269,9 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
                 <h3>No entrants yet</h3>
                 <p>
                   @if (pointsTable()) {
-                    Add the teams who will score into the table.
+                    Add the {{ entrantKind() === 'individual' ? 'people' : 'teams' }} who will score into the table.
                   } @else {
-                    Add at least two teams before generating a schedule.
+                    Add at least two {{ entrantKind() === 'individual' ? 'players' : 'teams' }} before generating a schedule.
                   }
                 </p>
               </div>
@@ -255,6 +287,8 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
                           @if (participant.pending_count) {
                             · {{ participant.pending_count }} waiting
                           }
+                        } @else if (profileEntrants()) {
+                          {{ participant.roster[0]?.user ? 'Player profile' : 'No profile linked' }}
                         } @else {
                           {{ participant.roster.length }}
                           {{ participant.roster.length === 1 ? 'member' : 'members' }}
@@ -592,26 +626,46 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials';
           @case ('officials') {
             <h3 class="fm-section-title">Game time</h3>
             <p class="hint">
-              Set the time limit for a game, then how long overtime lasts. End game appears on the match once overtime is over.
+              Every game needs a time limit and a referee before kickoff. Overtime is optional: set it to 0
+              or remove it. Saving applies to every game that has not started; an admin can still change one
+              game on its match page.
             </p>
             <form class="add-row" (submit)="saveTimeLimits($event)">
               <ion-input
                 type="number"
                 inputmode="numeric"
                 min="1"
+                required
+                label="Time limit (required)"
+                labelPlacement="stacked"
                 [(ngModel)]="timeLimit"
                 name="timeLimit"
-                placeholder="Time limit in minutes"
+                placeholder="Minutes"
               />
               <ion-input
                 type="number"
                 inputmode="numeric"
                 min="0"
+                label="Overtime"
+                labelPlacement="stacked"
                 [(ngModel)]="overtimeLimit"
                 name="overtime"
-                placeholder="Overtime in minutes"
+                placeholder="0 for none"
               />
-              <ion-button type="submit" size="small" [disabled]="busy() || !canManage()">Save</ion-button>
+              <ion-button type="submit" size="small" [disabled]="busy() || !canManage() || !timeLimit">
+                Save
+              </ion-button>
+              @if (canManage() && overtimeLimit && overtimeLimit !== '0') {
+                <ion-button
+                  type="button"
+                  size="small"
+                  fill="outline"
+                  [disabled]="busy()"
+                  (click)="removeOvertime()"
+                >
+                  Remove overtime
+                </ion-button>
+              }
             </form>
 
             <h3 class="fm-section-title">Admins</h3>
@@ -773,7 +827,7 @@ export class CompetitionSetupPage implements OnInit {
         this.timeLimit = limit === undefined || limit === null ? '' : String(limit);
         this.overtimeLimit = overtime === undefined || overtime === null ? '' : String(overtime);
         this.loading.set(false);
-        if (this.teamEntry() === 'draft' || this.teamEntry() === 'pick') {
+        if (this.teamEntry() === 'draft' || this.teamEntry() === 'pick' || this.profileEntrants()) {
           this.ensureProfiles();
         }
         if (this.teamEntry() === 'draft') this.loadDraft();
@@ -806,6 +860,28 @@ export class CompetitionSetupPage implements OnInit {
     const value = this.competition()?.settings_json?.['participant_type'];
     if (value === 'individual' || value === 'pair') return value;
     return 'team';
+  }
+
+  /** Individuals here are profiles, picked from a search rather than typed in. */
+  profileEntrants(): boolean {
+    return this.entrantKind() === 'individual';
+  }
+
+  addProfileEntrant(profile: ProfileSummary): void {
+    if (this.profileBlocked(profile.id) || this.busy()) return;
+    this.busy.set(true);
+    this.api
+      .createParticipant(this.competitionId, { kind: 'individual', user: profile.id })
+      .subscribe({
+        next: (participant) => {
+          this.participants.update((current) => [...current, participant]);
+          this.busy.set(false);
+        },
+        error: async (err: unknown) => {
+          this.busy.set(false);
+          await this.toast(extractErrorMessage(err, 'Could not add that profile.'), 'danger');
+        },
+      });
   }
 
   teamEntry(): 'pick' | 'draft' | null {
@@ -882,7 +958,9 @@ export class CompetitionSetupPage implements OnInit {
   }
 
   profileNote(profile: ProfileSummary): string {
-    if (this.reservedIds().has(profile.id)) return 'Already picked in this league';
+    if (this.reservedIds().has(profile.id)) {
+      return this.profileEntrants() ? 'Already entered' : 'Already picked in this league';
+    }
     return profile.email;
   }
 
@@ -934,6 +1012,11 @@ export class CompetitionSetupPage implements OnInit {
     });
   }
 
+  removeOvertime(): void {
+    this.overtimeLimit = '0';
+    this.saveTimeLimits(new Event('submit'));
+  }
+
   saveTimeLimits(event: Event): void {
     event.preventDefault();
     const competition = this.competition();
@@ -945,7 +1028,7 @@ export class CompetitionSetupPage implements OnInit {
       return;
     }
     if (!Number.isFinite(overtime) || overtime < 0) {
-      void this.toast('Overtime cannot be negative.', 'danger');
+      void this.toast('Overtime cannot be negative. Use 0 for no overtime.', 'danger');
       return;
     }
     this.busy.set(true);
@@ -964,7 +1047,11 @@ export class CompetitionSetupPage implements OnInit {
           current ? { ...current, settings_json: settingsJson } : current,
         );
         this.busy.set(false);
-        void this.toast('Game time saved.', 'success');
+        this.overtimeLimit = String(overtime);
+        void this.toast(
+          overtime > 0 ? 'Game time saved for games not yet started.' : 'Overtime removed for games not yet started.',
+          'success',
+        );
       },
       error: async (err: unknown) => {
         this.busy.set(false);
@@ -1052,6 +1139,11 @@ export class CompetitionSetupPage implements OnInit {
   }
 
   openTeam(participant: Participant): void {
+    const profileId = this.profileEntrants() ? participant.roster[0]?.user : null;
+    if (profileId) {
+      void this.router.navigate(['/tabs/competitions', this.competitionId, 'players', profileId]);
+      return;
+    }
     void this.router.navigate(['/tabs/competitions', this.competitionId, 'teams', participant.id]);
   }
 

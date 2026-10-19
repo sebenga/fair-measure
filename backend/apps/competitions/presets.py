@@ -257,6 +257,35 @@ def public_preset(key: str, preset: Preset) -> dict:
     }
 
 
+def game_time_from_structure(structure: list[dict] | None) -> tuple[int | None, int]:
+    """Regulation minutes from the first timed block, overtime from the timed blocks after it."""
+
+    timed = [block for block in structure or [] if block.get("minutes")]
+    if not timed:
+        return None, 0
+    first, *rest = timed
+    regulation = int(first.get("count") or 1) * int(first["minutes"])
+    overtime = sum(int(block.get("count") or 1) * int(block["minutes"]) for block in rest)
+    return regulation, overtime
+
+
+def default_game_time(settings: dict | None) -> tuple[int | None, int]:
+    """The competition's time limit and overtime, falling back to its match structure."""
+
+    settings = settings or {}
+    derived_limit, derived_overtime = game_time_from_structure(settings.get("match_structure"))
+    try:
+        limit = int(settings.get("time_limit_minutes") or 0) or None
+    except (TypeError, ValueError):
+        limit = None
+    raw_overtime = settings.get("overtime_minutes")
+    try:
+        overtime = derived_overtime if raw_overtime is None else max(int(raw_overtime), 0)
+    except (TypeError, ValueError):
+        overtime = derived_overtime
+    return limit or derived_limit, overtime
+
+
 def apply_preset(competition, preset_key: str) -> None:
     """Copy a preset's scoring, structure, and ranking onto a competition."""
 
@@ -347,6 +376,10 @@ def apply_preset(competition, preset_key: str) -> None:
             },
         }
     )
+    regulation, overtime = game_time_from_structure(preset.get("match_structure"))
+    if regulation and not settings.get("time_limit_minutes"):
+        settings["time_limit_minutes"] = regulation
+        settings.setdefault("overtime_minutes", overtime)
     competition.settings_json = settings
     competition.save(update_fields=["settings_json", "updated_at"])
 

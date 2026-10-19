@@ -564,7 +564,6 @@ def test_custom_has_no_fixture_schedule(api):
         {
             "name": "Office derby",
             "preset": "custom",
-            "scoring_basis": "results",
             "format": "league",
             "match_weekdays": [0, 2],
             "scoring_categories": [
@@ -634,6 +633,163 @@ def test_score_assist_accumulates_criteria_with_a_note(api, user):
     assert breakdown[0]["entries"][0]["note"] == "Three enterprise deals."
 
 
+def test_points_reach_the_table_when_a_custom_league_has_no_win_rule(api):
+    from decimal import Decimal
+
+    from apps.competitions.models import Participant
+
+    created = api.post(
+        "/api/v1/competitions",
+        {
+            "name": "Older board",
+            "preset": "custom",
+            "scoring_basis": "criteria",
+            "scoring_categories": [{"name": "Early arrival", "points": "2"}],
+        },
+        format="json",
+    )
+    competition = Competition.objects.get(pk=created.data["id"])
+    competition.settings_json = {
+        key: value
+        for key, value in competition.settings_json.items()
+        if key not in {"win_condition", "match_structure", "contest_type"}
+    }
+    competition.save(update_fields=["settings_json"])
+    category = competition.scoring_categories.get()
+    participant = Participant.objects.create(competition=competition, name="Ada")
+
+    awarded = api.post(
+        f"/api/v1/competitions/{competition.id}/score-assist",
+        {
+            "kind": "criterion",
+            "participant": str(participant.id),
+            "scoring_category": str(category.id),
+            "quantity": "4",
+            "note": "In before nine.",
+        },
+        format="json",
+    )
+    assert awarded.status_code == 201
+
+    table = api.get(f"/api/v1/competitions/{competition.id}/standings")
+    row = next(item for item in table.data["rows"] if item["participant"]["name"] == "Ada")
+    assert Decimal(row["points"]) == Decimal("8")
+
+
+def test_a_custom_vs_competition_uses_the_win_draw_loss_points_it_sets(api):
+    from decimal import Decimal
+
+    from apps.competitions.models import Participant
+    from apps.fixtures.models import FixtureSide, ScoreEvent
+
+    created = api.post(
+        "/api/v1/competitions",
+        {
+            "name": "Office darts night",
+            "preset": "custom",
+            "scoring_basis": "results",
+            "format": "league",
+            "league_points": {"win": 2, "draw": 1, "loss": 0},
+            "scoring_categories": [{"name": "Leg", "points": "1"}],
+        },
+        format="json",
+    )
+    assert created.status_code == 201, created.data
+    competition = Competition.objects.get(pk=created.data["id"])
+    assert competition.format == "league"
+    assert competition.settings_json["table_mode"] == "head_to_head"
+    assert competition.settings_json["scoring_basis"] == "results"
+    assert competition.settings_json["participant_type"] == "team"
+    detail = api.get(f"/api/v1/competitions/{competition.id}").data
+    assert detail["points_policy"]["win_points"] == "2.00"
+    assert detail["points_policy"]["draw_points"] == "1.00"
+    assert detail["points_policy"]["loss_points"] == "0.00"
+
+    leg = competition.scoring_categories.get()
+    home = Participant.objects.create(competition=competition, name="Ada")
+    away = Participant.objects.create(competition=competition, name="Bo")
+    fixture = Fixture.objects.create(competition=competition, status=Fixture.Status.COMPLETED)
+    home_side = FixtureSide.objects.create(fixture=fixture, participant=home, position=0)
+    away_side = FixtureSide.objects.create(fixture=fixture, participant=away, position=1)
+    ScoreEvent.objects.create(fixture=fixture, side=home_side, scoring_category=leg, quantity=3)
+    ScoreEvent.objects.create(fixture=fixture, side=away_side, scoring_category=leg, quantity=1)
+    fixture.recalculate_scores()
+
+    table = api.get(f"/api/v1/competitions/{competition.id}/standings?refresh=true")
+    points = {row["participant"]["name"]: Decimal(row["points"]) for row in table.data["rows"]}
+    assert points == {"Ada": Decimal("2"), "Bo": Decimal("0")}
+
+    singles = api.post(
+        "/api/v1/competitions",
+        {
+            "name": "Office singles",
+            "preset": "custom",
+            "scoring_basis": "results",
+            "participant_type": "individual",
+            "scoring_categories": [{"name": "Point", "points": "1"}],
+        },
+        format="json",
+    )
+    assert singles.status_code == 201, singles.data
+    singles_id = singles.data["id"]
+    assert Competition.objects.get(pk=singles_id).settings_json["participant_type"] == "individual"
+    named_only = api.post(
+        f"/api/v1/competitions/{singles_id}/participants", {"name": "Cy"}, format="json"
+    )
+    assert named_only.status_code == 400
+
+    from apps.accounts.models import User
+
+    cy = User.objects.create_user(
+        email="cy@example.com", password="s3cret-password", display_name="Cy Player"
+    )
+    player = api.post(
+        f"/api/v1/competitions/{singles_id}/participants", {"user": str(cy.id)}, format="json"
+    )
+    assert player.status_code == 201, player.data
+    assert player.data["kind"] == "individual"
+    assert player.data["name"] == cy.get_full_name()
+    assert str(player.data["roster"][0]["user"]) == str(cy.id)
+    again = api.post(
+        f"/api/v1/competitions/{singles_id}/participants", {"user": str(cy.id)}, format="json"
+    )
+    assert again.status_code == 400
+
+    accumulation = api.post(
+        "/api/v1/competitions",
+        {
+            "name": "Still points",
+            "preset": "custom",
+            "scoring_basis": "criteria",
+            "scoring_categories": [{"name": "Task", "points": "1"}],
+        },
+        format="json",
+    )
+    still = Competition.objects.get(pk=accumulation.data["id"])
+    assert still.format == "freeform"
+    assert still.settings_json["table_mode"] == "points"
+
+
+def test_individual_entrants_are_picked_from_profiles(api):
+    from apps.accounts.models import User
+
+    ada = User.objects.create_user(
+        email="ada.player@example.com", password="s3cret-password", display_name="Ada Player"
+    )
+    for preset in ("chess", "tennis"):
+        created = api.post(
+            "/api/v1/competitions", {"name": f"{preset} club", "preset": preset}, format="json"
+        )
+        assert created.status_code == 201, created.data
+        url = f"/api/v1/competitions/{created.data['id']}/participants"
+        typed = api.post(url, {"name": "Typed name"}, format="json")
+        assert typed.status_code == 400
+        picked = api.post(url, {"user": str(ada.id)}, format="json")
+        assert picked.status_code == 201, picked.data
+        assert picked.data["kind"] == "individual"
+        assert picked.data["name"] == ada.get_full_name()
+
+
 def test_a_fully_custom_competition_needs_no_preset(api):
     created = api.post(
         "/api/v1/competitions",
@@ -700,7 +856,7 @@ def test_scorers_can_record_but_not_restructure(
     client = APIClient()
     client.force_authenticate(user=other_user)
 
-    fixture = Fixture.objects.create(competition=competition)
+    fixture = Fixture.objects.create(competition=competition, status=Fixture.Status.LIVE)
     from apps.fixtures.models import FixtureSide
 
     side = FixtureSide.objects.create(
@@ -747,7 +903,7 @@ def test_an_admin_can_appoint_another_admin_and_a_referee_scores_one_game(
     assert changed.status_code == 200
     assert changed.data["role"] == "member"
 
-    fixture = Fixture.objects.create(competition=competition)
+    fixture = Fixture.objects.create(competition=competition, status=Fixture.Status.LIVE)
     side = FixtureSide.objects.create(fixture=fixture, participant=participants[0], position=0)
     FixtureSide.objects.create(fixture=fixture, participant=participants[1], position=1)
     referee = User.objects.create_user(
@@ -784,7 +940,7 @@ def test_an_admin_can_appoint_another_admin_and_a_referee_scores_one_game(
 def test_score_event_updates_the_fixture_score(api, competition, rugby_scoring, participants):
     from apps.fixtures.models import FixtureSide
 
-    fixture = Fixture.objects.create(competition=competition)
+    fixture = Fixture.objects.create(competition=competition, status=Fixture.Status.LIVE)
     side = FixtureSide.objects.create(fixture=fixture, participant=participants[0], position=0)
     FixtureSide.objects.create(fixture=fixture, participant=participants[1], position=1)
 
@@ -832,7 +988,9 @@ def test_scoring_names_the_player_and_rates_the_game(
     )
     roster_id = str(mate_row.id)
     opponent = Participant.objects.create(competition=competition, name="The Rest")
-    fixture = Fixture.objects.create(competition=competition, label="Week 1")
+    fixture = Fixture.objects.create(
+        competition=competition, label="Week 1", status=Fixture.Status.LIVE
+    )
     side = FixtureSide.objects.create(
         fixture=fixture, participant_id=created.data["id"], position=0
     )
@@ -906,7 +1064,9 @@ def test_goals_and_cards_belong_to_a_profile_on_the_match_and_the_player(api):
         competition_id=competition_id, name="Away", kind="team"
     )
     roster = RosterMember.objects.create(participant=home, user=player, name="Striker")
-    fixture = Fixture.objects.create(competition_id=competition_id, label="Match stats")
+    fixture = Fixture.objects.create(
+        competition_id=competition_id, label="Match stats", status=Fixture.Status.LIVE
+    )
     home_side = FixtureSide.objects.create(fixture=fixture, participant=home, position=0)
     FixtureSide.objects.create(fixture=fixture, participant=away, position=1)
 
@@ -958,7 +1118,7 @@ def test_an_event_cannot_reference_another_competitions_category(
         competition=other, name="Goal", code="goal", points=1
     )
 
-    fixture = Fixture.objects.create(competition=competition)
+    fixture = Fixture.objects.create(competition=competition, status=Fixture.Status.LIVE)
     side = FixtureSide.objects.create(fixture=fixture, participant=participants[0], position=0)
 
     response = api.post(
@@ -967,6 +1127,65 @@ def test_an_event_cannot_reference_another_competitions_category(
         format="json",
     )
     assert response.status_code == 400
+
+
+def test_a_game_needs_a_time_limit_and_a_referee_before_kickoff(api, other_user):
+    from apps.competitions.models import Participant
+    from apps.fixtures.models import FixtureSide
+    from rest_framework.test import APIClient
+
+    created = api.post(
+        "/api/v1/competitions",
+        {"name": "Timed league", "preset": "soccer"},
+        format="json",
+    )
+    assert created.status_code == 201
+    competition_id = created.data["id"]
+    settings = api.get(f"/api/v1/competitions/{competition_id}").data["settings_json"]
+    assert settings["time_limit_minutes"] == 90
+    assert settings["overtime_minutes"] == 30
+
+    home = Participant.objects.create(competition_id=competition_id, name="Home", kind="team")
+    away = Participant.objects.create(competition_id=competition_id, name="Away", kind="team")
+    fixture = Fixture.objects.create(competition_id=competition_id, label="Kickoff")
+    FixtureSide.objects.create(fixture=fixture, participant=home, position=0)
+    FixtureSide.objects.create(fixture=fixture, participant=away, position=1)
+    assert fixture.duration_minutes == 90
+    assert fixture.overtime_minutes == 30
+
+    detail_url = f"/api/v1/competitions/{competition_id}/fixtures/{fixture.id}"
+    assert api.get(detail_url).data["kickoff_problems"] == ["Assign a referee before kickoff."]
+    blocked = api.post(f"{detail_url}/set-status", {"status": "live"}, format="json")
+    assert blocked.status_code == 400
+
+    cleared = api.patch(detail_url, {"duration_minutes": None}, format="json")
+    assert cleared.status_code == 400
+    no_overtime = api.patch(detail_url, {"overtime_minutes": 0}, format="json")
+    assert no_overtime.status_code == 200
+    assert no_overtime.data["overtime_minutes"] == 0
+
+    api.post(
+        f"/api/v1/competitions/{competition_id}/members",
+        {"user_id": str(other_user.id), "role": "scorer"},
+        format="json",
+    )
+    scorer = APIClient()
+    scorer.force_authenticate(user=other_user)
+    denied = scorer.patch(detail_url, {"overtime_minutes": 10}, format="json")
+    assert denied.status_code == 403
+
+    assigned = api.post(f"{detail_url}/referees", {"user": str(other_user.id)}, format="json")
+    assert assigned.data["kickoff_problems"] == []
+    started = scorer.post(f"{detail_url}/set-status", {"status": "live"}, format="json")
+    assert started.status_code == 200
+    assert started.data["status"] == "live"
+
+    must_keep = api.patch(
+        f"/api/v1/competitions/{competition_id}",
+        {"settings_json": {**settings, "time_limit_minutes": 0}},
+        format="json",
+    )
+    assert must_keep.status_code == 400
 
 
 def test_generating_a_round_robin_schedules_every_pairing(api, competition, participants):

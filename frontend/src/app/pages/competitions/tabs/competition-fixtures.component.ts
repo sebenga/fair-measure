@@ -23,10 +23,12 @@ import {
 
 import { ApiService } from '../../../core/api.service';
 import { extractErrorMessage } from '../../../core/error-message';
-import type { CompetitionDetail, Fixture } from '../../../core/models';
+import type { CompetitionDetail, Fixture, FixtureHighlight } from '../../../core/models';
 import { RealtimeService } from '../../../core/realtime.service';
 
 type Filter = 'upcoming' | 'results' | 'all';
+
+const MAX_MOMENTS = 8;
 
 interface FixtureGroup {
   key: string;
@@ -130,6 +132,51 @@ interface FixtureGroup {
                   }
                   <span class="score">{{ showScores(fixture) ? trim(side.score) : '–' }}</span>
                 </div>
+              }
+
+              @if (highlightsFor(fixture); as moments) {
+                @if (moments.shown.length) {
+                  <ul class="moments" [attr.aria-label]="'Match events'">
+                    @for (moment of moments.shown; track moment.id; let last = $last) {
+                      <li
+                        class="moment"
+                        [class.away]="isAway(fixture, moment.side)"
+                        [class.latest]="last && fixture.status === 'live' && moments.hidden === 0"
+                      >
+                        <span class="minute">{{ moment.minute !== null ? moment.minute + "'" : '' }}</span>
+                        @switch (moment.kind) {
+                          @case ('yellow') {
+                            <span class="card yellow" aria-label="Yellow card"></span>
+                          }
+                          @case ('red') {
+                            <span class="card red" aria-label="Red card"></span>
+                          }
+                          @case ('green') {
+                            <span class="card green" aria-label="Green card"></span>
+                          }
+                          @default {
+                            <ion-icon
+                              class="ball"
+                              [name]="isGoal(moment) ? 'football-outline' : 'ellipse'"
+                              [attr.aria-label]="moment.label"
+                            />
+                          }
+                        }
+                        <span class="who">
+                          {{ moment.player_name || moment.label }}
+                          @if (moment.kind === 'own_goal') {
+                            <em>(OG)</em>
+                          } @else if (moment.kind === 'score' && !isGoal(moment) && moment.player_name) {
+                            <em>{{ moment.label }}</em>
+                          }
+                        </span>
+                      </li>
+                    }
+                  </ul>
+                  @if (moments.hidden) {
+                    <p class="more">+{{ moments.hidden }} more</p>
+                  }
+                }
               }
             </div>
 
@@ -269,6 +316,93 @@ interface FixtureGroup {
         color: var(--ion-color-medium);
       }
 
+      .moments {
+        display: grid;
+        gap: 3px;
+        margin: 6px 0 0;
+        padding: 6px 0 0;
+        border-top: 1px solid var(--ion-color-step-100, #eef0f2);
+        list-style: none;
+      }
+
+      .moment {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 6px;
+        border-radius: 6px;
+        font-size: 0.76rem;
+        color: var(--ion-color-medium-shade);
+        transition: background 0.3s ease;
+      }
+
+      .moment.away {
+        flex-direction: row-reverse;
+        text-align: right;
+      }
+
+      .moment.latest {
+        background: rgba(var(--ion-color-success-rgb, 45, 211, 111), 0.12);
+        color: var(--ion-text-color);
+        font-weight: 650;
+        animation: moment-in 0.6s ease-out;
+      }
+
+      .moment .minute {
+        flex: 0 0 auto;
+        min-width: 24px;
+        font-variant-numeric: tabular-nums;
+        color: var(--ion-color-medium);
+      }
+
+      .moment .ball {
+        flex: 0 0 auto;
+        font-size: 0.85rem;
+      }
+
+      .moment .card {
+        flex: 0 0 auto;
+        width: 8px;
+        height: 11px;
+        border-radius: 1.5px;
+      }
+
+      .card.yellow {
+        background: #f5c400;
+      }
+
+      .card.red {
+        background: #e0242e;
+      }
+
+      .card.green {
+        background: #22a34a;
+      }
+
+      .moment .who {
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+
+        em {
+          font-style: normal;
+          color: var(--ion-color-medium);
+        }
+      }
+
+      .more {
+        margin: 2px 6px 0;
+        font-size: 0.72rem;
+        color: var(--ion-color-medium);
+      }
+
+      @keyframes moment-in {
+        from {
+          background: rgba(var(--ion-color-success-rgb, 45, 211, 111), 0.35);
+        }
+      }
+
       .tail {
         height: 32px;
       }
@@ -398,6 +532,21 @@ export class CompetitionFixturesComponent implements OnInit {
       month: 'short',
       ...(date.getFullYear() === today.getFullYear() ? {} : { year: 'numeric' }),
     });
+  }
+
+  highlightsFor(fixture: Fixture): { shown: FixtureHighlight[]; hidden: number } {
+    const all = fixture.highlights ?? [];
+    const shown = fixture.status === 'live' ? all.slice(-MAX_MOMENTS) : all.slice(0, MAX_MOMENTS);
+    return { shown, hidden: all.length - shown.length };
+  }
+
+  isAway(fixture: Fixture, sideId: string): boolean {
+    const side = fixture.sides.find((item) => item.id === sideId);
+    return !!side && side.position > 0;
+  }
+
+  isGoal(moment: FixtureHighlight): boolean {
+    return moment.kind === 'own_goal' || moment.label.trim().toLowerCase() === 'goal';
   }
 
   showScores(fixture: Fixture): boolean {
