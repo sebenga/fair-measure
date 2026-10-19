@@ -83,6 +83,35 @@ export const routes: Routes = [
         path: 'profile',
         loadComponent: () => import('./pages/profile/profile.page').then((m) => m.ProfilePage),
       },
+      {
+        path: 'scouting',
+        loadComponent: () =>
+          import('./pages/scouting/scouting-hub.page').then((m) => m.ScoutingHubPage),
+      },
+      {
+        path: 'scouting/profile',
+        loadComponent: () =>
+          import('./pages/scouting/talent-profile.page').then((m) => m.TalentProfilePage),
+      },
+      {
+        path: 'scouting/guardian',
+        loadComponent: () => import('./pages/scouting/guardian.page').then((m) => m.GuardianPage),
+      },
+      {
+        path: 'scouting/players',
+        loadComponent: () =>
+          import('./pages/scouting/players.page').then((m) => m.ScoutingPlayersPage),
+      },
+      {
+        path: 'scouting/players/:id',
+        loadComponent: () =>
+          import('./pages/scouting/player-view.page').then((m) => m.ScoutingPlayerViewPage),
+      },
+      {
+        path: 'scouting/organisations/:id',
+        loadComponent: () =>
+          import('./pages/scouting/organisation.page').then((m) => m.ScoutingOrganisationPage),
+      },
     ],
   },
 

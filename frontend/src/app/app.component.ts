@@ -57,6 +57,11 @@ import {
   trophyOutline,
   videocam,
   waterOutline,
+  businessOutline,
+  clipboardOutline,
+  personOutline,
+  ribbonOutline,
+  shieldCheckmarkOutline,
 } from 'ionicons/icons';
 
 import { AuthService } from './core/auth.service';
@@ -81,6 +86,11 @@ export class AppComponent {
 
   constructor() {
     addIcons({
+      businessOutline,
+      clipboardOutline,
+      personOutline,
+      ribbonOutline,
+      shieldCheckmarkOutline,
       addOutline,
       alertCircle,
       alertCircleOutline,

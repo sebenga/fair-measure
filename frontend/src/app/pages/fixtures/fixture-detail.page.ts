@@ -225,7 +225,7 @@ interface Celebration {
             Every game needs a referee before kickoff. The referee scores this game; an admin can still score it too.
           </p>
           <div class="referees">
-            @for (referee of fx.referees ?? []; track referee.id) {
+            @for (referee of fx.referees; track referee.id) {
               <div class="referee">
                 <span>{{ referee.display_name || referee.email }}</span>
                 <button type="button" (click)="removeReferee(referee.id)">Remove</button>

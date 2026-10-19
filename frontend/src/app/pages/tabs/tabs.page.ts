@@ -25,6 +25,11 @@ import {
           <ion-label>Discover</ion-label>
         </ion-tab-button>
 
+        <ion-tab-button tab="scouting" href="/tabs/scouting">
+          <ion-icon name="ribbon-outline" aria-hidden="true" />
+          <ion-label>Scouting</ion-label>
+        </ion-tab-button>
+
         <ion-tab-button tab="profile" href="/tabs/profile">
           <ion-icon name="person-circle-outline" aria-hidden="true" />
           <ion-label>Profile</ion-label>

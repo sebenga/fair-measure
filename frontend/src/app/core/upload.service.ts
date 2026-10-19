@@ -1,13 +1,13 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable, from, switchMap } from 'rxjs';
+import { Observable, from, of, switchMap } from 'rxjs';
 
 import type { MediaAsset, UploadTarget } from './models';
 import { ApiService } from './api.service';
 
 export interface UploadRequest {
   file: File;
-  competitionId: string;
+  competitionId?: string;
   caption?: string;
 }
 
@@ -30,27 +30,41 @@ export class UploadService {
     return this.api
       .requestUpload({
         kind,
-        competition: competitionId,
+        ...(competitionId ? { competition_id: competitionId } : {}),
         filename: file.name,
         content_type: file.type || 'application/octet-stream',
         size_bytes: file.size,
         caption,
       })
       .pipe(
-        switchMap((target) => from(this.putBytes(target, file)).pipe(switchMap(() => this.complete(target, file)))),
+        switchMap((target) =>
+          from(this.putBytes(target, file)).pipe(
+            // Videos are finalised by the provider's webhook, not by the client.
+            switchMap(() => (kind === 'video' ? of(target.media_asset) : this.complete(target, file))),
+          ),
+        ),
       );
   }
 
   private async putBytes(target: UploadTarget, file: File): Promise<void> {
+    const method = target.method || 'PUT';
+    // Direct-creator video uploads take a multipart form on POST.
+    const body: BodyInit = method === 'POST' ? this.asForm(file) : file;
     const response = await fetch(target.upload_url, {
-      method: target.method || 'PUT',
-      headers: target.headers ?? { 'Content-Type': file.type },
-      body: file,
+      method,
+      headers: method === 'POST' ? target.headers ?? {} : target.headers ?? { 'Content-Type': file.type },
+      body,
     });
 
     if (!response.ok) {
       throw new Error(`Upload failed with status ${response.status}`);
     }
+  }
+
+  private asForm(file: File): FormData {
+    const form = new FormData();
+    form.append('file', file);
+    return form;
   }
 
   private complete(target: UploadTarget, file: File): Observable<MediaAsset> {

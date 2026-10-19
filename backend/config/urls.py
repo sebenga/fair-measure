@@ -21,6 +21,7 @@ api_v1 = [
     path("", include("apps.media_assets.urls")),
     path("", include("apps.notifications.urls")),
     path("", include("apps.search.urls")),
+    path("", include("apps.scouting.urls")),
 ]
 
 urlpatterns = [

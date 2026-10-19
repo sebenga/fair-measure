@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     "apps.media_assets",
     "apps.notifications",
     "apps.search",
+    "apps.scouting",
 ]
 
 MIDDLEWARE = [
