@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, effect, inject } from '@angular/cor
 import { IonApp, IonRouterOutlet } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import {
+  trendingUpOutline,
   notificationsOffOutline,
   listOutline,
   mailOutline,
@@ -109,6 +110,7 @@ export class AppComponent {
 
   constructor() {
     addIcons({
+      trendingUpOutline,
       notificationsOffOutline,
       listOutline,
       mailOutline,

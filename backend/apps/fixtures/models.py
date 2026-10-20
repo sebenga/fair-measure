@@ -181,6 +181,8 @@ class FixtureSide(BaseModel):
     )
     is_home = models.BooleanField(default=False)
     score = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # Goals on the board before play, fixed when the match is first scored.
+    head_start = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     outcome = models.CharField(
         max_length=10, choices=Outcome.choices, default=Outcome.PENDING
     )
@@ -308,3 +310,37 @@ class FixtureReferee(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.user_id} referees {self.fixture_id}"
+
+
+class FixtureAward(BaseModel):
+    """A per-match award the preset names, such as a best player or a best horse."""
+
+    fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="awards")
+    key = models.CharField(max_length=40)
+    player = models.ForeignKey(
+        RosterMember,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="awards",
+    )
+    horse = models.ForeignKey(
+        "horses.Horse",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="awards",
+    )
+    name = models.CharField(max_length=160, blank=True)
+    awarded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["fixture", "key"], name="uniq_award_per_fixture")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.key}: {self.name}"

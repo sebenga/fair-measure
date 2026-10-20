@@ -108,6 +108,11 @@ export const routes: Routes = [
           import('./pages/scouting/player-view.page').then((m) => m.ScoutingPlayerViewPage),
       },
       {
+        path: 'scouting/reports/:kind',
+        loadComponent: () =>
+          import('./pages/scouting/talent-report.page').then((m) => m.TalentReportPage),
+      },
+      {
         path: 'scouting/players/:id/report',
         loadComponent: () =>
           import('./pages/scouting/scouting-report.page').then((m) => m.ScoutingReportPage),

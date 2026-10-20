@@ -52,10 +52,20 @@ class Row:
     seconds: int = 0
     thirds: int = 0
     statuses: int = 0
+    head_start_for: Decimal = ZERO
+    head_start_against: Decimal = ZERO
 
     @property
     def score_difference(self) -> Decimal:
         return self.score_for - self.score_against
+
+    @property
+    def net_score_difference(self) -> Decimal:
+        """Score difference with the goals given as a head start taken out."""
+
+        return (self.score_for - self.head_start_for) - (
+            self.score_against - self.head_start_against
+        )
 
 
 def _attempts(side, fixture, settings: dict) -> list[Decimal]:
@@ -120,6 +130,8 @@ def _sort_key(row: Row, tiebreakers: list[str], settings: dict | None = None) ->
             key.append(-row.points)
         elif rule == PointsPolicy.Tiebreaker.SCORE_DIFFERENCE:
             key.append(-row.score_difference)
+        elif rule == PointsPolicy.Tiebreaker.NET_SCORE_DIFFERENCE:
+            key.append(-row.net_score_difference)
         elif rule == PointsPolicy.Tiebreaker.SCORE_FOR:
             if (settings or {}).get("performance") == "lower":
                 key.append(row.score_for)
@@ -593,6 +605,7 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
             continue
 
         total_score = sum((side.score for side in sides), ZERO)
+        total_start = sum((side.head_start or ZERO for side in sides), ZERO)
 
         for side in sides:
             participant_id = str(side.participant_id)
@@ -604,6 +617,8 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
             row.score_for += side.score
             # In a multi-way fixture, "against" is everything the others scored.
             row.score_against += total_score - side.score
+            row.head_start_for += side.head_start or ZERO
+            row.head_start_against += total_start - (side.head_start or ZERO)
 
             if side.forfeited:
                 row.losses += 1
@@ -701,6 +716,21 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
     return _apply_head_to_head(ordered, tiebreakers, settings)
 
 
+def _detail(row: Row, settings: dict) -> dict:
+    if settings.get("result_type"):
+        return {"seconds": row.seconds, "thirds": row.thirds, "statuses": row.statuses}
+    if settings.get("head_start"):
+        return {
+            key: format(Decimal(value).normalize(), "f")
+            for key, value in (
+                ("head_start_for", row.head_start_for),
+                ("head_start_against", row.head_start_against),
+                ("net_score_difference", row.net_score_difference),
+            )
+        }
+    return {}
+
+
 @transaction.atomic
 def refresh_standings(competition: Competition, stage: Stage | None = None) -> list[StandingRow]:
     """Recompute and persist the cached table."""
@@ -726,11 +756,7 @@ def refresh_standings(competition: Competition, stage: Stage | None = None) -> l
                 points=row.points,
                 bonus_points=row.bonus_points,
                 form=row.form,
-                detail=(
-                    {"seconds": row.seconds, "thirds": row.thirds, "statuses": row.statuses}
-                    if (competition.settings_json or {}).get("result_type")
-                    else {}
-                ),
+                detail=_detail(row, competition.settings_json or {}),
             )
             for index, row in enumerate(computed)
         ]

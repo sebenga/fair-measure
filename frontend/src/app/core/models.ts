@@ -132,6 +132,7 @@ export interface RosterMember {
   name: string;
   number: number | null;
   position: string;
+  handicap?: string | null;
   user: string | null;
   user_display_name?: string;
   is_active: boolean;
@@ -226,8 +227,40 @@ export interface FixtureSide {
   position: number;
   is_home: boolean;
   score: string;
+  /** Goals on the board before play (handicap start), where the preset uses one. */
+  head_start?: string | null;
   outcome: Outcome;
   forfeited: boolean;
+}
+
+export interface FixtureAward {
+  key: string;
+  label: string;
+  kind: 'player' | 'horse';
+  description: string;
+  winner: {
+    player_id: string | null;
+    player_name: string;
+    team: string;
+    horse_id: string | null;
+    name: string;
+  } | null;
+}
+
+export interface FixtureAwards {
+  awards: FixtureAward[];
+  can_award: boolean;
+}
+
+export interface PlayerStatsTable {
+  columns: Array<{ key: string; label: string }>;
+  rows: Array<{
+    player_id: string;
+    user_id: string | null;
+    name: string;
+    team: string;
+    values: Record<string, string>;
+  }>;
 }
 
 export interface ScoreEvent {
@@ -461,6 +494,9 @@ export interface Preset {
   description?: string;
   sport: string;
   kind?: PresetKind;
+  /** Create-page section, for example ball or olympic. Empty for Custom, KPIs and cleaning. */
+  group?: string;
+  group_label?: string;
   format: CompetitionFormat;
   formats_allowed?: string[];
   contest_type?: 'head_to_head' | 'accumulation';
@@ -477,6 +513,9 @@ export interface Preset {
     description?: string;
   }>;
   rules: Array<{ name: string; description: string }>;
+  result_type?: string | null;
+  /** Presets that let the owner pick how many periods a match has. */
+  unit_count_options?: { unit: string; options: number[]; default?: number };
 }
 
 /** Ranked by accumulated score, not head-to-head match results. */

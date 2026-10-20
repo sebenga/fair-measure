@@ -3,9 +3,11 @@ import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   IonBackButton,
+  IonButton,
   IonButtons,
   IonContent,
   IonHeader,
+  IonIcon,
   IonSpinner,
   IonTitle,
   IonToolbar,
@@ -28,7 +30,7 @@ const STATUSES: Array<{ key: ShortlistStatus; label: string }> = [
 @Component({
   selector: 'fm-shortlists',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonSpinner],
+  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
@@ -36,6 +38,14 @@ const STATUSES: Array<{ key: ShortlistStatus; label: string }> = [
       <ion-toolbar>
         <ion-buttons slot="start"><ion-back-button [defaultHref]="listId() ? '/tabs/scouting/shortlists' : '/tabs/scouting'" /></ion-buttons>
         <ion-title>{{ current()?.name ?? 'Shortlists' }}</ion-title>
+        <ion-buttons slot="end">
+          @if (current(); as list) {
+            <ion-button (click)="openReport(list.id)">
+              <ion-icon slot="start" name="document-text-outline" aria-hidden="true" />
+              Report
+            </ion-button>
+          }
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -205,6 +215,10 @@ export class ShortlistsPage {
 
   readonly statuses = STATUSES;
   readonly lists = signal<Shortlist[]>([]);
+
+  openReport(id: string): void {
+    void this.router.navigate(['/tabs/scouting/reports/shortlist'], { queryParams: { shortlist: id } });
+  }
   readonly current = signal<Shortlist | null>(null);
   readonly log = signal<ShortlistLogRow[]>([]);
   readonly tab = signal<'players' | 'log'>('players');

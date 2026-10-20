@@ -14,6 +14,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from apps.competitions.models import Competition, Membership, PointsPolicy
+from apps.competitions.presets import apply_preset
 from apps.core.permissions import Role
 from apps.horses.models import Combination, Horse
 from apps.results import services
@@ -305,6 +306,384 @@ class Command(BaseCommand):
             person.save()
         return person
 
+    def _jumping(self, owner, judge, horses) -> int:
+        """A jump-off class: one finalised show with a jump-off and an elimination."""
+
+        competition, created = Competition.objects.get_or_create(
+            name="Highveld Jumping Series",
+            owner=owner,
+            defaults={"status": Competition.Status.ACTIVE, "sport": "show jumping"},
+        )
+        if not created and competition.fixtures.exists():
+            return 0
+        apply_preset(competition, "show_jumping")
+        competition.status = Competition.Status.ACTIVE
+        competition.save(update_fields=["status", "updated_at"])
+        Membership.objects.get_or_create(
+            competition=competition, user=owner, defaults={"role": Role.OWNER}
+        )
+        CompetitionOfficial.objects.get_or_create(
+            competition=competition, user=judge, title="ground_jury", defaults={"appointed_by": owner}
+        )
+        for index, horse in enumerate(horses[:5]):
+            participant, _ = competition.participants.get_or_create(
+                name=f"{horse.name} / {RIDERS[index]}", defaults={"kind": "individual"}
+            )
+            Combination.objects.get_or_create(
+                participant=participant,
+                defaults={"horse": horse, "rider_name": RIDERS[index], "trainer_name": TRAINERS[index]},
+            )
+        fixture = services.create_event(competition, label="Show 1 · 1.30 m", actor=judge)
+        sheets = [
+            {"round": {"time": "68.4"}, "jump_off": {"time": "39.1"}},
+            {"round": {"time": "70.9"}, "jump_off": {"knockdown": 1, "time": "37.6"}},
+            {"round": {"knockdown": 1, "time": "64.2"}},
+            {"round": {"refusal": 1, "time": "75.3"}},
+            {"round": {"refusal": 2, "time": "58.0"}},
+        ]
+        rows = [
+            {"side": str(side.id), "data": {"rounds": sheets[index]}}
+            for index, side in enumerate(fixture.sides.order_by("position"))
+        ]
+        services.save_results(
+            fixture, rows, judge, config={"time_allowed": {"round": 72, "jump_off": 45}}
+        )
+        services.finalise(fixture, judge, reason="Ground jury confirmed the class")
+        return 1
+
+    def _dressage(self, owner, judge, horses) -> int:
+        """A Prix St-Georges class with five judges, one error of course and a vet elimination."""
+
+        competition, created = Competition.objects.get_or_create(
+            name="Cape Dressage Championship",
+            owner=owner,
+            defaults={"status": Competition.Status.ACTIVE, "sport": "dressage"},
+        )
+        if not created and competition.fixtures.exists():
+            return 0
+        apply_preset(competition, "dressage")
+        competition.status = Competition.Status.ACTIVE
+        competition.save(update_fields=["status", "updated_at"])
+        Membership.objects.get_or_create(
+            competition=competition, user=owner, defaults={"role": Role.OWNER}
+        )
+        CompetitionOfficial.objects.get_or_create(
+            competition=competition, user=judge, title="ground_jury", defaults={"appointed_by": owner}
+        )
+        for index, horse in enumerate(horses[:4]):
+            participant, _ = competition.participants.get_or_create(
+                name=f"{horse.name} / {RIDERS[index]}", defaults={"kind": "individual"}
+            )
+            Combination.objects.get_or_create(
+                participant=participant,
+                defaults={"horse": horse, "rider_name": RIDERS[index], "trainer_name": TRAINERS[index]},
+            )
+        fixture = services.create_event(competition, label="Prix St-Georges", actor=judge)
+        services.save_results(fixture, [], judge, config={"test": "prix_st_georges"})
+        config = services.sheet_config(fixture)
+        sides = list(fixture.sides.order_by("position"))
+        rows = []
+        for index, side in enumerate(sides[:3]):
+            marks = {}
+            for shift, position in enumerate(config["judges"]):
+                base = 7.5 - index * 0.5 + (0.5 if shift % 2 else 0)
+                marks[position] = {item["key"]: base for item in config["sheet"]}
+            data = {"marks": marks}
+            if index == 1:
+                data["errors"] = 1
+            rows.append({"side": str(side.id), "data": data})
+        services.save_results(fixture, rows, judge)
+        services.set_status(
+            fixture, sides[3].id, "EL", judge, reason="Lameness before the final halt", welfare=True
+        )
+        services.finalise(fixture, judge, reason="Ground jury confirmed the class")
+        return 1
+
+    def _eventing(self, owner, judge, horses) -> int:
+        """A horse trial: three phases, a refusal, a failed inspection and a cross-country fall."""
+
+        competition, created = Competition.objects.get_or_create(
+            name="Midlands Horse Trials",
+            owner=owner,
+            defaults={"status": Competition.Status.ACTIVE, "sport": "eventing"},
+        )
+        if not created and competition.fixtures.exists():
+            return 0
+        apply_preset(competition, "eventing")
+        competition.status = Competition.Status.ACTIVE
+        competition.save(update_fields=["status", "updated_at"])
+        Membership.objects.get_or_create(
+            competition=competition, user=owner, defaults={"role": Role.OWNER}
+        )
+        CompetitionOfficial.objects.get_or_create(
+            competition=competition, user=judge, title="ground_jury", defaults={"appointed_by": owner}
+        )
+        for index, horse in enumerate(horses[:5]):
+            participant, _ = competition.participants.get_or_create(
+                name=f"{horse.name} / {RIDERS[index]}", defaults={"kind": "individual"}
+            )
+            Combination.objects.get_or_create(
+                participant=participant,
+                defaults={"horse": horse, "rider_name": RIDERS[index], "trainer_name": TRAINERS[index]},
+            )
+        fixture = services.create_event(competition, label="CCI2*-S", actor=judge)
+        passed = {"before_cross_country": "pass", "before_jumping": "pass"}
+        runs = [
+            {"inspections": passed, "phases": {"dressage": {"percentage": "71.2"}, "cross_country": {"time": 352}, "jumping": {"time": 79}}},
+            {"inspections": passed, "phases": {"dressage": {"percentage": "74.6"}, "cross_country": {"time": 371}, "jumping": {"knockdown": 1, "time": 80}}},
+            {"inspections": passed, "phases": {"dressage": {"percentage": "69.0"}, "cross_country": {"refusals": {"8": 1}, "time": 349}, "jumping": {"time": 77}}},
+            {"inspections": {"before_cross_country": "pass", "before_jumping": "fail"}, "phases": {"dressage": {"percentage": "72.4"}, "cross_country": {"time": 358}}},
+            {"inspections": {"before_cross_country": "pass"}, "phases": {"dressage": {"percentage": "66.8"}, "cross_country": {"horse_fall": 1, "time": 210}}},
+        ]
+        rows = [
+            {"side": str(side.id), "data": runs[index]}
+            for index, side in enumerate(fixture.sides.order_by("position"))
+        ]
+        services.save_results(
+            fixture, rows, judge, config={"time_allowed": {"cross_country": 360, "jumping": 80}}
+        )
+        services.finalise(fixture, judge, reason="Ground jury confirmed the results")
+        return 1
+
+    def _endurance(self, owner, judge, horses) -> int:
+        """An 80 km ride: three finishers with Best Condition marks, an FTQ and a late presentation."""
+
+        competition, created = Competition.objects.get_or_create(
+            name="Karoo Endurance Ride",
+            owner=owner,
+            defaults={"status": Competition.Status.ACTIVE, "sport": "endurance"},
+        )
+        if not created and competition.fixtures.exists():
+            return 0
+        apply_preset(competition, "endurance")
+        competition.status = Competition.Status.ACTIVE
+        competition.save(update_fields=["status", "updated_at"])
+        Membership.objects.get_or_create(
+            competition=competition, user=owner, defaults={"role": Role.OWNER}
+        )
+        CompetitionOfficial.objects.get_or_create(
+            competition=competition, user=judge, title="vet", defaults={"appointed_by": owner}
+        )
+        for index, horse in enumerate(horses[:5]):
+            participant, _ = competition.participants.get_or_create(
+                name=f"{horse.name} / {RIDERS[index]}", defaults={"kind": "individual"}
+            )
+            Combination.objects.get_or_create(
+                participant=participant,
+                defaults={"horse": horse, "rider_name": RIDERS[index], "trainer_name": TRAINERS[index]},
+            )
+        fixture = services.create_event(competition, label="80 km CEI 1*", actor=judge)
+
+        def gate(seconds, heart_rate=58, present=420, **extra):
+            return {
+                "ride_seconds": seconds,
+                "hold_seconds": 2400,
+                "heart_rate": heart_rate,
+                "sound": True,
+                "presentation_seconds": present,
+                **extra,
+            }
+
+        bc = {"recovery": 8, "hydration": 9, "lesions": 10, "soundness": 9, "movement": 8}
+        rides = [
+            {"loops": [gate(4200), gate(4300), gate(3000)], "final_inspection": {"result": "pass"},
+             "best_condition": {"marks": {**bc, "recovery": 7}, "weight_kg": 68}},
+            {"loops": [gate(4300), gate(4350), gate(3100)], "final_inspection": {"result": "pass"},
+             "best_condition": {"marks": bc, "weight_kg": 82}},
+            {"loops": [gate(4500), gate(4600), gate(3300)], "final_inspection": {"result": "pass"},
+             "best_condition": {"marks": {**bc, "hydration": 7}, "weight_kg": 75}},
+            {"loops": [gate(4100), gate(4200, ftq_code="GA")]},
+            {"loops": [gate(4400, present=1020)]},
+        ]
+        rows = [
+            {"side": str(side.id), "data": rides[index]}
+            for index, side in enumerate(fixture.sides.order_by("position"))
+        ]
+        services.save_results(fixture, rows, judge, config={"test": "cei1_80"})
+        services.finalise(fixture, judge, reason="Vet commission confirmed")
+        return 1
+
+    def _horseball(self, owner, referee) -> int:
+        """A horseball league with one match played and one to come."""
+
+        from apps.competitions.models import Participant, RosterMember
+        from apps.fixtures.models import Fixture, FixtureReferee, FixtureSide, ScoreEvent
+
+        competition, created = Competition.objects.get_or_create(
+            name="Gauteng Horseball League",
+            owner=owner,
+            defaults={"status": Competition.Status.ACTIVE, "sport": "horseball"},
+        )
+        if not created and competition.fixtures.exists():
+            return 0
+        apply_preset(competition, "horseball")
+        competition.status = Competition.Status.ACTIVE
+        competition.save(update_fields=["status", "updated_at"])
+        Membership.objects.get_or_create(
+            competition=competition, user=owner, defaults={"role": Role.OWNER}
+        )
+        CompetitionOfficial.objects.get_or_create(
+            competition=competition, user=referee, title="umpire", defaults={"appointed_by": owner}
+        )
+        teams = []
+        for name, players in (
+            ("Highveld Riders", ["Ava Mokoena", "Ben Pretorius", "Cara Naidoo", "Dan Botha"]),
+            ("Coastal Chargers", ["Esi Dlamini", "Finn Jacobs", "Gia Steyn", "Hugo Khumalo"]),
+        ):
+            team, _ = Participant.objects.get_or_create(
+                competition=competition, name=name, defaults={"kind": Participant.Kind.TEAM}
+            )
+            for number, player in enumerate(players, start=1):
+                RosterMember.objects.get_or_create(participant=team, name=player, defaults={"number": number})
+            teams.append(team)
+        goal = competition.scoring_categories.get(code="goal")
+        played = Fixture.objects.create(competition=competition, label="Round 1", status=Fixture.Status.LIVE)
+        home = FixtureSide.objects.create(fixture=played, participant=teams[0], position=0, is_home=True)
+        away = FixtureSide.objects.create(fixture=played, participant=teams[1], position=1)
+        FixtureReferee.objects.create(fixture=played, user=referee)
+        for unit, side, team, number in ((0, home, teams[0], 1), (0, away, teams[1], 2), (1, home, teams[0], 3), (1, home, teams[0], 1)):
+            player = team.roster.get(number=number)
+            ScoreEvent.objects.create(
+                fixture=played, side=side, scoring_category=goal, unit_index=unit,
+                player=player, player_name=player.name, recorded_by=referee,
+            )
+        played.recalculate_scores()
+        played.status = Fixture.Status.COMPLETED
+        played.save(update_fields=["status", "updated_at"])
+        upcoming = Fixture.objects.create(competition=competition, label="Round 2")
+        FixtureSide.objects.create(fixture=upcoming, participant=teams[1], position=0, is_home=True)
+        FixtureSide.objects.create(fixture=upcoming, participant=teams[0], position=1)
+        FixtureReferee.objects.create(fixture=upcoming, user=referee)
+        from apps.standings.services import refresh_standings
+
+        refresh_standings(competition)
+        return 1
+
+    def _tent_pegging(self, owner, judge, horses) -> int:
+        """A lance event decided by a run-off between two riders level on points."""
+
+        competition, created = Competition.objects.get_or_create(
+            name="Tent Pegging Nationals",
+            owner=owner,
+            defaults={"status": Competition.Status.ACTIVE, "sport": "tent pegging"},
+        )
+        if not created and competition.fixtures.exists():
+            return 0
+        apply_preset(competition, "tent_pegging")
+        competition.status = Competition.Status.ACTIVE
+        competition.save(update_fields=["status", "updated_at"])
+        Membership.objects.get_or_create(
+            competition=competition, user=owner, defaults={"role": Role.OWNER}
+        )
+        CompetitionOfficial.objects.get_or_create(
+            competition=competition, user=judge, title="judge", defaults={"appointed_by": owner}
+        )
+        for index, horse in enumerate(horses[:4]):
+            participant, _ = competition.participants.get_or_create(
+                name=f"{horse.name} / {RIDERS[index]}", defaults={"kind": "individual"}
+            )
+            Combination.objects.get_or_create(
+                participant=participant,
+                defaults={"horse": horse, "rider_name": RIDERS[index], "trainer_name": TRAINERS[index]},
+            )
+        fixture = services.create_event(competition, label="Individual lance", actor=judge)
+
+        def runs(*pairs):
+            return [{"outcome": outcome, "time": time} for outcome, time in pairs]
+
+        sheets = [
+            {"runs": runs(("carried", 6.1), ("carried", 6.3), ("drawn", 6.0)), "run_off": runs(("carried", 6.2))},
+            {"runs": runs(("carried", 6.0), ("drawn", 6.2), ("carried", 6.3)), "run_off": runs(("strike", 6.1))},
+            {"runs": runs(("carried", 6.6), ("carried", 6.2), ("strike", 6.0))},
+            {"runs": runs(("miss", 6.0), ("drawn", 6.1), ("strike", 6.3))},
+        ]
+        rows = [
+            {"side": str(side.id), "data": sheets[index]}
+            for index, side in enumerate(fixture.sides.order_by("position"))
+        ]
+        services.save_results(fixture, rows, judge, config={"test": "lance"})
+        services.finalise(fixture, judge, reason="Judges confirmed the event")
+        return 1
+
+    def _polo(self, owner, umpire) -> int:
+        """A handicap polo league: two rostered teams, one played match, one to play."""
+
+        from apps.competitions.models import Participant, RosterMember
+        from apps.fixtures.models import Fixture, FixtureAward, FixtureReferee, FixtureSide, ScoreEvent
+
+        competition, created = Competition.objects.get_or_create(
+            name="Plettenberg Bay Polo Cup",
+            owner=owner,
+            defaults={"status": Competition.Status.ACTIVE, "sport": "polo"},
+        )
+        if not created and competition.fixtures.exists():
+            return 0
+        apply_preset(competition, "polo_handicap", unit_count=4)
+        competition.status = Competition.Status.ACTIVE
+        competition.save(update_fields=["status", "updated_at"])
+        Membership.objects.get_or_create(
+            competition=competition, user=owner, defaults={"role": Role.OWNER}
+        )
+        CompetitionOfficial.objects.get_or_create(
+            competition=competition, user=umpire, title="umpire", defaults={"appointed_by": owner}
+        )
+        teams = []
+        for name, players in (
+            ("Kurland", [("Ava Mokoena", 4), ("Ben Pretorius", 3), ("Cara Naidoo", 2), ("Dan Botha", 1)]),
+            ("Inanda", [("Esi Dlamini", 2), ("Finn Jacobs", 1), ("Gia Steyn", 1), ("Hugo Khumalo", 0)]),
+        ):
+            team, _ = Participant.objects.get_or_create(
+                competition=competition, name=name, defaults={"kind": Participant.Kind.TEAM}
+            )
+            for number, (player, handicap) in enumerate(players, start=1):
+                RosterMember.objects.get_or_create(
+                    participant=team,
+                    name=player,
+                    defaults={"number": number, "handicap": handicap},
+                )
+            teams.append(team)
+
+        goal = competition.scoring_categories.get(code="goal")
+        penalty_one = competition.scoring_categories.get(code="penalty-1")
+        played = Fixture.objects.create(
+            competition=competition, label="Round 1", status=Fixture.Status.LIVE
+        )
+        home = FixtureSide.objects.create(fixture=played, participant=teams[0], position=0, is_home=True)
+        away = FixtureSide.objects.create(fixture=played, participant=teams[1], position=1)
+        FixtureReferee.objects.create(fixture=played, user=umpire)
+        star = teams[0].roster.get(number=1)
+        for unit, side, category, player in (
+            (0, home, goal, star),
+            (1, away, goal, teams[1].roster.get(number=1)),
+            (2, home, goal, star),
+            (3, away, penalty_one, None),
+            (3, home, goal, teams[0].roster.get(number=2)),
+        ):
+            ScoreEvent.objects.create(
+                fixture=played,
+                side=side,
+                scoring_category=category,
+                unit_index=unit,
+                player=player,
+                player_name=player.name if player else "",
+                recorded_by=umpire,
+            )
+        played.recalculate_scores()
+        played.status = Fixture.Status.COMPLETED
+        played.save(update_fields=["status", "updated_at"])
+        FixtureAward.objects.create(fixture=played, key="mvp", player=star, name=star.name, awarded_by=umpire)
+        FixtureAward.objects.create(
+            fixture=played, key="best_playing_pony", player=star, name="Cuartetera", awarded_by=umpire
+        )
+        upcoming = Fixture.objects.create(competition=competition, label="Final")
+        FixtureSide.objects.create(fixture=upcoming, participant=teams[1], position=0, is_home=True)
+        FixtureSide.objects.create(fixture=upcoming, participant=teams[0], position=1)
+        FixtureReferee.objects.create(fixture=upcoming, user=umpire)
+        from apps.standings.services import refresh_standings
+
+        refresh_standings(competition)
+        return 1
+
     @transaction.atomic
     def handle(self, *args, **options) -> None:
         self.password = options["password"]
@@ -395,6 +774,68 @@ class Command(BaseCommand):
                 rows.append({"side": str(side.id), "data": data})
             services.save_results(fixture, rows, owner)
             made += 1
+
+        for key, name in (
+            ("horse_racing_flat", "Kenilworth flat series"),
+            ("horse_racing_jumps", "Greyville jumps series"),
+        ):
+            competition, created = Competition.objects.get_or_create(
+                name=name,
+                owner=owner,
+                defaults={"status": Competition.Status.ACTIVE, "sport": "horse racing"},
+            )
+            if not created and competition.fixtures.exists():
+                continue
+            apply_preset(competition, key)
+            competition.status = Competition.Status.ACTIVE
+            competition.save(update_fields=["status", "updated_at"])
+            Membership.objects.get_or_create(
+                competition=competition, user=owner, defaults={"role": Role.OWNER}
+            )
+            CompetitionOfficial.objects.get_or_create(
+                competition=competition,
+                user=steward,
+                title="steward",
+                defaults={"appointed_by": owner},
+            )
+            for index, horse in enumerate(horses[:4]):
+                participant, _ = competition.participants.get_or_create(
+                    name=f"{horse.name} / {RIDERS[index]}", defaults={"kind": "individual"}
+                )
+                Combination.objects.get_or_create(
+                    participant=participant,
+                    defaults={
+                        "horse": horse,
+                        "rider_name": RIDERS[index],
+                        "trainer_name": TRAINERS[index],
+                    },
+                )
+            fixture = services.create_event(competition, label="Race 1", actor=steward)
+            services.save_results(
+                fixture,
+                [
+                    {"side": str(side.id), "data": {"position": index + 1, "margin": "neck"}}
+                    for index, side in enumerate(fixture.sides.order_by("position"))
+                ],
+                steward,
+                config={
+                    "card": {
+                        "grade": "Listed",
+                        "distance_m": 1600 if key == "horse_racing_flat" else 3200,
+                        "surface": "Turf" if key == "horse_racing_flat" else "Hurdle",
+                        "going": "Good",
+                    }
+                },
+            )
+            made += 1
+
+        made += self._polo(owner, steward)
+        made += self._jumping(owner, judge, horses)
+        made += self._dressage(owner, judge, horses)
+        made += self._eventing(owner, judge, horses)
+        made += self._endurance(owner, judge, horses)
+        made += self._horseball(owner, steward)
+        made += self._tent_pegging(owner, judge, horses)
 
         self.stdout.write(
             self.style.SUCCESS(

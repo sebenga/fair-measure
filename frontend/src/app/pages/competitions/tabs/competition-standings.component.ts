@@ -19,7 +19,12 @@ import {
 
 import { ApiService } from '../../../core/api.service';
 import { extractErrorMessage } from '../../../core/error-message';
-import type { CompetitionDetail, CriterionBreakdown, StandingRow } from '../../../core/models';
+import type {
+  CompetitionDetail,
+  CriterionBreakdown,
+  PlayerStatsTable,
+  StandingRow,
+} from '../../../core/models';
 import { isPointsTable } from '../../../core/models';
 import { RealtimeService } from '../../../core/realtime.service';
 import type { CombinationStatRow } from '../../../core/results.models';
@@ -114,6 +119,9 @@ import { ResultsService } from '../../../core/results.service';
                 <th>F</th>
                 <th>A</th>
                 <th>+/-</th>
+                @if (headStartTable()) {
+                  <th title="Goal difference without handicap goals">Net</th>
+                }
               }
               <th class="pts">Pts</th>
             </tr>
@@ -165,6 +173,9 @@ import { ResultsService } from '../../../core/results.service';
                   <td [class.negative]="isNegative(row.score_difference)">
                     {{ signed(row.score_difference) }}
                   </td>
+                  @if (headStartTable()) {
+                    <td [class.negative]="isNegative(netDifference(row))">{{ signed(netDifference(row)) }}</td>
+                  }
                 }
                 <td class="pts">
                   <span [class.fm-bump]="changes()[row.participant.id]?.points">{{ trim(row.points) }}</span>
@@ -201,7 +212,7 @@ import { ResultsService } from '../../../core/results.service';
       @if (combinations()) {
         <section class="combo-stats">
           <div class="combo-tabs" role="tablist">
-            @for (option of statOptions; track option.key) {
+            @for (option of statOptions(); track option.key) {
               <button type="button" role="tab" [attr.aria-selected]="statsBy() === option.key" [class.on]="statsBy() === option.key" (click)="loadStats(option.key)">
                 {{ option.label }}
               </button>
@@ -217,6 +228,9 @@ import { ResultsService } from '../../../core/results.service';
                   <th>2nd</th>
                   <th>3rd</th>
                   <th class="pts">Pts</th>
+                  @if (showsPrize()) {
+                    <th>Prize</th>
+                  }
                 </tr>
               </thead>
               <tbody>
@@ -228,6 +242,9 @@ import { ResultsService } from '../../../core/results.service';
                     <td>{{ row.seconds }}</td>
                     <td>{{ row.thirds }}</td>
                     <td class="pts">{{ trim(row.points) }}</td>
+                    @if (showsPrize()) {
+                      <td>{{ row.prize ?? '' }}</td>
+                    }
                   </tr>
                 } @empty {
                   <tr><td colspan="6" class="empty-cell">No confirmed results yet.</td></tr>
@@ -238,9 +255,42 @@ import { ResultsService } from '../../../core/results.service';
         </section>
       }
 
+      @if (playerStats(); as table) {
+        @if (table.rows.length) {
+          <section class="combo-stats">
+            <h3 class="fm-section-title">Players</h3>
+            <div class="table-wrap fm-card">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="team">Player</th>
+                    @for (column of table.columns; track column.key) {
+                      <th>{{ column.label }}</th>
+                    }
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of table.rows; track row.player_id) {
+                    <tr>
+                      <td class="team">
+                        <span class="name">{{ row.name }}</span>
+                        <span class="form">{{ row.team }}</span>
+                      </td>
+                      @for (column of table.columns; track column.key) {
+                        <td>{{ row.values[column.key] }}</td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </section>
+        }
+      }
+
       <p class="legend">
         @if (seriesTable()) {
-          A series table: each confirmed event awards placing points. Eliminations and withdrawals never score.
+          {{ seriesBlurb() }}
           Ties: {{ tiebreakerLabels() }}.
         } @else if (pointsTable()) {
           Tap a name to see each scoring criterion, what the points mean, and how they were accumulated.
@@ -524,11 +574,16 @@ export class CompetitionStandingsComponent implements OnInit {
   private readonly results = inject(ResultsService);
 
   readonly competition = input.required<CompetitionDetail>();
-  readonly statOptions: Array<{ key: 'horse' | 'rider' | 'trainer'; label: string }> = [
-    { key: 'horse', label: 'Horses' },
-    { key: 'rider', label: 'Riders' },
-    { key: 'trainer', label: 'Trainers' },
-  ];
+  readonly statOptions = computed(() => {
+    const roles =
+      (this.competition().settings_json?.['result_config'] as { roles?: Record<string, string> } | undefined)
+        ?.roles ?? {};
+    return [
+      { key: 'horse' as const, label: roles['horse'] ?? 'Horses' },
+      { key: 'rider' as const, label: roles['rider'] ?? 'Riders' },
+      { key: 'trainer' as const, label: roles['trainer'] ?? 'Trainers' },
+    ];
+  });
   readonly statsBy = signal<'horse' | 'rider' | 'trainer'>('horse');
   readonly stats = signal<CombinationStatRow[]>([]);
 
@@ -571,6 +626,7 @@ export class CompetitionStandingsComponent implements OnInit {
           this.noteChanges(response.rows);
           this.rows.set(response.rows);
           if (this.combinations()) this.loadStats();
+          if (this.keepsPlayerStats()) this.loadPlayerStats();
           this.breakdown.set(response.breakdown ?? {});
           this.loading.set(false);
         },
@@ -626,7 +682,43 @@ export class CompetitionStandingsComponent implements OnInit {
   }
 
   statLabel(): string {
-    return this.statOptions.find((option) => option.key === this.statsBy())?.label.replace(/s$/, '') ?? '';
+    return this.statOptions().find((option) => option.key === this.statsBy())?.label.replace(/s$/, '') ?? '';
+  }
+
+  readonly playerStats = signal<PlayerStatsTable | null>(null);
+
+  keepsPlayerStats(): boolean {
+    const columns = this.competition().settings_json?.['player_stats'];
+    return Array.isArray(columns) && columns.length > 0;
+  }
+
+  private loadPlayerStats(): void {
+    this.api.playerStats(this.competition().id).subscribe({
+      next: (table) => this.playerStats.set(table),
+      error: () => this.playerStats.set(null),
+    });
+  }
+
+  headStartTable(): boolean {
+    const source = this.competition().settings_json?.['head_start'];
+    return !!source && typeof source === 'object' && Object.keys(source).length > 0;
+  }
+
+  netDifference(row: StandingRow): string {
+    const value = (row.detail as Record<string, unknown> | undefined)?.['net_score_difference'];
+    return value === undefined || value === null ? row.score_difference : String(value);
+  }
+
+  showsPrize(): boolean {
+    return this.stats().some((row) => row.prize !== undefined);
+  }
+
+  seriesBlurb(): string {
+    const tiebreakers = this.competition().points_policy?.tiebreakers ?? [];
+    if (tiebreakers[0] === 'wins') {
+      return 'A championship table: ranked by wins, then seconds, then thirds. Entrants that do not finish never score.';
+    }
+    return 'A series table: each confirmed event awards placing points. Eliminations and withdrawals never score.';
   }
 
   loadStats(by: 'horse' | 'rider' | 'trainer' = this.statsBy()): void {
@@ -657,6 +749,7 @@ export class CompetitionStandingsComponent implements OnInit {
       placings: 'most wins, then seconds, then thirds',
       seconds: 'second places',
       thirds: 'third places',
+      net_score_difference: 'goal difference without handicap goals',
     };
     return this.competition()
       .points_policy.tiebreakers.map((key) => labels[key] ?? key)

@@ -23,6 +23,8 @@ class FixtureSideSerializer(serializers.ModelSerializer):
         source="participant", queryset=Participant.objects.all(), write_only=True
     )
 
+    head_start = serializers.SerializerMethodField()
+
     class Meta:
         model = FixtureSide
         fields = [
@@ -32,10 +34,25 @@ class FixtureSideSerializer(serializers.ModelSerializer):
             "position",
             "is_home",
             "score",
+            "head_start",
             "outcome",
             "forfeited",
         ]
         read_only_fields = ["score", "outcome"]
+
+    def get_head_start(self, obj: FixtureSide) -> str | None:
+        """Goals on the board before play: fixed once scored, otherwise from the rosters."""
+
+        settings = obj.fixture.competition.settings_json or {}
+        if obj.head_start is not None:
+            value = Decimal(obj.head_start)
+        elif settings.get("head_start"):
+            from apps.competitions.engine import fixture_head_starts
+
+            value = fixture_head_starts(obj.fixture, settings).get(obj.id, Decimal("0"))
+        else:
+            return None
+        return format(value.normalize(), "f")
 
 
 _PROFILE_EVENT_CODES = {
@@ -148,15 +165,32 @@ class ScoreEventSerializer(serializers.ModelSerializer):
                 }
             )
 
+        from apps.competitions.engine import expand_units, golden_period_decided, score_rules
+
+        settings = fixture.competition.settings_json or {}
+        rule = score_rules(settings).get(getattr(category, "code", ""), {})
+        unit_index = attrs.get("unit_index", getattr(self.instance, "unit_index", None))
+        if self.instance is None and category is not None and category.affects_score:
+            slots = expand_units(settings.get("match_structure") or [])
+            slot = next((item for item in slots if item["index"] == unit_index), None)
+            if slot is not None and slot["golden"] and golden_period_decided(fixture, slots):
+                raise serializers.ValidationError(
+                    {"unit_index": "The golden goal has been scored. The match is over."}
+                )
+
         player = attrs.get("player", getattr(self.instance, "player", None))
         # A team that keeps a roster names who scored; player stats (assists,
         # tackles) and other non-scoring events can be tagged or left untagged.
+        # An awarded score (no shot taken) belongs to the side, not a player.
         roster_exists = (
             side is not None and side.participant.roster.filter(is_active=True).exists()
         )
         scores = category is not None and category.affects_score
-        if self.instance is None and player is None and (
-            _event_needs_profile(category) or (roster_exists and scores)
+        if (
+            self.instance is None
+            and player is None
+            and not rule.get("no_player")
+            and (_event_needs_profile(category) or (roster_exists and scores))
         ):
             raise serializers.ValidationError({"player": "Choose the profile this applies to."})
         if player is not None and side is not None and player.participant_id != side.participant_id:

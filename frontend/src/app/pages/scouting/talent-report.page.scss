@@ -1,0 +1,161 @@
+.report-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  h2 {
+    margin: 2px 0 4px;
+    font-size: 1.1rem;
+  }
+}
+
+.report-logo {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+}
+
+.kicker {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ion-color-primary);
+}
+
+.muted {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--ion-color-medium);
+
+  &.small {
+    font-size: 0.72rem;
+  }
+}
+
+.report-facts {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+
+  div {
+    display: grid;
+    grid-template-columns: 40% 1fr;
+    gap: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--ion-color-step-100, #e6e9ee);
+  }
+
+  dt {
+    font-size: 0.8rem;
+    color: var(--ion-color-medium);
+  }
+
+  dd {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  small {
+    display: block;
+    font-weight: 400;
+    font-size: 0.72rem;
+    color: var(--ion-color-medium);
+  }
+}
+
+.report-table {
+  overflow-x: auto;
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+  }
+
+  th {
+    padding: 6px;
+    text-align: left;
+    color: #fff;
+    background: var(--ion-color-primary);
+  }
+
+  td {
+    padding: 6px;
+    border-bottom: 1px solid var(--ion-color-step-100, #e6e9ee);
+    vertical-align: top;
+  }
+
+  tr.mark td {
+    background: color-mix(in srgb, var(--ion-color-success) 14%, transparent);
+  }
+}
+
+.radar {
+  display: block;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
+
+  .ring {
+    fill: none;
+    stroke: var(--ion-color-step-150, #dbe2ea);
+  }
+
+  .axis {
+    font-size: 9px;
+    fill: var(--ion-color-medium);
+  }
+
+  .series {
+    fill-opacity: 0.16;
+    stroke-width: 2;
+  }
+}
+
+.legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  font-size: 0.78rem;
+
+  i {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 4px;
+    border-radius: 2px;
+  }
+}
+
+.history {
+  width: 100%;
+
+  polyline {
+    fill: none;
+    stroke: var(--ion-color-primary);
+    stroke-width: 2;
+  }
+
+  circle {
+    fill: var(--ion-color-primary);
+  }
+}
+
+.note-row {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+}
+
+.highlights {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+
+  li + li {
+    margin-top: 4px;
+  }
+}

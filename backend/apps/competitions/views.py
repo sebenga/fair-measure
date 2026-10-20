@@ -489,6 +489,12 @@ class RosterMemberViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return RosterMember.objects.filter(participant=self.get_participant()).select_related("user")
 
+    def get_serializer_context(self) -> dict:
+        context = super().get_serializer_context()
+        if "participant_pk" in self.kwargs:
+            context["participant"] = self.get_participant()
+        return context
+
     def _assert_can_write(self) -> None:
         participant = self.get_participant()
         if participant.managed_by_id == self.request.user.id:

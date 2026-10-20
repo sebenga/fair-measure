@@ -215,14 +215,16 @@ CUSTOM: Preset = {
 }
 
 from .catalog import CATALOG
-
+from .equestrian_presets import EQUESTRIAN_PRESETS
 from .olympic_presets import GOVERNANCE, OLYMPIC_PRESETS
+from .preset_groups import group_for, group_label
 
 PRESETS: dict[str, Preset] = {
     "soccer": SOCCER,
     "golf_stroke": GOLF_STROKE,
     **CATALOG,
     **OLYMPIC_PRESETS,
+    **EQUESTRIAN_PRESETS,
     "custom": CUSTOM,
 }
 for _key, (_body, _rulebook) in GOVERNANCE.items():
@@ -280,6 +282,8 @@ def public_preset(key: str, preset: Preset) -> dict:
         "description": preset.get("description", ""),
         "sport": preset.get("sport", ""),
         "kind": preset.get("kind", "sport"),
+        "group": group_for(key) if preset.get("kind", "sport") == "sport" else "",
+        "group_label": group_label(key) if preset.get("kind", "sport") == "sport" else "",
         "format": preset.get("format", "league"),
         "formats_allowed": list(preset.get("formats_allowed") or []),
         "contest_type": contest,
@@ -309,6 +313,7 @@ def public_preset(key: str, preset: Preset) -> dict:
         "rules": list(preset.get("rules") or []),
         "result_type": preset.get("result_type"),
         "official_results": bool(preset.get("official_results")),
+        "unit_count_options": dict(preset.get("unit_count_options") or {}),
         **governance(preset),
     }
 
@@ -342,7 +347,32 @@ def default_game_time(settings: dict | None) -> tuple[int | None, int]:
     return limit or derived_limit, overtime
 
 
-def apply_preset(competition, preset_key: str) -> None:
+def unit_count_choices(preset_key: str | None) -> list[int]:
+    """Period counts a preset lets the owner pick when creating a competition."""
+
+    options = (PRESETS.get(preset_key or "") or {}).get("unit_count_options") or {}
+    return [int(value) for value in options.get("options") or []]
+
+
+def with_unit_count(preset: dict, unit_count: int | None) -> dict:
+    """The preset with its main period count set; the choice is locked afterwards."""
+
+    options = preset.get("unit_count_options") or {}
+    if not options:
+        return preset
+    count = int(unit_count or options.get("default") or 0)
+    if not count:
+        return preset
+    structure = [
+        {**block, "count": count}
+        if block.get("unit") == options.get("unit") and not block.get("extra")
+        else dict(block)
+        for block in preset.get("match_structure") or []
+    ]
+    return {**preset, "match_structure": structure, "unit_count": count}
+
+
+def apply_preset(competition, preset_key: str, *, unit_count: int | None = None) -> None:
     """Copy a preset's scoring, structure, and ranking onto a competition."""
 
     from .models import MatchUnit, PointsPolicy, Rule, ScoringCategory
@@ -350,6 +380,7 @@ def apply_preset(competition, preset_key: str) -> None:
     preset = PRESETS.get(preset_key)
     if preset is None:
         raise ValueError(f"Unknown preset '{preset_key}'.")
+    preset = with_unit_count(preset, unit_count)
 
     # Re-applying a preset updates categories it already added instead of
     # stacking a second copy of every score type.
@@ -433,6 +464,11 @@ def apply_preset(competition, preset_key: str) -> None:
             "statuses": list(preset.get("statuses") or []),
             "official_results": bool(preset.get("official_results")),
             "dead_heat_points": preset.get("dead_heat_points") or "full",
+            "head_start": dict(preset.get("head_start") or {}),
+            "match_awards": list(preset.get("match_awards") or []),
+            "player_stats": list(preset.get("player_stats") or []),
+            "roster_numbers": list(preset.get("roster_numbers") or []),
+            "unit_count": preset.get("unit_count"),
             **governance(preset),
             "category_better": {
                 item["key"]: item["better"]

@@ -135,6 +135,9 @@ class EventCreateView(APIView):
         label = str(request.data.get("label") or "").strip()
         if not label:
             raise ValidationError({"label": "Name the event."})
+        config = request.data.get("config")
+        if config is not None:
+            config = services.clean_event_config(competition, config)
         fixture = services.create_event(
             competition,
             label=label,
@@ -142,11 +145,23 @@ class EventCreateView(APIView):
             participant_ids=request.data.get("participant_ids") or None,
             actor=request.user,
         )
-        if isinstance(request.data.get("config"), dict):
+        if config:
             sheet = fixture.result_sheet
-            sheet.config = request.data["config"]
+            sheet.config = config
             sheet.save(update_fields=["config", "updated_at"])
         return Response(_sheet_payload(fixture, request.user), status=status.HTTP_201_CREATED)
+
+
+def _riders(participant, config: dict) -> list[str]:
+    """Who rides for a team entrant: its roster, or numbered places up to the team size."""
+
+    size = int(config.get("team_size") or 0)
+    if not size:
+        return []
+    names = list(
+        participant.roster.filter(is_active=True).order_by("number", "name").values_list("name", flat=True)
+    )[:size]
+    return names + [f"Rider {index}" for index in range(len(names) + 1, size + 1)]
 
 
 def _combination(participant) -> dict | None:
@@ -179,6 +194,7 @@ def _sheet_payload(fixture, viewer) -> dict:
                 "participant_id": str(participant.id),
                 "name": participant.name,
                 "combination": _combination(participant),
+                "riders": _riders(participant, config),
                 "data": entry.data,
                 "status": entry.status,
                 "status_reason": entry.status_reason,

@@ -360,6 +360,9 @@ class ReportExport(BaseModel):
         related_name="+",
     )
     access = models.CharField(max_length=12, blank=True)
+    # What else identifies the report: compared profiles, a shortlist, an organisation.
+    params = models.JSONField(default=dict, blank=True)
+    file_format = models.CharField(max_length=8, default="screen")
 
     class Meta:
         ordering = ["-created_at"]

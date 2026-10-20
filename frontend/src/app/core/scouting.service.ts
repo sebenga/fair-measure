@@ -4,6 +4,8 @@ import { Observable, of, tap } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import type {
+  TalentReport,
+  TalentReportKind,
   ConsentRecord,
   GuardianLink,
   IdentityDocument,
@@ -358,6 +360,19 @@ export class ScoutingService {
   }
 
   // --- Reports and league squads --------------------------------------------
+
+  /** A Phase 6 talent report, as shown on screen. */
+  talentReport(kind: TalentReportKind, params: Record<string, string>): Observable<TalentReport> {
+    return this.http.get<TalentReport>(`${this.base}/reports/${kind}`, { params: new HttpParams({ fromObject: params }) });
+  }
+
+  /** The same report as a PDF. The server logs every export. */
+  talentReportPdf(kind: TalentReportKind, params: Record<string, string>): Observable<Blob> {
+    return this.http.get(`${this.base}/reports/${kind}/pdf`, {
+      params: new HttpParams({ fromObject: params }),
+      responseType: 'blob',
+    });
+  }
 
   report(profileId: string, exporting = false): Observable<ScoutingReport> {
     const params = exporting ? new HttpParams().set('export', '1') : undefined;

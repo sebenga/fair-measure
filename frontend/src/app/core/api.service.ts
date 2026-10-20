@@ -9,8 +9,10 @@ import type {
   CompetitionDetail,
   CursorPaginated,
   Fixture,
+  FixtureAwards,
   FixtureDetail,
   GenerateFixturesRequest,
+  PlayerStatsTable,
   MediaAsset,
   Membership,
   Paginated,
@@ -188,6 +190,35 @@ export class ApiService {
       `${this.base}/competitions/${competitionId}/participants/${participantId}/roster`,
       body,
     );
+  }
+
+  updateRosterMember(
+    competitionId: string,
+    participantId: string,
+    memberId: string,
+    body: Record<string, unknown>,
+  ) {
+    return this.http.patch<RosterMember>(
+      `${this.base}/competitions/${competitionId}/participants/${participantId}/roster/${memberId}`,
+      body,
+    );
+  }
+
+  fixtureAwards(competitionId: string, fixtureId: string) {
+    return this.http.get<FixtureAwards>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/awards`,
+    );
+  }
+
+  setFixtureAward(competitionId: string, fixtureId: string, body: Record<string, unknown>) {
+    return this.http.put<FixtureAwards>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/awards`,
+      body,
+    );
+  }
+
+  playerStats(competitionId: string) {
+    return this.http.get<PlayerStatsTable>(`${this.base}/competitions/${competitionId}/player-stats`);
   }
 
   removeRosterMember(competitionId: string, participantId: string, memberId: string) {

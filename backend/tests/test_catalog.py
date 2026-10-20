@@ -15,6 +15,7 @@ pytestmark = pytest.mark.django_db
 ENGINE_FILES = [
     Path("apps/competitions/engine.py"),
     Path("apps/standings/services.py"),
+    Path("apps/fixtures/awards.py"),
 ]
 SPORT_NAMES = [
     "rugby",
@@ -42,6 +43,10 @@ SPORT_NAMES = [
     "yahtzee",
     "soccer",
     "football",
+    "polo",
+    "chukka",
+    "racing",
+    "jockey",
 ]
 
 

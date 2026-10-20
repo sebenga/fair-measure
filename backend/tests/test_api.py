@@ -525,6 +525,29 @@ def test_presets_include_kind_and_category_descriptions(anon_api):
     assert "rugby_union" in by_key
     assert "golf_stableford" in by_key
     assert by_key["padel"]["match_structure"] == by_key["tennis"]["match_structure"]
+    assert by_key["soccer"]["group"] == "ball"
+    assert by_key["soccer"]["group_label"] == "Ball sports"
+    assert by_key["swimming"]["group"] == "olympic"
+    assert by_key["ice_hockey"]["group"] == "winter"
+    assert by_key["tennis"]["group"] == "racket"
+    assert by_key["chess"]["group"] == "board"
+    assert by_key["golf_stroke"]["group"] == "golf"
+    assert by_key["darts_501"]["group"] == "target"
+    assert by_key["custom"]["group"] == ""
+    assert by_key["kpi"]["group"] == ""
+    assert by_key["cleaning"]["group"] == ""
+
+
+def test_every_sport_preset_has_a_create_page_group():
+    from apps.competitions.preset_groups import GROUP_ORDER, group_for
+    from apps.competitions.presets import PRESETS
+
+    known = {key for key, _label in GROUP_ORDER}
+    for key, preset in PRESETS.items():
+        if preset.get("kind", "sport") == "sport":
+            assert group_for(key) in known, key
+        else:
+            assert group_for(key) == "", key
 
 
 def test_custom_preset_uses_points_accumulation_table(api):

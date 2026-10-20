@@ -27,7 +27,7 @@ from apps.results import services as results
 pytestmark = pytest.mark.django_db
 User = get_user_model()
 CODES = ["RSA", "KEN", "BRA", "JPN", "NZL"]
-EQUESTRIAN = {"show_jumping", "dressage", "eventing"}
+EQUESTRIAN: set[str] = set()
 
 
 def _client(user) -> APIClient:
@@ -115,7 +115,7 @@ def test_select_all_summer_then_edit_the_programme(games):
         for event in discipline["events"]
         if catalog.preset_for(sport, discipline, event) in EQUESTRIAN
     }
-    assert unavailable == expected_missing and len(expected_missing) == 6
+    assert unavailable == expected_missing == set()
     assert len(response.data["created"]) == len(every) - len(expected_missing)
 
     events = client.get(f"/api/v1/games/{games.id}/events").json()
@@ -415,8 +415,9 @@ def test_every_olympic_event_page_shows_its_locked_preset_federation_and_ruleboo
         assert settings["official_results"], event
         assert settings["governing_body"] and settings["rulebook"], event
         one_per_preset.setdefault(event.preset_key, event)
-    # Every Olympic preset is used, plus the reused presets linked into the catalogue.
-    reused = set(GOVERNANCE) - {"athletics"}
+    # Every Olympic preset is used, plus the reused presets linked into the catalogue,
+    # the three FEI equestrian presets among them.
+    reused = (set(GOVERNANCE) - {"athletics"}) | {"show_jumping", "dressage", "eventing"}
     assert set(one_per_preset) == set(OLYMPIC_PRESETS) | reused
     for key, event in one_per_preset.items():
         page = client.get(f"/api/v1/games/{games.id}/events/{event.id}").json()

@@ -96,6 +96,13 @@ import type { CompetitionDetail, Membership, Participant, ProfileSummary, TeamPi
           }
 
           <h3 class="fm-section-title">Members ({{ current.roster.length }}{{ squadLabel() }})</h3>
+          @if (usesHandicap()) {
+            <p class="hint">
+              Team handicap: <strong>{{ teamHandicap() }}</strong>. Each player runs from
+              {{ handicapRange().min }} to +{{ handicapRange().max }}. The lower team starts each match
+              with the difference as goals.
+            </p>
+          }
           <p class="hint">
             @if (teamEntry() === 'draft') {
               Players join through the draft. A player accepts before they count toward the 14.
@@ -122,8 +129,43 @@ import type { CompetitionDetail, Membership, Participant, ProfileSummary, TeamPi
                 >
                   <ion-label>
                     <h2>{{ member.name }}</h2>
-                    <p>{{ member.user ? 'Open bio and league stats' : 'Member' }}</p>
+                    <p>
+                      @if (playingNumbers().length && member.number !== null) {
+                        No. {{ member.number }} ·
+                      }
+                      @if (usesHandicap()) {
+                        Handicap {{ handicapLabel(member.handicap) }} ·
+                      }
+                      {{ member.user ? 'Open bio and league stats' : 'Member' }}
+                    </p>
                   </ion-label>
+                  @if (canManage() && (playingNumbers().length || usesHandicap())) {
+                    <span class="playing" slot="end" (click)="$event.stopPropagation(); $event.preventDefault()">
+                      @if (playingNumbers().length) {
+                        <select
+                          [attr.aria-label]="'Playing number for ' + member.name"
+                          (change)="setPlaying(member.id, 'number', $event)"
+                        >
+                          <option value="" [selected]="member.number === null">No.</option>
+                          @for (value of playingNumbers(); track value) {
+                            <option [value]="value" [selected]="member.number === value">{{ value }}</option>
+                          }
+                        </select>
+                      }
+                      @if (usesHandicap()) {
+                        <input
+                          type="number"
+                          step="1"
+                          [min]="handicapRange().min"
+                          [max]="handicapRange().max"
+                          [value]="member.handicap === null || member.handicap === undefined ? '' : handicapLabel(member.handicap)"
+                          placeholder="Hcp"
+                          [attr.aria-label]="'Handicap for ' + member.name"
+                          (change)="setPlaying(member.id, 'handicap', $event)"
+                        />
+                      }
+                    </span>
+                  }
                   @if (canManage()) {
                     <ion-button
                       slot="end"
@@ -269,6 +311,54 @@ export class TeamProfilePage implements OnInit {
 
   squadLabel(): string {
     return this.teamEntry() ? ' of 14' : '';
+  }
+
+  playingNumbers(): number[] {
+    const numbers = this.competition()?.settings_json?.['roster_numbers'];
+    return Array.isArray(numbers) ? numbers.map(Number) : [];
+  }
+
+  usesHandicap(): boolean {
+    const source = this.competition()?.settings_json?.['head_start'];
+    return !!source && typeof source === 'object' && Object.keys(source).length > 0;
+  }
+
+  handicapRange(): { min: number; max: number } {
+    const source = (this.competition()?.settings_json?.['head_start'] ?? {}) as { min?: number; max?: number };
+    return { min: Number(source.min ?? 0), max: Number(source.max ?? 10) };
+  }
+
+  handicapLabel(value: string | null | undefined): string {
+    if (value === null || value === undefined || value === '') return 'not set';
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? String(parsed) : value;
+  }
+
+  teamHandicap(): string {
+    const total = (this.team()?.roster ?? [])
+      .filter((member) => member.is_active && member.handicap !== null && member.handicap !== undefined)
+      .reduce((sum, member) => sum + Number(member.handicap), 0);
+    return String(total);
+  }
+
+  setPlaying(memberId: string, field: 'number' | 'handicap', event: Event): void {
+    const raw = (event.target as HTMLInputElement | HTMLSelectElement).value.trim();
+    const value = raw === '' ? null : Number(raw);
+    if (value !== null && !Number.isFinite(value)) return;
+    this.busy.set(true);
+    this.api
+      .updateRosterMember(this.competitionId, this.participantId, memberId, { [field]: value })
+      .subscribe({
+        next: () => {
+          this.busy.set(false);
+          this.refreshTeam();
+        },
+        error: async (err: unknown) => {
+          this.busy.set(false);
+          this.refreshTeam();
+          await this.toast(extractErrorMessage(err, 'Could not save that change.'), 'danger');
+        },
+      });
   }
 
   readonly canManage = computed(() => {

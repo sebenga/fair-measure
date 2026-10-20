@@ -33,6 +33,7 @@ meilisearch>=0.31,<1.0
 python-dotenv>=1.0,<2.0
 Pillow>=10.4
 segno>=1.6,<2.0  # QR codes for scouting (rate a player by scanning their profile)
+reportlab>=4.2,<5.0  # PDF exports of scouting reports
 
 # --- Server ----------------------------------------------------------------
 gunicorn>=23.0,<24.0

@@ -2,9 +2,11 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   IonBackButton,
+  IonButton,
   IonButtons,
   IonContent,
   IonHeader,
+  IonIcon,
   IonSpinner,
   IonTitle,
   IonToolbar,
@@ -23,7 +25,7 @@ const RADIUS = 96;
 @Component({
   selector: 'fm-compare',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonSpinner],
+  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
@@ -31,6 +33,14 @@ const RADIUS = 96;
       <ion-toolbar>
         <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting/search" /></ion-buttons>
         <ion-title>Compare</ion-title>
+        <ion-buttons slot="end">
+          @if (data()) {
+            <ion-button (click)="openReport()">
+              <ion-icon slot="start" name="document-text-outline" aria-hidden="true" />
+              Report
+            </ion-button>
+          }
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -261,6 +271,14 @@ export class ComparePage {
 
   colour(index: number): string {
     return COLOURS[index % COLOURS.length];
+  }
+
+  openReport(): void {
+    const data = this.data();
+    if (!data) return;
+    void this.router.navigate(['/tabs/scouting/reports/compare'], {
+      queryParams: { profiles: data.players.map((player) => player.id).join(','), sport: data.sport },
+    });
   }
 
   point(index: number, count: number, value: number): { x: number; y: number } {

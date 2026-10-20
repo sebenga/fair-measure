@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
   IonBackButton,
@@ -107,6 +108,7 @@ function presetKind(preset: Preset): PresetKind {
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    NgTemplateOutlet,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -162,163 +164,216 @@ function presetKind(preset: Preset): PresetKind {
           @case (1) {
             <h3 class="fm-section-title">What are you running?</h3>
             <p class="hint">
-              Pick an official sport, or Custom if you want to define the scoring yourself.
+              Pick an official sport, or Custom if you want to define the scoring yourself. Tap a card to see its scoring.
             </p>
 
-            @if (everydayPresets().length) {
+            @if (focused()) {
+              <p class="hint">Tap {{ activePreset()?.label ?? 'it' }} again to hide its scoring and see every option.</p>
+            }
+
+            @if (shownEveryday().length) {
               <div class="presets fm-stagger">
-                @for (preset of everydayPresets(); track preset.key) {
+                @for (preset of shownEveryday(); track preset.key) {
                   <button
                     type="button"
                     class="preset"
-                    [class.selected]="selectedPreset() === preset.key"
-                    (click)="selectPreset(preset.key)"
+                    [class.selected]="focused() && selectedPreset() === preset.key"
+                    [attr.aria-pressed]="focused() && selectedPreset() === preset.key"
+                    (click)="tapPreset(preset.key)"
                   >
                     <ion-icon [name]="presetIcon(preset)" aria-hidden="true" />
                     <span>{{ preset.label }}</span>
                     <small>{{ kindCaption(preset) }}</small>
                   </button>
+                @if (focused() && selectedPreset() === preset.key) {
+                  <div class="inline-scoring"><ng-container *ngTemplateOutlet="scoringPanel" /></div>
+                }
                 }
               </div>
             }
 
             @if (sportPresets().length) {
-              <p class="group-label">Sports</p>
-              <div class="presets fm-stagger">
-                @for (preset of sportPresets(); track preset.key) {
+              @if (!focused()) {
+                <ion-list inset="true" class="find-sport">
+                  <ion-item>
+                    <ion-input
+                      label="Find a sport"
+                      labelPlacement="stacked"
+                      placeholder="Soccer, swimming, chess"
+                      [value]="sportQuery()"
+                      (ionInput)="sportQuery.set(stringValue($event))"
+                    />
+                  </ion-item>
+                </ion-list>
+              }
+
+              @for (group of shownGroups(); track group.key) {
+                @if (!focused()) {
                   <button
                     type="button"
-                    class="preset"
-                    [class.selected]="selectedPreset() === preset.key"
-                    (click)="selectPreset(preset.key)"
+                    class="group-toggle"
+                    [class.open]="groupOpen(group.key)"
+                    [attr.aria-expanded]="groupOpen(group.key)"
+                    (click)="toggleGroup(group.key)"
                   >
-                    <ion-icon [name]="presetIcon(preset)" aria-hidden="true" />
-                    <span>{{ preset.label }}</span>
-                    <small>{{ formatShort(preset.format) }}</small>
+                    <span>{{ group.label }}</span>
+                    <span class="count">{{ group.presets.length }}</span>
+                    <ion-icon name="chevron-forward-outline" aria-hidden="true" />
                   </button>
                 }
-              </div>
-            }
-
-            @if (showTypeLabel()) {
-              <ion-list inset="true">
-                <ion-item>
-                  <ion-input
-                    label="What is it?"
-                    labelPlacement="stacked"
-                    formControlName="sport"
-                    [placeholder]="typePlaceholder()"
-                    maxlength="80"
-                  />
-                </ion-item>
-              </ion-list>
-            }
-
-            <h3 class="fm-section-title">{{ pointsTable() ? 'Scoring criteria' : 'Scoring' }}</h3>
-            <p class="hint">
-              @if (scoringLocked()) {
-                Official scoring is fixed. These categories and point values
-                cannot be changed after the competition is created.
-              } @else if (isCustom()) {
-                Define the scoring criteria first. Each one needs a name, what the
-                points mean, and how many points one unit is worth. You choose
-                next whether the table uses match results or the sum of these criteria.
-              } @else if (pointsTable()) {
-                Each row is a scoring criterion. The table accumulates what people
-                achieve on it. Leave “per unit” at 1 to add the number they enter.
-              } @else {
-                Each row is a scoring type: a name, what it means, and how many
-                points it is worth. Turn off “counts toward the score” to record
-                something without changing the total.
+                @if (focused() || groupOpen(group.key)) {
+                  <div class="presets fm-stagger">
+                    @for (preset of group.presets; track preset.key) {
+                      <button
+                        type="button"
+                        class="preset"
+                        [class.selected]="focused() && selectedPreset() === preset.key"
+                        [attr.aria-pressed]="focused() && selectedPreset() === preset.key"
+                        (click)="tapPreset(preset.key)"
+                      >
+                        <ion-icon [name]="presetIcon(preset)" aria-hidden="true" />
+                        <span>{{ preset.label }}</span>
+                        <small>{{ formatShort(preset.format) }}</small>
+                      </button>
+                    @if (focused() && selectedPreset() === preset.key) {
+                      <div class="inline-scoring"><ng-container *ngTemplateOutlet="scoringPanel" /></div>
+                    }
+                    }
+                  </div>
+                }
               }
-            </p>
 
-            @if (scoringLocked()) {
-              <div class="scoring-list">
-                @for (row of scoringDrafts(); track row.key) {
-                  <div class="score-row fm-card">
-                    <strong>{{ row.name }}</strong>
-                    <p>
-                      {{ row.points }} {{ pointsTable() ? 'per unit' : 'pts' }}
-                      @if (!row.affects_score) {
-                        · recorded only
-                      }
-                    </p>
+              @if (!focused() && sportQuery() && !sportGroups().length) {
+                <p class="hint">No sport matches that.</p>
+              }
+            }
+
+            <ng-template #scoringPanel>
+              @if (showTypeLabel()) {
+                <ion-list inset="true">
+                  <ion-item>
+                    <ion-input
+                      label="What is it?"
+                      labelPlacement="stacked"
+                      formControlName="sport"
+                      [placeholder]="typePlaceholder()"
+                      maxlength="80"
+                    />
+                  </ion-item>
+                </ion-list>
+              }
+
+              <h3 class="fm-section-title">{{ pointsTable() ? 'Scoring criteria' : 'Scoring' }}</h3>
+              <p class="hint">
+                @if (scoringLocked()) {
+                  Official scoring is fixed. These categories and point values
+                  cannot be changed after the competition is created.
+                } @else if (isCustom()) {
+                  Define the scoring criteria first. Each one needs a name, what the
+                  points mean, and how many points one unit is worth. You choose
+                  next whether the table uses match results or the sum of these criteria.
+                } @else if (pointsTable()) {
+                  Each row is a scoring criterion. The table accumulates what people
+                  achieve on it. Leave “per unit” at 1 to add the number they enter.
+                } @else {
+                  Each row is a scoring type: a name, what it means, and how many
+                  points it is worth. Turn off “counts toward the score” to record
+                  something without changing the total.
+                }
+              </p>
+
+              @if (scoringLocked()) {
+                @if (activePreset()?.result_type) {
+                  <p class="hint">
+                    Results are recorded on an event sheet after the competition is created.
+                    Officials confirm each result. These rules cannot be edited.
+                  </p>
+                }
+                <div class="scoring-list">
+                  @for (row of scoringDrafts(); track row.key) {
+                  <div class="score-row locked fm-card">
+                    <div class="score-line">
+                      <strong>{{ row.name }}</strong>
+                      <span class="pts" [class.muted]="!row.affects_score">
+                        {{ row.points }} {{ pointsTable() ? 'per unit' : 'pts' }}{{ row.affects_score ? '' : ' · recorded only' }}
+                      </span>
+                    </div>
                     @if (row.description) {
                       <p>{{ row.description }}</p>
                     }
                   </div>
+                  }
+                </div>
+              } @else {
+              <div class="scoring-list">
+                @for (row of scoringDrafts(); track row.key) {
+                  <div class="score-row fm-card">
+                    <div class="score-head">
+                      <ion-input
+                        [label]="pointsTable() || isCustom() ? 'Criterion' : 'Name'"
+                        labelPlacement="stacked"
+                        [value]="row.name"
+                        [placeholder]="pointsTable() || isCustom() ? 'e.g. Sales closed' : 'e.g. Try'"
+                        maxlength="120"
+                        (ionInput)="patchDraft(row.key, { name: stringValue($event) })"
+                      />
+                      <ion-input
+                        class="points"
+                        [label]="pointsTable() ? 'Per unit' : 'Points'"
+                        labelPlacement="stacked"
+                        type="number"
+                        inputmode="decimal"
+                        [value]="row.points"
+                        (ionInput)="patchDraft(row.key, { points: stringValue($event) })"
+                      />
+                      <ion-button
+                        fill="clear"
+                        color="danger"
+                        size="small"
+                        type="button"
+                        [disabled]="scoringDrafts().length === 1"
+                        (click)="removeDraft(row.key)"
+                      >
+                        <ion-icon
+                          slot="icon-only"
+                          name="trash-outline"
+                          [attr.aria-label]="pointsTable() ? 'Remove KPI' : 'Remove scoring type'"
+                        />
+                      </ion-button>
+                    </div>
+                    <ion-textarea
+                      [label]="pointsTable() || isCustom() ? 'Description of these points' : 'What this means'"
+                      labelPlacement="stacked"
+                      [value]="row.description"
+                      [placeholder]="
+                        pointsTable() || isCustom()
+                          ? 'Shown when someone expands this criterion on the table.'
+                          : 'Describe when this score is awarded.'
+                      "
+                      autoGrow="true"
+                      rows="2"
+                      maxlength="2000"
+                      (ionInput)="patchDraft(row.key, { description: stringValue($event) })"
+                    />
+                    <ion-checkbox
+                      labelPlacement="end"
+                      [checked]="row.affects_score"
+                      (ionChange)="patchDraft(row.key, { affects_score: checkboxValue($event) })"
+                    >
+                      {{ pointsTable() ? 'Counts toward the table' : 'Counts toward the score' }}
+                    </ion-checkbox>
+                  </div>
                 }
               </div>
-            } @else {
-            <div class="scoring-list">
-              @for (row of scoringDrafts(); track row.key) {
-                <div class="score-row fm-card">
-                  <div class="score-head">
-                    <ion-input
-                      [label]="pointsTable() || isCustom() ? 'Criterion' : 'Name'"
-                      labelPlacement="stacked"
-                      [value]="row.name"
-                      [placeholder]="pointsTable() || isCustom() ? 'e.g. Sales closed' : 'e.g. Try'"
-                      maxlength="120"
-                      (ionInput)="patchDraft(row.key, { name: stringValue($event) })"
-                    />
-                    <ion-input
-                      class="points"
-                      [label]="pointsTable() ? 'Per unit' : 'Points'"
-                      labelPlacement="stacked"
-                      type="number"
-                      inputmode="decimal"
-                      [value]="row.points"
-                      (ionInput)="patchDraft(row.key, { points: stringValue($event) })"
-                    />
-                    <ion-button
-                      fill="clear"
-                      color="danger"
-                      size="small"
-                      type="button"
-                      [disabled]="scoringDrafts().length === 1"
-                      (click)="removeDraft(row.key)"
-                    >
-                      <ion-icon
-                        slot="icon-only"
-                        name="trash-outline"
-                        [attr.aria-label]="pointsTable() ? 'Remove KPI' : 'Remove scoring type'"
-                      />
-                    </ion-button>
-                  </div>
-                  <ion-textarea
-                    [label]="pointsTable() || isCustom() ? 'Description of these points' : 'What this means'"
-                    labelPlacement="stacked"
-                    [value]="row.description"
-                    [placeholder]="
-                      pointsTable() || isCustom()
-                        ? 'Shown when someone expands this criterion on the table.'
-                        : 'Describe when this score is awarded.'
-                    "
-                    autoGrow="true"
-                    rows="2"
-                    maxlength="2000"
-                    (ionInput)="patchDraft(row.key, { description: stringValue($event) })"
-                  />
-                  <ion-checkbox
-                    labelPlacement="end"
-                    [checked]="row.affects_score"
-                    (ionChange)="patchDraft(row.key, { affects_score: checkboxValue($event) })"
-                  >
-                    {{ pointsTable() ? 'Counts toward the table' : 'Counts toward the score' }}
-                  </ion-checkbox>
-                </div>
-              }
-            </div>
 
-            <div class="add-score">
-              <ion-button fill="outline" type="button" (click)="addDraft()">
-                <ion-icon slot="start" name="add-outline" />
-                {{ pointsTable() || isCustom() ? 'Add scoring criterion' : 'Add scoring type' }}
-              </ion-button>
-            </div>
-            }
+              <div class="add-score">
+                <ion-button fill="outline" type="button" (click)="addDraft()">
+                  <ion-icon slot="start" name="add-outline" />
+                  {{ pointsTable() || isCustom() ? 'Add scoring criterion' : 'Add scoring type' }}
+                </ion-button>
+              </div>
+              }
+            </ng-template>
           }
 
           @case (2) {
@@ -491,6 +546,23 @@ function presetKind(preset: Preset): PresetKind {
               }
             } @else if (scoringLocked()) {
               <p class="hint">{{ lockedStructureHint() }}</p>
+              @if (unitCountOptions(); as choice) {
+                <h3 class="fm-section-title">{{ unitName(choice.unit) }}s per match</h3>
+                <p class="hint">Chosen now and locked once the competition is created.</p>
+                <div class="presets">
+                  @for (count of choice.options; track count) {
+                    <button
+                      type="button"
+                      class="preset"
+                      [class.selected]="unitCount() === count"
+                      (click)="unitCount.set(count)"
+                    >
+                      <span>{{ count }}</span>
+                      <small>{{ unitName(choice.unit) }}s</small>
+                    </button>
+                  }
+                </div>
+              }
             } @else {
               <div class="formats">
                 @for (option of formatChoices(); track option.value) {
@@ -795,6 +867,42 @@ export class CompetitionCreatePage implements OnInit {
     this.presets().filter((preset) => presetKind(preset) === 'sport'),
   );
 
+  readonly sportQuery = signal('');
+
+  /** Long catalogues stay closed until the reader opens them. */
+  readonly closedGroups = signal(new Set(['olympic', 'winter']));
+
+  readonly sportGroups = computed(() => {
+    const query = this.sportQuery().trim().toLowerCase();
+    const sports = this.sportPresets().filter((preset) => {
+      if (!query) return true;
+      return (
+        preset.label.toLowerCase().includes(query) ||
+        preset.sport.toLowerCase().includes(query) ||
+        (preset.group_label ?? '').toLowerCase().includes(query)
+      );
+    });
+    const order = ['ball', 'racket', 'golf', 'target', 'board', 'equestrian', 'olympic', 'winter'];
+    const buckets = new Map<string, Preset[]>();
+    const labels = new Map<string, string>();
+    for (const preset of sports) {
+      const key = preset.group || 'other';
+      const list = buckets.get(key) ?? [];
+      list.push(preset);
+      buckets.set(key, list);
+      if (!labels.has(key)) labels.set(key, preset.group_label || 'Other');
+    }
+    const keys = [
+      ...order.filter((key) => buckets.has(key)),
+      ...[...buckets.keys()].filter((key) => !order.includes(key)),
+    ];
+    return keys.map((key) => ({
+      key,
+      label: labels.get(key) ?? 'Other',
+      presets: buckets.get(key) ?? [],
+    }));
+  });
+
   readonly activePreset = computed(() => {
     const key = this.selectedPreset();
     return this.presets().find((preset) => preset.key === key) ?? null;
@@ -850,9 +958,22 @@ export class CompetitionCreatePage implements OnInit {
     });
   }
 
+  readonly unitCount = signal<number | null>(null);
+
+  unitCountOptions(): { unit: string; options: number[]; default?: number } | null {
+    const options = this.activePreset()?.unit_count_options;
+    return options?.options?.length ? options : null;
+  }
+
+  unitName(unit: string): string {
+    const text = unit.replace(/_/g, ' ');
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
   selectPreset(key: string): void {
     this.selectedPreset.set(key);
     const preset = this.presets().find((candidate) => candidate.key === key);
+    this.unitCount.set(preset?.unit_count_options?.default ?? null);
     if (preset?.format) {
       this.form.patchValue({ format: preset.format, sport: preset.sport });
     }
@@ -939,6 +1060,48 @@ export class CompetitionCreatePage implements OnInit {
 
   presetIcon(preset: Preset): string {
     return preset.icon || 'trophy-outline';
+  }
+
+  /** Tapping a card shows only that card and its scoring; tapping it again shows every card. */
+  readonly focused = signal(false);
+  private readonly content = viewChild(IonContent);
+
+  readonly shownEveryday = computed(() =>
+    this.focused()
+      ? this.everydayPresets().filter((preset) => preset.key === this.selectedPreset())
+      : this.everydayPresets(),
+  );
+
+  readonly shownGroups = computed(() => {
+    if (!this.focused()) return this.sportGroups();
+    const chosen = this.sportPresets().find((preset) => preset.key === this.selectedPreset());
+    if (!chosen) return [];
+    return [{ key: chosen.group || 'other', label: chosen.group_label || 'Other', presets: [chosen] }];
+  });
+
+  tapPreset(key: string): void {
+    if (this.focused() && key === this.selectedPreset()) {
+      this.focused.set(false);
+      return;
+    }
+    if (key !== this.selectedPreset()) this.selectPreset(key);
+    this.focused.set(true);
+    void this.content()?.scrollToTop(250);
+  }
+
+  groupOpen(key: string): boolean {
+    if (this.sportQuery().trim()) return true;
+    return !this.closedGroups().has(key);
+  }
+
+  toggleGroup(key: string): void {
+    if (this.sportQuery().trim()) return;
+    this.closedGroups.update((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
 
   formatChoices(): FormatOption[] {
@@ -1092,6 +1255,7 @@ export class CompetitionCreatePage implements OnInit {
         sport: raw.sport.trim(),
         format: raw.format,
         ...(locked ? {} : { scoring_basis: this.scoringBasis(), scoring_categories }),
+        ...(this.unitCountOptions() && this.unitCount() ? { unit_count: this.unitCount() } : {}),
         ...(this.isCustom() && !this.pointsTable()
           ? {
               participant_type: this.versusEntrants(),

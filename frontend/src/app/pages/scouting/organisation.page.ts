@@ -1,10 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   IonBackButton,
+  IonButton,
   IonButtons,
   IonContent,
   IonHeader,
+  IonIcon,
   IonSpinner,
   IonTitle,
   IonToolbar,
@@ -18,7 +20,7 @@ import { ScoutingService } from '../../core/scouting.service';
 @Component({
   selector: 'fm-scouting-organisation',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonSpinner],
+  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
@@ -26,6 +28,14 @@ import { ScoutingService } from '../../core/scouting.service';
       <ion-toolbar>
         <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
         <ion-title>{{ organisation()?.name ?? 'Organisation' }}</ion-title>
+        <ion-buttons slot="end">
+          @if (isAdmin()) {
+            <ion-button (click)="openActivity()">
+              <ion-icon slot="start" name="stats-chart-outline" aria-hidden="true" />
+              Scout activity
+            </ion-button>
+          }
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -76,7 +86,13 @@ import { ScoutingService } from '../../core/scouting.service';
 export class ScoutingOrganisationPage {
   private readonly scouting = inject(ScoutingService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly toasts = inject(ToastController);
+
+  openActivity(): void {
+    const id = this.organisation()?.id;
+    if (id) void this.router.navigate(['/tabs/scouting/reports/activity'], { queryParams: { organisation: id } });
+  }
 
   readonly organisation = signal<Organisation | null>(null);
   readonly members = signal<ScoutingRole[]>([]);

@@ -6,7 +6,7 @@ arrive as data on the competition.
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from apps.fixtures.models import FixtureSide
 
@@ -42,6 +42,7 @@ def expand_units(structure: list[dict] | None) -> list[dict]:
                     "affects_total": bool(block.get("affects_total", True)),
                     "resolves_draw": bool(block.get("resolves_draw", False)),
                     "extra": bool(block.get("extra", False)),
+                    "golden": bool(block.get("golden", False)),
                     "first_to": block.get("first_to"),
                     "win_by": int(block.get("win_by") or 1),
                     "cap": block.get("cap"),
@@ -141,6 +142,7 @@ def split_scores(sides, events, slots: list[dict], settings: dict | None = None)
 
     best_mode = any(rule.get("aggregate") == "best" for rule in rules.values())
     best_values: dict = {side_id: [] for side_id in side_ids}
+    golden_scored = False
 
     for event in ordered:
         if event.side_id not in match or event.scoring_category is None:
@@ -148,6 +150,12 @@ def split_scores(sides, events, slots: list[dict], settings: dict | None = None)
         rule = rules.get(event.scoring_category.code, {})
         if rule.get("role") == "no_result":
             continue
+        golden_slot = _slot_for(event.unit_index, slots)
+        if golden_slot is not None and golden_slot["golden"] and event.scoring_category.affects_score:
+            # The first score in a golden period ends the match; nothing after it counts.
+            if golden_scored:
+                continue
+            golden_scored = True
         if rule.get("bonus_only"):
             # Counts only as the "next ball" of an earlier bonus, never on its own.
             continue
@@ -374,6 +382,90 @@ def _apply_bonuses(match: dict, sides, events, settings: dict) -> None:
                 match[side.id] += award
 
 
+def golden_period_decided(fixture, slots: list[dict]) -> bool:
+    """Whether a score has already been recorded in a golden period of this fixture."""
+
+    golden = [slot["index"] for slot in slots if slot["golden"]]
+    if not golden:
+        return False
+    return fixture.events.filter(
+        unit_index__in=golden, scoring_category__affects_score=True
+    ).exists()
+
+
+def _roster_rating(participant, source: dict) -> Decimal:
+    low = source.get("min")
+    high = source.get("max")
+    total = ZERO
+    for member in participant.roster.filter(is_active=True):
+        if member.handicap is None:
+            continue
+        value = Decimal(member.handicap)
+        if low is not None:
+            value = max(value, Decimal(str(low)))
+        if high is not None:
+            value = min(value, Decimal(str(high)))
+        total += value
+    return total
+
+
+def team_ratings(sides, settings: dict) -> dict:
+    """Each side's combined rating (the sum of its players' handicaps)."""
+
+    source = settings.get("head_start") or {}
+    return {side.id: _roster_rating(side.participant, source) for side in sides}
+
+
+def head_starts(sides, settings: dict) -> dict:
+    """Goals the lower-rated side starts with, from its players' handicaps.
+
+    The difference can be scaled to the number of periods played, rounded to
+    the step the preset names.
+    """
+
+    source = settings.get("head_start")
+    zero = {side.id: ZERO for side in sides}
+    if not source or len(sides) != 2:
+        return zero
+    ratings = team_ratings(sides, settings)
+    first, second = sides
+    gap = ratings[first.id] - ratings[second.id]
+    if gap == 0:
+        return zero
+    gap = abs(gap)
+    scale_to = source.get("prorate_units")
+    if scale_to:
+        unit = source.get("unit")
+        played = sum(
+            int(block.get("count") or 1)
+            for block in settings.get("match_structure") or []
+            if block.get("unit") == unit and not block.get("extra")
+        )
+        if played:
+            gap = gap * Decimal(played) / Decimal(str(scale_to))
+    step = Decimal(str(source.get("round_to") or 1))
+    gap = (gap / step).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * step
+    lower = second if ratings[first.id] > ratings[second.id] else first
+    return {side.id: (gap if side.id == lower.id else ZERO) for side in sides}
+
+
+def fixture_head_starts(fixture, settings: dict | None = None, *, store: bool = False) -> dict:
+    """The head start per side: fixed once stored, otherwise worked out from the rosters."""
+
+    settings = settings if settings is not None else (fixture.competition.settings_json or {})
+    sides = list(fixture.sides.select_related("participant"))
+    if not settings.get("head_start"):
+        return {side.id: ZERO for side in sides}
+    if sides and all(side.head_start is not None for side in sides):
+        return {side.id: Decimal(side.head_start) for side in sides}
+    starts = head_starts(sides, settings)
+    if store:
+        for side in sides:
+            side.head_start = starts[side.id]
+        FixtureSide.objects.bulk_update(sides, ["head_start"])
+    return starts
+
+
 def settle_fixture(fixture) -> None:
     """Write side totals and outcomes from the events and the preset structure."""
 
@@ -382,10 +474,14 @@ def settle_fixture(fixture) -> None:
     if not structure and not settings.get("win_condition"):
         return
 
+    starts = fixture_head_starts(fixture, settings, store=True)
     sides = list(fixture.sides.all())
     events = list(fixture.events.select_related("scoring_category"))
     slots = expand_units(structure)
     match, decider, per_unit, tiebreak = split_scores(sides, events, slots, settings)
+    for side_id, start in starts.items():
+        if side_id in match:
+            match[side_id] += start
     win_condition = settings.get("win_condition") or "highest_total"
     rules = score_rules(settings)
     event_directions = {

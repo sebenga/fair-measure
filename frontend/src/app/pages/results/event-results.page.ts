@@ -142,6 +142,12 @@ function raceTime(value: number | string | null | undefined): string {
                 @if (entry.combination; as c) {
                   <small>{{ c.rider }}{{ c.trainer ? ' · trainer ' + c.trainer : '' }}</small>
                 }
+                @if (judgeLine(entry); as line) {
+                  <small>{{ line }}</small>
+                }
+                @if (entry.breakdown['best_condition']; as bc) {
+                  <small class="award">Best Condition {{ ordinalOf(bc.rank) }} · {{ bc.score }}</small>
+                }
                 @if (entry.effective_status) {
                   <small class="reason">
                     @if (entry.welfare_locked) {
@@ -167,14 +173,64 @@ function raceTime(value: number | string | null | undefined): string {
             <p class="hint">This result is final. Changes need a reason and are added to the log below.</p>
           }
 
+          @if (testOptions().length || judgePositions().length) {
+            <section class="fm-card editor">
+              <h4>{{ judgePositions().length ? 'Test and judges' : testLabel() }}</h4>
+              <div class="grid">
+                @if (testOptions().length) {
+                  <label class="field">
+                    {{ testLabel() }}
+                    <select (change)="setTest($event)">
+                      @for (test of testOptions(); track test.key) {
+                        <option [value]="test.key" [selected]="chosenTest() === test.key">{{ test.label }}</option>
+                      }
+                    </select>
+                  </label>
+                }
+              </div>
+              @if (judgePositions().length) {
+                <p class="sub">Judges ({{ judgeCount()[0] }} to {{ judgeCount()[1] }})</p>
+                <div class="judge-picks">
+                  @for (position of judgePositions(); track position) {
+                    <button
+                      type="button"
+                      class="badge"
+                      [class.ok]="chosenJudges().includes(position)"
+                      [attr.aria-pressed]="chosenJudges().includes(position)"
+                      (click)="toggleJudge(position)"
+                    >
+                      {{ position }}
+                    </button>
+                  }
+                </div>
+              }
+              @if (configDraft()?.['test'] || configDraft()?.['judges']) {
+                <p class="hint">Save to load the {{ judgePositions().length ? "test sheet and judges' columns" : 'new ' + testLabel().toLowerCase() }}.</p>
+              }
+            </section>
+          }
+
           @if (eventSettings().length) {
             <section class="fm-card editor">
-              <h4>Event settings</h4>
+              <h4>{{ cardFields().length ? 'Race card' : 'Event settings' }}</h4>
               <div class="grid">
                 @for (item of eventSettings(); track item.path) {
                   <label class="field">
                     {{ item.label }}
-                    <input [value]="item.value" (change)="setConfig(item.group, item.key, $event)" inputmode="decimal" />
+                    @if (item.options.length) {
+                      <select (change)="setConfigText(item.group, item.key, $event)">
+                        <option value="" [selected]="!item.value">Choose</option>
+                        @for (option of item.options; track option) {
+                          <option [value]="option" [selected]="item.value === option">{{ option }}</option>
+                        }
+                      </select>
+                    } @else {
+                      <input
+                        [value]="item.value"
+                        [attr.inputmode]="item.numeric ? 'decimal' : null"
+                        (change)="item.numeric ? setConfig(item.group, item.key, $event) : setConfigText(item.group, item.key, $event)"
+                      />
+                    }
                   </label>
                 }
               </div>
@@ -210,11 +266,21 @@ function raceTime(value: number | string | null | undefined): string {
                       @for (field of s.config.record_fields ?? []; track field) {
                         <label class="field">{{ fieldLabel(field) }}<input [value]="val(entry, [field])" (change)="setText(entry, [field], $event)" /></label>
                       }
+                      @for (field of runnerFields(); track field.key) {
+                        <label class="field">
+                          {{ field.label }}
+                          <input
+                            [value]="val(entry, [field.key])"
+                            [attr.inputmode]="field.number ? 'decimal' : null"
+                            (change)="field.number ? setNum(entry, [field.key], $event) : setText(entry, [field.key], $event)"
+                          />
+                        </label>
+                      }
                     </div>
                   }
                   @case ('faults_then_time') {
                     @for (round of s.config.rounds ?? [{ key: 'round', label: 'Round' }]; track round.key) {
-                      <p class="sub">{{ round.label ?? round.key }}{{ round.decides ? ' (decides first place)' : '' }}</p>
+                      <p class="sub">{{ round.label ?? round.key }}{{ round.decides ? ' (decides first place)' : '' }}{{ round.qualify ? ' (only if clear so far)' : '' }}</p>
                       <div class="grid">
                         @for (item of s.config.penalties ?? []; track item.key) {
                           <label class="field">{{ item.label }}<input type="number" min="0" [value]="val(entry, ['rounds', round.key, item.key])" (change)="setNum(entry, ['rounds', round.key, item.key], $event)" /></label>
@@ -300,6 +366,20 @@ function raceTime(value: number | string | null | undefined): string {
                         <label class="field">Riding time (h:mm:ss)<input [value]="clockOf(entry, ['loops', index, 'ride_seconds'])" (change)="setTime(entry, ['loops', index, 'ride_seconds'], $event)" /></label>
                         <label class="field">Hold (not counted)<input [value]="clockOf(entry, ['loops', index, 'hold_seconds'])" (change)="setTime(entry, ['loops', index, 'hold_seconds'], $event)" /></label>
                         <label class="field">Heart rate (bpm)<input type="number" [value]="val(entry, ['loops', index, 'heart_rate'])" (change)="setNum(entry, ['loops', index, 'heart_rate'], $event)" /></label>
+                        @if (s.config['presentation_limit_seconds']) {
+                          <label class="field">Time to present (m:ss)<input [value]="clockOf(entry, ['loops', index, 'presentation_seconds'])" (change)="setTime(entry, ['loops', index, 'presentation_seconds'], $event)" /></label>
+                        }
+                        @if (ftqCodes().length) {
+                          <label class="field">
+                            FTQ
+                            <select (change)="setText(entry, ['loops', index, 'ftq_code'], $event)">
+                              <option value="" [selected]="!val(entry, ['loops', index, 'ftq_code'])">Passed</option>
+                              @for (code of ftqCodes(); track code.code) {
+                                <option [value]="code.code" [selected]="val(entry, ['loops', index, 'ftq_code']) === code.code">{{ code.code }} · {{ code.label }}</option>
+                              }
+                            </select>
+                          </label>
+                        }
                         <label class="field">
                           Soundness
                           <select (change)="setBool(entry, ['loops', index, 'sound'], $event)">
@@ -320,6 +400,15 @@ function raceTime(value: number | string | null | undefined): string {
                         </select>
                       </label>
                     </div>
+                    @if (conditionItems().length) {
+                      <p class="sub">Best Condition (leading finishers who present)</p>
+                      <div class="grid">
+                        @for (item of conditionItems(); track item.key) {
+                          <label class="field">{{ item.label }} (0–{{ item.max ?? 10 }})<input inputmode="decimal" [value]="val(entry, ['best_condition', 'marks', item.key])" (change)="setNum(entry, ['best_condition', 'marks', item.key], $event)" /></label>
+                        }
+                        <label class="field">Rider weight (kg)<input inputmode="decimal" [value]="val(entry, ['best_condition', 'weight_kg'])" (change)="setNum(entry, ['best_condition', 'weight_kg'], $event)" /></label>
+                      </div>
+                    }
                   }
                   @case ('timed_lowest') {
                     <div class="grid">
@@ -425,21 +514,56 @@ function raceTime(value: number | string | null | undefined): string {
                     </div>
                   }
                   @case ('points_per_run') {
-                    @for (run of runsOf(entry); track $index; let index = $index) {
+                    @if (entry.riders?.length) {
+                      @for (rider of entry.riders ?? []; track rider) {
+                        <p class="sub">{{ rider }}</p>
+                        @for (run of riderRuns(entry, rider); track $index; let index = $index) {
+                          <div class="grid run">
+                            <label class="field">
+                              Run {{ index + 1 }}
+                              <select (change)="setText(entry, ['riders', rider, index, 'outcome'], $event)">
+                                <option value="" [selected]="!run.outcome">Choose</option>
+                                @for (outcome of s.config.outcomes ?? []; track outcome.key) {
+                                  <option [value]="outcome.key" [selected]="run.outcome === outcome.key">{{ outcome.label }} ({{ outcome.points }})</option>
+                                }
+                              </select>
+                            </label>
+                            <label class="field">Time (s)<input inputmode="decimal" [value]="run.time ?? ''" (change)="setNum(entry, ['riders', rider, index, 'time'], $event)" /></label>
+                          </div>
+                        }
+                      }
+                    } @else {
+                      @for (run of runsOf(entry); track $index; let index = $index) {
+                        <div class="grid run">
+                          <label class="field">
+                            Run {{ index + 1 }}
+                            <select (change)="setText(entry, ['runs', index, 'outcome'], $event)">
+                              <option value="" [selected]="!run.outcome">Choose</option>
+                              @for (outcome of s.config.outcomes ?? []; track outcome.key) {
+                                <option [value]="outcome.key" [selected]="run.outcome === outcome.key">{{ outcome.label }} ({{ outcome.points }})</option>
+                              }
+                            </select>
+                          </label>
+                          <label class="field">Time (s)<input inputmode="decimal" [value]="run.time ?? ''" (change)="setNum(entry, ['runs', index, 'time'], $event)" /></label>
+                        </div>
+                      }
+                      <button type="button" class="btn ghost small" (click)="addRun(entry)">Add a run</button>
+                    }
+                    @for (run of runOffRuns(entry); track $index; let index = $index) {
                       <div class="grid run">
                         <label class="field">
-                          Run {{ index + 1 }}
-                          <select (change)="setText(entry, ['runs', index, 'outcome'], $event)">
+                          Run-off {{ index + 1 }}
+                          <select (change)="setText(entry, ['run_off', index, 'outcome'], $event)">
                             <option value="" [selected]="!run.outcome">Choose</option>
                             @for (outcome of s.config.outcomes ?? []; track outcome.key) {
                               <option [value]="outcome.key" [selected]="run.outcome === outcome.key">{{ outcome.label }} ({{ outcome.points }})</option>
                             }
                           </select>
                         </label>
-                        <label class="field">Time (s)<input inputmode="decimal" [value]="run.time ?? ''" (change)="setNum(entry, ['runs', index, 'time'], $event)" /></label>
+                        <label class="field">Time (s)<input inputmode="decimal" [value]="run.time ?? ''" (change)="setNum(entry, ['run_off', index, 'time'], $event)" /></label>
                       </div>
                     }
-                    <button type="button" class="btn ghost small" (click)="addRun(entry)">Add a run</button>
+                    <button type="button" class="btn ghost small" (click)="addRunOff(entry)">Add a run-off run (ties only)</button>
                   }
                 }
               }
@@ -496,7 +620,74 @@ export class EventResultsPage {
   readonly error = signal('');
   readonly drafts = signal<Record<string, EntryData>>({});
   readonly dirty = signal<Record<string, boolean>>({});
-  readonly configDraft = signal<Record<string, Record<string, unknown>> | null>(null);
+  readonly configDraft = signal<Record<string, unknown> | null>(null);
+
+  private draftGroup(group: string): Record<string, unknown> {
+    return (this.configDraft()?.[group] as Record<string, unknown> | undefined) ?? {};
+  }
+
+  testOptions(): Array<{ key: string; label: string }> {
+    const tests = (this.sheet()?.config['tests'] ?? {}) as Record<string, { label?: string }>;
+    return Object.entries(tests).map(([key, test]) => ({ key, label: test.label ?? key }));
+  }
+
+  testLabel(): string {
+    return String(this.sheet()?.config['test_label'] ?? 'Test');
+  }
+
+  ftqCodes(): Array<{ code: string; label: string }> {
+    return (this.sheet()?.config['ftq_codes'] as Array<{ code: string; label: string }> | undefined) ?? [];
+  }
+
+  conditionItems(): Array<{ key: string; label: string; max?: number }> {
+    const rule = this.sheet()?.config['best_condition'] as
+      | { vet_items?: Array<{ key: string; label: string; max?: number }> }
+      | undefined;
+    return rule?.vet_items ?? [];
+  }
+
+  ordinalOf(rank: number): string {
+    return ordinal(rank);
+  }
+
+  chosenTest(): string {
+    return String(this.configDraft()?.['test'] ?? this.sheet()?.config['test'] ?? '');
+  }
+
+  judgePositions(): string[] {
+    return (this.sheet()?.config['judge_positions'] as string[] | undefined) ?? [];
+  }
+
+  judgeCount(): [number, number] {
+    const range = this.sheet()?.config['judge_count'] as number[] | undefined;
+    return [range?.[0] ?? 1, range?.[1] ?? 99];
+  }
+
+  chosenJudges(): string[] {
+    return (this.configDraft()?.['judges'] as string[] | undefined) ?? this.sheet()?.config.judges ?? [];
+  }
+
+  setTest(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.configDraft.update((current) => ({ ...(current ?? {}), test: value }));
+  }
+
+  toggleJudge(position: string): void {
+    const chosen = this.chosenJudges();
+    const next = chosen.includes(position)
+      ? chosen.filter((item) => item !== position)
+      : this.judgePositions().filter((item) => item === position || chosen.includes(item));
+    this.configDraft.update((current) => ({ ...(current ?? {}), judges: next }));
+  }
+
+  /** Each judge's percentage, as the published results show them. */
+  judgeLine(entry: ResultEntry): string {
+    const judges = entry.breakdown?.['judges'];
+    if (this.sheet()?.result_type !== 'judged_percentage' || !judges || typeof judges !== 'object') return '';
+    return Object.entries(judges as Record<string, { percentage?: string }>)
+      .map(([judge, row]) => `${judge} ${row.percentage ?? ''}%`)
+      .join(' · ');
+  }
   readonly openSide = signal<string | null>(null);
 
   private readonly fixtureId = computed(() => this.route.snapshot.paramMap.get('fixtureId') ?? '');
@@ -523,15 +714,39 @@ export class EventResultsPage {
     return found.size ? [...found] : ['C'];
   });
 
-  /** Per-event settings an official can set: time allowed per round or phase. */
+  /** Per-event settings: a race card, or the time allowed for a round or phase. */
   readonly eventSettings = computed(() => {
     const sheet = this.sheet();
     if (!sheet) return [];
-    const rows: Array<{ path: string; group: string; key: string; label: string; value: string }> = [];
-    const allowed = { ...(sheet.config.time_allowed ?? {}), ...(this.configDraft()?.['time_allowed'] ?? {}) } as Record<string, unknown>;
+    const rows: Array<{
+      path: string;
+      group: string;
+      key: string;
+      label: string;
+      value: string;
+      numeric: boolean;
+      options: string[];
+    }> = [];
+    const storedCard = {
+      ...((sheet.config['card'] as Record<string, unknown> | undefined) ?? {}),
+      ...this.draftGroup('card'),
+    };
+    for (const field of this.cardFields()) {
+      const current = storedCard[field.key];
+      rows.push({
+        path: `card.${field.key}`,
+        group: 'card',
+        key: field.key,
+        label: field.label,
+        value: current === undefined || current === null ? '' : String(current),
+        numeric: !!field.number,
+        options: field.options ?? [],
+      });
+    }
+    const allowed = { ...(sheet.config.time_allowed ?? {}), ...this.draftGroup('time_allowed') } as Record<string, unknown>;
     const parts =
       sheet.result_type === 'faults_then_time'
-        ? (sheet.config.rounds ?? []).map((round) => ({ key: round.key, label: round.label ?? round.key }))
+        ? (sheet.config.rounds ?? []).map((round) => ({ key: round.key, label: round.label ?? round.key, time_label: undefined }))
         : sheet.result_type === 'penalty_total_lowest'
           ? (sheet.config.phases ?? []).filter((phase) => phase.input !== 'percentage')
           : [];
@@ -540,8 +755,10 @@ export class EventResultsPage {
         path: `time_allowed.${part.key}`,
         group: 'time_allowed',
         key: part.key,
-        label: `Time allowed: ${part.label} (s)`,
+        label: `${part.time_label ?? 'Time allowed'}: ${part.label} (s)`,
         value: allowed[part.key] === undefined ? '' : String(allowed[part.key]),
+        numeric: true,
+        options: [],
       });
     }
     return rows;
@@ -593,9 +810,14 @@ export class EventResultsPage {
       case 'finishing_order':
         return [entry.data?.['margin'], entry.data?.['time'] ? `${entry.data['time']} s` : ''].filter(Boolean).join(' · ') || ordinal(entry.rank);
       case 'faults_then_time': {
+        const config = this.sheet()?.config;
+        if (config?.['ranking'] === 'time_plus_penalties') return `${trim(b['time'])} s (penalty seconds included)`;
         const decider = typeof b['decider'] === 'object' ? b['decider'] : null;
         const base = `${trim(b['faults'])} faults · ${trim(b['time'])} s`;
-        return decider ? `${base} · jump-off ${trim(decider.faults)} / ${trim(decider.time)} s` : base;
+        if (decider) return `${base} · jump-off ${trim(decider.faults)} / ${trim(decider.time)} s`;
+        const reached = (config?.rounds ?? []).find((round) => round.key === b['reached']);
+        if (b['phase_out']) return `${b['phase_out']} · placed after the ${reached?.label ?? 'later phase'} finishers`;
+        return reached?.qualify ? `${base} · ${reached.label ?? reached.key}` : base;
       }
       case 'penalty_total_lowest':
         return `${trim(entry.primary)} penalties`;
@@ -604,7 +826,7 @@ export class EventResultsPage {
       case 'timed_with_vet_gates':
         return `${clock(b['ride_seconds'])} · ${b['average_speed_kmh']} km/h`;
       case 'points_per_run':
-        return `${trim(entry.primary)} pts`;
+        return b['run_off'] ? `${trim(entry.primary)} pts · run-off ${trim(b['run_off'].total)}` : `${trim(entry.primary)} pts`;
       case 'timed_lowest':
         return `${raceTime(b['time'] ?? entry.primary)}${b['penalty_seconds'] ? ` (incl. +${trim(b['penalty_seconds'])} s penalties)` : ''}${b['record'] ? ' · ' + b['record'] : ''}`;
       case 'measured_highest':
@@ -749,6 +971,22 @@ export class EventResultsPage {
     this.put(entry, ['attempts', this.attemptsOf(entry).length, 'scores'], []);
   }
 
+  cardFields(): Array<{ key: string; label: string; number?: boolean; options?: string[] }> {
+    return (
+      (this.sheet()?.config['card_fields'] as
+        | Array<{ key: string; label: string; number?: boolean; options?: string[] }>
+        | undefined) ?? []
+    );
+  }
+
+  runnerFields(): Array<{ key: string; label: string; number?: boolean }> {
+    return (
+      (this.sheet()?.config['runner_fields'] as
+        | Array<{ key: string; label: string; number?: boolean }>
+        | undefined) ?? []
+    );
+  }
+
   fieldLabel(field: string): string {
     const text = field.replace(/_/g, ' ');
     return text.length <= 2 ? text.toUpperCase() : text.charAt(0).toUpperCase() + text.slice(1);
@@ -795,9 +1033,42 @@ export class EventResultsPage {
     return list;
   }
 
+  riderRuns(entry: ResultEntry, rider: string): Array<{ outcome?: string; time?: number }> {
+    const runs = this.val(entry, ['riders', rider]);
+    const planned = Number(this.sheet()?.config.runs ?? 0);
+    const list = Array.isArray(runs) ? runs.map((run) => run ?? {}) : [];
+    while (list.length < planned) list.push({});
+    return list;
+  }
+
+  runOffRuns(entry: ResultEntry): Array<{ outcome?: string; time?: number }> {
+    const runs = this.val(entry, ['run_off']);
+    return Array.isArray(runs) ? runs.map((run) => run ?? {}) : [];
+  }
+
+  addRunOff(entry: ResultEntry): void {
+    const runs = this.runOffRuns(entry);
+    this.put(entry, ['run_off', runs.length, 'outcome'], (this.sheet()?.config.outcomes ?? [])[0]?.key ?? '');
+  }
+
   addRun(entry: ResultEntry): void {
     const runs = this.runsOf(entry);
     this.put(entry, ['runs', runs.length, 'outcome'], (this.sheet()?.config.outcomes ?? [])[0]?.key ?? '');
+  }
+
+  setConfigText(group: string, key: string, event: Event): void {
+    const raw = (event.target as HTMLInputElement | HTMLSelectElement).value.trim();
+    this.configDraft.update((current) => {
+      const next = { ...(current ?? {}) };
+      const bucket = {
+        ...((this.sheet()?.config[group] as Record<string, unknown>) ?? {}),
+        ...((next[group] as Record<string, unknown> | undefined) ?? {}),
+      };
+      if (!raw) delete bucket[key];
+      else bucket[key] = raw;
+      next[group] = bucket;
+      return next;
+    });
   }
 
   setConfig(group: string, key: string, event: Event): void {
@@ -805,7 +1076,10 @@ export class EventResultsPage {
     const value = raw === '' ? undefined : Number(raw);
     this.configDraft.update((current) => {
       const next = { ...(current ?? {}) };
-      const bucket = { ...((this.sheet()?.config[group] as Record<string, unknown>) ?? {}), ...(next[group] ?? {}) };
+      const bucket = {
+        ...((this.sheet()?.config[group] as Record<string, unknown>) ?? {}),
+        ...((next[group] as Record<string, unknown> | undefined) ?? {}),
+      };
       if (value === undefined || !Number.isFinite(value)) delete bucket[key];
       else bucket[key] = value;
       next[group] = bucket;

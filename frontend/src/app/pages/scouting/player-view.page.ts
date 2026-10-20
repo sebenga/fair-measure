@@ -108,10 +108,16 @@ type Viewable = PlayerProfile | ScoutProfileView;
         </div>
 
         <div class="section">
-          <button type="button" class="btn block" (click)="openReport(p.id)">
-            <ion-icon name="document-text-outline" aria-hidden="true" />
-            Scouting report
-          </button>
+          <div class="scout-actions">
+            <button type="button" class="btn" (click)="openTalentReport('player', p.id)">
+              <ion-icon name="document-text-outline" aria-hidden="true" />
+              Scouting report
+            </button>
+            <button type="button" class="btn ghost" (click)="openTalentReport('progress', p.id)">
+              <ion-icon name="trending-up-outline" aria-hidden="true" />
+              Progress report
+            </button>
+          </div>
           @if (canRate(p)) {
             <div class="scout-actions">
               <button type="button" class="btn ghost" (click)="addToShortlist(p)">
@@ -470,8 +476,8 @@ export class ScoutingPlayerViewPage {
     return '';
   }
 
-  openReport(id: string): void {
-    void this.router.navigateByUrl(`/tabs/scouting/players/${id}/report`);
+  openTalentReport(kind: 'player' | 'progress', id: string): void {
+    void this.router.navigate(['/tabs/scouting/reports', kind], { queryParams: { profile: id } });
   }
 
   teamsOf(player: Viewable): ProfileTeam[] {

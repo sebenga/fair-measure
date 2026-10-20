@@ -202,89 +202,99 @@ class CompareView(APIView):
         responses=dict,
     )
     def get(self, request: Request) -> Response:
-        organisations = _require_scout(request.user)
         ids = [value for value in (request.query_params.get("profiles") or "").split(",") if value]
-        if not 2 <= len(set(ids)) <= 4:
-            raise ValidationError({"profiles": "Compare 2 to 4 players."})
-        profiles = []
-        for pk in dict.fromkeys(ids):
-            profile = PlayerProfile.objects.filter(pk=pk).first()
-            if profile is None or access_level(profile, request.user) != "scout":
-                raise NotFound("One of those players is not visible to you.")
-            profiles.append(profile)
-        sport = request.query_params.get("sport") or next(
-            (row.sport for row in profiles[0].sports.all() if row.sport in catalog.SPORTS), ""
+        return Response(compare_data(request.user, ids, request.query_params.get("sport")))
+
+
+def compare_data(user, ids: list[str], sport: str | None = None) -> dict:
+    """Compare 2 to 4 players the scout may see: the screen and the PDF report share this."""
+
+    organisations = _require_scout(user)
+    if not 2 <= len(set(ids)) <= 4:
+        raise ValidationError({"profiles": "Compare 2 to 4 players."})
+    profiles = []
+    for pk in dict.fromkeys(ids):
+        profile = PlayerProfile.objects.filter(pk=pk).first()
+        if profile is None or access_level(profile, user) != "scout":
+            raise NotFound("One of those players is not visible to you.")
+        profiles.append(profile)
+    sport = sport or next(
+        (row.sport for row in profiles[0].sports.all() if row.sport in catalog.SPORTS), ""
+    )
+    entry = catalog.sport_catalogue(sport)
+    if entry is None:
+        raise ValidationError({"sport": "Choose a sport from the catalogue."})
+    stat_rows = [row for row in entry["match_stats"] if row.get("better")][:KEY_STATS]
+    players = []
+    for profile in profiles:
+        line = search.latest_line(profile, sport)
+        peers = stats.cohort(profile, sport)
+        ranks = (
+            stats.stat_percentiles(profile, sport, line.season, line.values, peers)
+            if line
+            else {}
         )
-        entry = catalog.sport_catalogue(sport)
-        if entry is None:
-            raise ValidationError({"sport": "Choose a sport from the catalogue."})
-        stat_rows = [row for row in entry["match_stats"] if row.get("better")][:KEY_STATS]
-        players = []
-        for profile in profiles:
-            line = search.latest_line(profile, sport)
-            peers = stats.cohort(profile, sport)
-            ranks = (
-                stats.stat_percentiles(profile, sport, line.season, line.values, peers)
-                if line
-                else {}
-            )
-            summary = ratings.summary(profile, organisations[0], sport) if organisations else None
-            players.append(
-                {
-                    **ProfileCardSerializer(profile).data,
-                    "areas": {row["key"]: row["average"] for row in summary["areas"]}
-                    if summary
-                    else {},
-                    "current_ability": summary["current_ability"] if summary else None,
-                    "potential": summary["potential"] if summary else None,
-                    "season": line.season if line else None,
-                    "matches": line.matches if line else 0,
-                    "stats": {
-                        row["key"]: {
-                            "value": ((line.values if line else {}).get(row["key"]) or {}).get(
-                                "value"
-                            ),
-                            "percentile": (ranks.get(row["key"]) or {}).get("percentile"),
-                        }
-                        for row in stat_rows
-                    },
-                    "tests": {
-                        row["key"]: {
-                            "best": row["personal_best"]["value"],
-                            "verified": row["personal_best"]["verified"],
-                            "percentile": row["percentile"],
-                        }
-                        for row in stats.test_summary(profile, sport, peers)
-                    },
-                }
-            )
-        return Response(
+        summary = ratings.summary(profile, organisations[0], sport) if organisations else None
+        players.append(
             {
-                "sport": sport,
-                "areas": [
-                    {"key": area["key"], "label": area["label"]} for area in attributes.AREAS
-                ],
-                "stats": [
-                    {
-                        "key": row["key"],
-                        "label": row["label"],
-                        "unit": row.get("unit", ""),
-                        "better": row["better"],
+                **ProfileCardSerializer(profile).data,
+                "areas": {row["key"]: row["average"] for row in summary["areas"]}
+                if summary
+                else {},
+                "current_ability": summary["current_ability"] if summary else None,
+                "potential": summary["potential"] if summary else None,
+                "rated_by": summary["scouts"] if summary else 0,
+                "season": line.season if line else None,
+                "matches": line.matches if line else 0,
+                "computed_at": line.computed_at if line else None,
+                "stats": {
+                    row["key"]: {
+                        "value": ((line.values if line else {}).get(row["key"]) or {}).get(
+                            "value"
+                        ),
+                        "percentile": (ranks.get(row["key"]) or {}).get("percentile"),
                     }
                     for row in stat_rows
-                ],
-                "tests": [
-                    {
-                        "key": row["key"],
-                        "label": row["label"],
-                        "unit": row["unit"],
-                        "better": row["better"],
+                },
+                "tests": {
+                    row["key"]: {
+                        "best": row["personal_best"]["value"],
+                        "verified": row["personal_best"]["verified"],
+                        "tested_on": row["personal_best"]["tested_on"],
+                        "percentile": row["percentile"],
                     }
-                    for row in entry["physical_tests"]
-                ],
-                "players": players,
+                    for row in stats.test_summary(profile, sport, peers)
+                },
             }
         )
+    return {
+        "sport": sport,
+        "organisation": (
+            {"id": str(organisations[0].id), "name": organisations[0].name}
+            if organisations
+            else None
+        ),
+        "areas": [{"key": area["key"], "label": area["label"]} for area in attributes.AREAS],
+        "stats": [
+            {
+                "key": row["key"],
+                "label": row["label"],
+                "unit": row.get("unit", ""),
+                "better": row["better"],
+            }
+            for row in stat_rows
+        ],
+        "tests": [
+            {
+                "key": row["key"],
+                "label": row["label"],
+                "unit": row["unit"],
+                "better": row["better"],
+            }
+            for row in entry["physical_tests"]
+        ],
+        "players": players,
+    }
 
 
 # --- Shortlists --------------------------------------------------------------------------

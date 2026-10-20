@@ -57,6 +57,23 @@
   margin: 4px 16px 8px;
 }
 
+.playing {
+  display: flex;
+  gap: 6px;
+
+  select,
+  input {
+    width: 64px;
+    padding: 6px;
+    border: 1px solid var(--ion-color-step-150, #dbe2ea);
+    border-radius: 8px;
+    background: var(--ion-background-color, #fff);
+    color: var(--ion-text-color);
+    font: inherit;
+    font-size: 0.85rem;
+  }
+}
+
 .invite {
   display: flex;
   align-items: center;

@@ -205,46 +205,70 @@ def faults_then_time(data: dict, config: dict) -> Outcome:
         sheet = rounds_data.get(item["key"])
         if sheet:
             played[item["key"]] = _round_result(sheet, item["key"], config)
-    if not all(item["key"] in played for item in counted):
+
+    # A round marked qualify: "clear" is only ridden by those still clear after
+    # the rounds before it (a two-phase class). The rest stop there.
+    needed: list[dict] = []
+    stopped = False
+    for item in counted:
+        if item.get("qualify") == "clear" and needed:
+            if not all(prior["key"] in played for prior in needed):
+                break
+            before = [played[prior["key"]] for prior in needed]
+            if any(row["eliminated"] for row in before) or sum(
+                (row["faults"] for row in before), ZERO
+            ):
+                stopped = True
+                break
+        needed.append(item)
+    staged = any(item.get("qualify") for item in counted)
+    if not needed or not all(item["key"] in played for item in needed):
         return Outcome(breakdown={"rounds": _serial(played)})
-    eliminated = next(
-        (
-            played[item["key"]]["eliminated"]
-            for item in counted
-            if played[item["key"]]["eliminated"]
-        ),
-        "",
+
+    eliminated_in = next(
+        (item for item in needed if played[item["key"]]["eliminated"]),
+        None,
     )
-    if eliminated:
+    if eliminated_in is not None and not (staged and eliminated_in.get("qualify")):
         return Outcome(
             status=config.get("elimination_status", "EL"),
-            status_reason=eliminated,
+            status_reason=played[eliminated_in["key"]]["eliminated"],
             breakdown={"rounds": _serial(played)},
         )
-    faults = sum((played[item["key"]]["faults"] for item in counted), ZERO)
-    last = played[counted[-1]["key"]]
+    faults = sum((played[item["key"]]["faults"] for item in needed), ZERO)
+    last = played[needed[-1]["key"]]
     time_value = (
         last["adjusted_time"] if config.get("ranking") == "time_plus_penalties" else last["time"]
     )
     time_value = time_value if time_value is not None else BIG
+    breakdown = {"faults": str(faults), "time": str(time_value), "rounds": _serial(played)}
     if config.get("ranking") == "time_plus_penalties":
         key = (time_value,)
         primary = time_value
+    elif staged:
+        # Those who reached the later phase rank ahead of those who stopped.
+        # Eliminated in the later phase: behind its finishers, ahead of those who stopped.
+        out = eliminated_in is not None
+        key = (1 if stopped else 0, 1 if out else 0, BIG if out else faults, BIG if out else time_value)
+        primary = faults
+        breakdown["reached"] = needed[-1]["key"]
+        if out:
+            breakdown["phase_out"] = (
+                f"Eliminated in {eliminated_in.get('label', eliminated_in['key'])}: "
+                f"{played[eliminated_in['key']]['eliminated']}"
+            )
     else:
         key = (faults, time_value)
         primary = faults
-    return Outcome(
-        primary=primary,
-        key=key,
-        breakdown={"faults": str(faults), "time": str(time_value), "rounds": _serial(played)},
-    )
+    return Outcome(primary=primary, key=key, breakdown=breakdown)
 
 
 def faults_then_time_context(outcomes: dict, entries: dict, config: dict) -> None:
-    """A deciding round (jump-off) separates only those level on the first place."""
+    """A deciding round separates only those level on the first place."""
 
     deciders = [item for item in config.get("rounds") or [] if item.get("decides") == "first"]
-    if not deciders or config.get("ranking") == "time_plus_penalties":
+    staged = any(item.get("qualify") for item in config.get("rounds") or [])
+    if not deciders or staged or config.get("ranking") == "time_plus_penalties":
         return
     decider = deciders[0]["key"]
     finishers = {entry_id: outcome for entry_id, outcome in outcomes.items() if outcome.finished}
@@ -449,9 +473,17 @@ def timed_with_vet_gates(data: dict, config: dict) -> Outcome:
             return Outcome(breakdown={"gates": gates})
         row = given[index]
         reason = ""
-        if str(row.get("result") or "").lower() == "ftq":
+        codes = {item["code"]: item["label"] for item in config.get("ftq_codes") or []}
+        presented = row.get("presentation_seconds")
+        limit = config.get("presentation_limit_seconds")
+        if row.get("ftq_code"):
+            code = str(row["ftq_code"])
+            reason = f"{code} · {codes.get(code, 'Failed to qualify')}"
+        elif str(row.get("result") or "").lower() == "ftq":
             reason = str(row.get("reason") or "Failed to qualify")
         elif row.get("presented_in_time") is False:
+            reason = "Not presented in time"
+        elif limit is not None and presented not in (None, "") and dec(presented, name="Presentation time") > dec(limit):
             reason = "Not presented in time"
         elif row.get("sound") is False:
             reason = "Lameness"
@@ -489,17 +521,91 @@ def timed_with_vet_gates(data: dict, config: dict) -> Outcome:
                 breakdown={"gates": gates},
             )
     speed = _q(distance / (ride / 3600), 2) if ride else ZERO
-    return Outcome(
-        primary=ride,
-        key=(ride,),
-        breakdown={
-            "ride_seconds": str(ride),
-            "hold_seconds": str(hold),
-            "distance_km": str(distance),
-            "average_speed_kmh": str(speed),
-            "gates": gates,
-        },
+    breakdown = {
+        "ride_seconds": str(ride),
+        "hold_seconds": str(hold),
+        "distance_km": str(distance),
+        "average_speed_kmh": str(speed),
+        "gates": gates,
+    }
+    fastest = config.get("speed_max_kmh")
+    slowest = config.get("speed_min_kmh")
+    if fastest is not None and speed > dec(fastest):
+        return Outcome(
+            status=config.get("speed_status", "EL"),
+            status_reason=f"Average speed {speed} km/h is above the {fastest} km/h limit",
+            breakdown=breakdown,
+        )
+    if slowest is not None and speed < dec(slowest):
+        return Outcome(
+            status=config.get("speed_status", "EL"),
+            status_reason=f"Average speed {speed} km/h is below the {slowest} km/h minimum",
+            breakdown=breakdown,
+        )
+    return Outcome(primary=ride, key=(ride,), breakdown=breakdown)
+
+
+def best_condition_context(outcomes: dict, entries: dict, config: dict) -> None:
+    """A separate award among the leading finishers: the vets' marks plus time (and weight).
+
+    Every number is preset data: the vet items and their weight, the time points and
+    how fast they fall away behind the winner, and the optional rider weight points.
+    """
+
+    rule = config.get("best_condition")
+    if not rule:
+        return
+    finishers = sorted(
+        (entry_id for entry_id, outcome in outcomes.items() if outcome.finished),
+        key=lambda entry_id: outcomes[entry_id].key,
     )
+    if not finishers:
+        return
+    eligible = finishers[: int(rule.get("eligible") or len(finishers))]
+    winner = outcomes[finishers[0]].primary
+    items = rule.get("vet_items") or []
+    weight_rule = rule.get("weight") or {}
+    def sheet_of(entry_id) -> dict:
+        return (entries[entry_id] or {}).get("best_condition") or {}
+
+    weights = {
+        entry_id: dec(sheet_of(entry_id)["weight_kg"], name="Rider weight")
+        for entry_id in eligible
+        if sheet_of(entry_id).get("weight_kg") not in (None, "")
+    }
+    heaviest = max(weights.values()) if weights else None
+    scored = []
+    for entry_id in eligible:
+        marks = sheet_of(entry_id).get("marks") or {}
+        if not items or any(item["key"] not in marks for item in items):
+            continue
+        vet = ZERO
+        for item in items:
+            mark = dec(marks[item["key"]], name=item["label"])
+            top = dec(item.get("max", 10))
+            if mark < 0 or mark > top:
+                raise ResultDataError(f"{item['label']} must be between 0 and {top}.")
+            vet += mark * dec(item.get("weight", 1))
+        behind = (outcomes[entry_id].primary - winner) / 60
+        time_points = max(ZERO, dec(rule.get("time_base", 0)) - behind * dec(rule.get("time_per_minute", 1)))
+        weight_points = ZERO
+        if weight_rule and heaviest is not None and entry_id in weights:
+            weight_points = max(
+                ZERO,
+                dec(weight_rule.get("base", 0))
+                - (heaviest - weights[entry_id]) * dec(weight_rule.get("per_kg", 1)),
+            )
+        total = _q(vet + time_points + weight_points, 2)
+        scored.append((entry_id, total, vet, time_points, weight_points))
+    scored.sort(key=lambda row: (-row[1], -row[2]))
+    for position, (entry_id, total, vet, time_points, weight_points) in enumerate(scored, start=1):
+        outcomes[entry_id].breakdown["best_condition"] = {
+            "rank": position,
+            "score": str(total),
+            "vet": str(_q(vet, 2)),
+            "time_points": str(_q(time_points, 2)),
+            "weight_points": str(_q(weight_points, 2)),
+        }
 
 
 # --- points_per_run --------------------------------------------------------------
@@ -511,6 +617,9 @@ def _runs_total(runs: list, config: dict) -> tuple[Decimal, list]:
     total = ZERO
     detail = []
     for run in runs or []:
+        # A run not filled in yet (a gap left on the sheet) is not scored.
+        if not run or not run.get("outcome"):
+            continue
         outcome = run.get("outcome")
         if outcome not in points:
             raise ResultDataError(f"'{outcome}' is not one of this event's run outcomes.")
@@ -990,6 +1099,7 @@ CALCULATORS = {
 
 CONTEXT = {
     "faults_then_time": faults_then_time_context,
+    "timed_with_vet_gates": best_condition_context,
     "combat_decision": combat_context,
     "combined_events": combined_events_context,
 }

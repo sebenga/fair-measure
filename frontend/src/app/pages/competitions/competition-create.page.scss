@@ -70,22 +70,101 @@
   color: var(--ion-color-medium);
 }
 
+.find-sport {
+  margin-bottom: 4px;
+}
+
+.group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 32px);
+  margin: 6px 16px 2px;
+  padding: 8px 2px;
+  border: none;
+  background: transparent;
+  color: var(--ion-color-medium);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+
+  .count {
+    margin-left: auto;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  ion-icon {
+    font-size: 0.9rem;
+    transition: transform 0.2s ease;
+  }
+
+  &.open ion-icon {
+    transform: rotate(90deg);
+  }
+}
+
 .presets {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  // Dense flow lets the cards after the chosen one close the gap its scoring row leaves.
+  grid-auto-flow: row dense;
   gap: 10px;
   padding: 0 16px 12px;
 }
 
+.inline-scoring {
+  grid-column: 1 / -1;
+  margin: 0 -16px;
+  padding: 4px 0 8px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ion-color-primary) 5%, transparent);
+}
+
 .scoring-list {
   display: grid;
-  gap: 10px;
-  padding: 0 0 4px;
+  gap: 6px;
+  padding: 0 0 8px;
 }
 
 .score-row {
   display: grid;
   gap: 4px;
+
+  &.locked {
+    gap: 2px;
+    margin: 0 16px;
+    padding: 10px 14px;
+
+    p {
+      margin: 0;
+      font-size: 0.8rem;
+      line-height: 1.35;
+      color: var(--ion-color-medium);
+    }
+  }
+
+  .score-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    line-height: 1.3;
+
+    .pts {
+      flex: 0 0 auto;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--ion-color-primary);
+
+      &.muted {
+        font-weight: 500;
+        color: var(--ion-color-medium);
+      }
+    }
+  }
 
   .score-head {
     display: flex;

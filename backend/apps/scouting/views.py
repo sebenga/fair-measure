@@ -872,6 +872,49 @@ class ProfileReportView(APIView):
         return Response(player_report(profile, request.user, access))
 
 
+class TalentReportView(APIView):
+    """The six Phase 6 reports. The JSON is the screen; ``/pdf`` is the same document."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=TAG,
+        summary="A talent report: player, progress, compare, shortlist, competition or activity",
+        description=(
+            "player/progress: ?profile=&sport=&from=&to= · compare: ?profiles=a,b,c · "
+            "shortlist: ?shortlist= · competition: ?competition= · activity: ?organisation=&from=&to=. "
+            "Add /pdf for the PDF export; every export is logged."
+        ),
+        responses=dict,
+    )
+    def get(self, request: Request, kind: str, as_pdf: bool = False):
+        from django.http import HttpResponse
+        from django.utils import timezone
+
+        from .models import ReportExport
+        from .report_pdf import render
+        from .talent_reports import KINDS, build
+
+        if kind not in KINDS:
+            raise NotFound("Unknown report.")
+        report, log = build(request.user, kind, request.query_params)
+        if not as_pdf:
+            return Response(report)
+        ReportExport.objects.create(
+            viewer=request.user,
+            kind=f"{kind}_report",
+            access=report.get("access", "")[:12],
+            file_format="pdf",
+            profile_id=log.get("profile_id"),
+            competition_id=log.get("competition_id"),
+            params=log.get("params") or {},
+        )
+        response = HttpResponse(render(report), content_type="application/pdf")
+        stamp = timezone.now().strftime("%Y%m%d")
+        response["Content-Disposition"] = f'attachment; filename="fair-measure-{kind}-report-{stamp}.pdf"'
+        return response
+
+
 # --- League squads -------------------------------------------------------------
 
 

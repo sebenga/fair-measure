@@ -174,6 +174,7 @@ class PointsPolicy(BaseModel):
     class Tiebreaker(models.TextChoices):
         POINTS = "points", _("League points")
         SCORE_DIFFERENCE = "score_difference", _("Score difference")
+        NET_SCORE_DIFFERENCE = "net_score_difference", _("Score difference without head-start goals")
         SCORE_FOR = "score_for", _("Score for")
         SCORE_AGAINST = "score_against", _("Score against (fewest first)")
         WINS = "wins", _("Wins")
@@ -382,6 +383,13 @@ class RosterMember(BaseModel):
     name = models.CharField(max_length=160)
     number = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(0)])
     position = models.CharField(max_length=60, blank=True)
+    handicap = models.DecimalField(
+        max_digits=5,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        help_text=_("Playing handicap, where the competition's preset uses one."),
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

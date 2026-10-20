@@ -736,3 +736,35 @@ export interface ContactRequestRow {
   created_at: string;
   can_respond: boolean;
 }
+
+// --- Phase 6 talent reports ------------------------------------------------------------
+
+export type TalentReportKind = 'player' | 'progress' | 'compare' | 'shortlist' | 'competition' | 'activity';
+
+export interface ReportFact {
+  label: string;
+  value: string;
+  date: string | null;
+  verified: boolean | null;
+  source: string;
+}
+
+export type ReportSection =
+  | { type: 'facts'; heading: string; rows: ReportFact[]; note: string; photo_url?: string }
+  | { type: 'table'; heading: string; columns: string[]; rows: string[][]; note: string; highlight: number[] }
+  | { type: 'radar'; heading: string; axes: string[]; series: Array<{ name: string; values: Array<number | null> }>; max: number; note?: string }
+  | { type: 'line'; heading: string; points: Array<{ date: string; value: number; label?: string }>; max: number; note?: string }
+  | { type: 'notes'; heading: string; items: Array<{ author: string; date: string; text: string }>; note?: string }
+  | { type: 'links'; heading: string; items: Array<{ label: string; url: string }>; note?: string }
+  | { type: 'highlights'; heading: string; items: string[]; note?: string };
+
+export interface TalentReport {
+  kind: TalentReportKind;
+  title: string;
+  subtitle: string;
+  generated_at: string;
+  generated_for: string;
+  access: string;
+  organisation: { id: string; name: string; logo_url: string } | null;
+  sections: ReportSection[];
+}

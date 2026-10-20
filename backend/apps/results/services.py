@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.db import transaction
 from django.utils import timezone
@@ -14,6 +14,45 @@ from .calculators import ResultDataError, _serial, evaluate, statuses_for
 from .models import CompetitionOfficial, EntryResult, ResultAmendment, ResultSheet
 
 MERGED_KEYS = {"time_allowed", "time_limit"}
+# What an event may set on a locked preset; the scoring itself stays the preset's.
+EVENT_KEYS = {"time_allowed", "time_limit", "card", "judges", "test"}
+
+
+def clean_event_config(competition, config) -> dict:
+    """Refuse event settings a locked preset does not leave open, and check the rest."""
+
+    if not isinstance(config, dict):
+        raise ValidationError({"config": "Event settings must be an object."})
+    settings = competition.settings_json or {}
+    base = settings.get("result_config") or {}
+    if settings.get("scoring_locked") or settings.get("locked"):
+        allowed = EVENT_KEYS | set(base.get("event_keys") or [])
+        fixed = sorted(set(config) - allowed)
+        if fixed:
+            raise ValidationError(
+                {"config": f"Fixed by the locked preset: {', '.join(fixed)}."}
+            )
+    if "test" in config:
+        tests = base.get("tests") or {}
+        if config["test"] not in tests:
+            raise ValidationError(
+                {"test": f"Choose one of the preset's tests: {', '.join(tests) or 'none'}."}
+            )
+    if "judges" in config:
+        judges = config["judges"]
+        positions = base.get("judge_positions") or []
+        low, high = (base.get("judge_count") or [1, 99])[:2]
+        if (
+            not isinstance(judges, list)
+            or len(set(judges)) != len(judges)
+            or any(not isinstance(item, str) for item in judges)
+        ):
+            raise ValidationError({"judges": "List each judge's position once."})
+        if positions and any(item not in positions for item in judges):
+            raise ValidationError({"judges": f"Judges sit at: {', '.join(positions)}."})
+        if not low <= len(judges) <= high:
+            raise ValidationError({"judges": f"Use {low} to {high} judges."})
+    return config
 
 
 def result_type_of(competition) -> str | None:
@@ -69,6 +108,9 @@ def sheet_config(fixture) -> dict:
             config[key] = {**(config.get(key) or {}), **value}
         else:
             config[key] = value
+    tests = config.get("tests") or {}
+    if config.get("test") in tests:
+        config = {**config, **tests[config["test"]]}
     if config.get("table") and not config.get("events"):
         from .tables import COMBINED_EVENT_TABLES
 
@@ -182,8 +224,7 @@ def save_results(fixture, rows: list[dict], actor, *, reason: str = "", config: 
         raise PermissionDenied("You cannot record results for this event.")
 
     if config is not None:
-        if not isinstance(config, dict):
-            raise ValidationError({"config": "Event settings must be an object."})
+        config = clean_event_config(competition, config)
         if not (can_decide(competition, actor) or has_at_least(competition, actor, Role.ADMIN)):
             raise PermissionDenied("Only officials or admins change an event's settings.")
         before = dict(sheet.config)
@@ -394,6 +435,7 @@ def combination_stats(competition, by: str) -> list[dict]:
     from apps.horses.models import Combination
 
     settings = competition.settings_json or {}
+    money = (settings.get("result_config") or {}).get("money_field")
     combos = {
         combo.participant_id: combo
         for combo in Combination.objects.filter(
@@ -428,6 +470,7 @@ def combination_stats(competition, by: str) -> list[dict]:
                 "thirds": 0,
                 "points": Decimal("0"),
                 "statuses": 0,
+                **({"prize": Decimal("0")} if money else {}),
             },
         )
         row["starts"] += 1
@@ -441,6 +484,13 @@ def combination_stats(competition, by: str) -> list[dict]:
             row["statuses"] += 1
         else:
             row["points"] += placing_points_for(settings, entry.rank, tied)
+        if money and entry.rank is not None:
+            raw = (entry.data or {}).get(money)
+            if raw not in (None, ""):
+                try:
+                    row["prize"] = row.get("prize", Decimal("0")) + Decimal(str(raw))
+                except InvalidOperation:
+                    pass
     rows = sorted(
         table.values(),
         key=lambda row: (
@@ -451,4 +501,11 @@ def combination_stats(competition, by: str) -> list[dict]:
             row["name"].lower(),
         ),
     )
-    return [{**row, "points": format(row["points"].normalize(), "f")} for row in rows]
+    formatted = []
+    for row in rows:
+        prize = row.pop("prize", None)
+        item = {**row, "points": format(row["points"].normalize(), "f")}
+        if prize is not None:
+            item["prize"] = format(prize.normalize(), "f")
+        formatted.append(item)
+    return formatted

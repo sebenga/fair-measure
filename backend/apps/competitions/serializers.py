@@ -29,6 +29,7 @@ from .presets import (
     apply_preset,
     format_allowed,
     scoring_is_locked,
+    unit_count_choices,
 )
 
 
@@ -191,8 +192,41 @@ class RosterMemberSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = RosterMember
-        fields = ["id", "name", "number", "position", "user", "user_display_name", "is_active"]
+        fields = [
+            "id",
+            "name",
+            "number",
+            "position",
+            "handicap",
+            "user",
+            "user_display_name",
+            "is_active",
+        ]
         read_only_fields = ["user_display_name"]
+
+    def _settings(self) -> dict:
+        participant = self.context.get("participant") or getattr(self.instance, "participant", None)
+        competition = getattr(participant, "competition", None)
+        return (getattr(competition, "settings_json", None) or {}) if competition else {}
+
+    def validate_handicap(self, value):
+        if value is None:
+            return value
+        source = self._settings().get("head_start") or {}
+        if not source:
+            raise serializers.ValidationError("This competition does not use player handicaps.")
+        low, high = source.get("min"), source.get("max")
+        if (low is not None and value < low) or (high is not None and value > high):
+            raise serializers.ValidationError(f"A handicap runs from {low} to {high}.")
+        return value
+
+    def validate_number(self, value):
+        allowed = self._settings().get("roster_numbers") or []
+        if value is not None and allowed and value not in allowed:
+            raise serializers.ValidationError(
+                f"Use a playing number: {', '.join(str(item) for item in allowed)}."
+            )
+        return value
 
     def get_user_display_name(self, obj: RosterMember) -> str:
         if obj.user_id is None:
@@ -775,6 +809,11 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         write_only=True,
         help_text="Custom VS competitions only: whether teams or individuals play each other.",
     )
+    unit_count = serializers.IntegerField(
+        required=False,
+        write_only=True,
+        help_text="Presets that offer it: how many periods a match has. Locked after creation.",
+    )
 
     def validate_league_points(self, value: dict) -> dict:
         unknown = set(value) - {"win", "draw", "loss"}
@@ -806,6 +845,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
             "scoring_basis",
             "league_points",
             "participant_type",
+            "unit_count",
         ]
         read_only_fields = ["id", "slug"]
 
@@ -852,6 +892,18 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
                 raise PermissionDenied(SCORING_LOCKED_MESSAGE)
             if attrs.get("scoring_basis"):
                 raise PermissionDenied(SCORING_LOCKED_MESSAGE)
+        if "unit_count" in attrs:
+            choices = unit_count_choices(attrs.get("preset")) if self.instance is None else []
+            if attrs["unit_count"] not in choices:
+                raise serializers.ValidationError(
+                    {
+                        "unit_count": (
+                            f"Choose one of: {', '.join(str(value) for value in choices)}."
+                            if choices
+                            else "The number of periods is set by the preset and is locked."
+                        )
+                    }
+                )
         chosen_format = attrs.get("format")
         if chosen_format:
             if self.instance is None:
@@ -927,6 +979,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         scoring_basis = validated_data.pop("scoring_basis", None)
         league_points = validated_data.pop("league_points", None)
         participant_type = validated_data.pop("participant_type", None)
+        unit_count = validated_data.pop("unit_count", None)
         user = self.context["request"].user
 
         versus = preset_key == "custom" and scoring_basis == "results"
@@ -946,7 +999,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         Membership.objects.create(competition=competition, user=user, role=Role.OWNER)
 
         if preset_key:
-            apply_preset(competition, preset_key)
+            apply_preset(competition, preset_key, unit_count=unit_count)
         else:
             PointsPolicy.objects.create(competition=competition)
 

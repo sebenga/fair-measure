@@ -38,6 +38,7 @@ import type {
 } from '../../core/models';
 import { RealtimeService, fixtureRoom } from '../../core/realtime.service';
 import { RelativeTimePipe } from '../../shared/relative-time.pipe';
+import { MatchAwardsComponent } from './match-awards.component';
 
 interface Celebration {
   title: string;
@@ -50,6 +51,7 @@ interface Celebration {
   imports: [
     DatePipe,
     RelativeTimePipe,
+    MatchAwardsComponent,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -155,6 +157,9 @@ interface Celebration {
                 <span class="score" [class.fm-bump]="bumped().has(side.id)">{{ trim(side.score) }}</span>
                 @if (side.forfeited) {
                   <span class="ff">forfeit</span>
+                }
+                @if (headStart(side); as start) {
+                  <span class="ff">incl. {{ start }} handicap {{ start === '1' ? 'goal' : 'goals' }}</span>
                 }
               </div>
             }
@@ -422,6 +427,10 @@ interface Celebration {
           </div>
 
           <p class="updated">Last change {{ lastChangeAt() | relativeTime }}</p>
+        }
+
+        @if (hasAwards()) {
+          <fm-match-awards [competitionId]="competitionKey()" [fixtureId]="fx.id" [players]="awardPlayers()" />
         }
 
         @if (fx.ratings.length) {
@@ -1008,11 +1017,46 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     void this.router.navigate(['/tabs/competitions', this.competitionId, 'players', userId]);
   }
 
+  /** An awarded score (no shot taken) belongs to the side, not a player. */
+  noPlayer(category: ScoringCategory): boolean {
+    const types = this.competition()?.settings_json?.['score_types'];
+    if (!Array.isArray(types)) return false;
+    return types.some(
+      (item) => item && typeof item === 'object' && item.key === category.code && item.no_player === true,
+    );
+  }
+
+  headStart(side: FixtureSide): string | null {
+    const value = side.head_start;
+    if (value === null || value === undefined || Number(value) === 0) return null;
+    return this.trim(value);
+  }
+
+  hasAwards(): boolean {
+    const awards = this.competition()?.settings_json?.['match_awards'];
+    return Array.isArray(awards) && awards.length > 0;
+  }
+
+  competitionKey(): string {
+    return this.competitionId;
+  }
+
+  awardPlayers(): Array<{ id: string; name: string; team: string }> {
+    return (this.fixture()?.sides ?? []).flatMap((side) =>
+      this.rosterFor(side).map((member) => ({
+        id: member.id,
+        name: member.number !== null ? `${member.number}. ${member.name}` : member.name,
+        team: side.participant.name,
+      })),
+    );
+  }
+
   async record(side: FixtureSide, category: ScoringCategory): Promise<void> {
     if (this.saving()) return;
-    const roster = this.rosterFor(side);
-    const playerId = this.scorerFor(side.id);
-    if (this.requiresProfile(category) && !playerId) {
+    const awarded = this.noPlayer(category);
+    const roster = awarded ? [] : this.rosterFor(side);
+    const playerId = awarded ? '' : this.scorerFor(side.id);
+    if (!awarded && this.requiresProfile(category) && !playerId) {
       await this.showToast(
         roster.length
           ? 'Choose the profile this applies to.'

@@ -110,6 +110,18 @@ urlpatterns = [
         views.ProfileReportView.as_view(),
         name="scouting-profile-report",
     ),
+    # Talent reports (screen) and their PDF exports
+    path(
+        "scouting/reports/<slug:kind>",
+        views.TalentReportView.as_view(),
+        name="scouting-talent-report",
+    ),
+    path(
+        "scouting/reports/<slug:kind>/pdf",
+        views.TalentReportView.as_view(),
+        {"as_pdf": True},
+        name="scouting-talent-report-pdf",
+    ),
     # League squads ("team of the league", picked like a national squad)
     path("scouting/leagues", views.LeagueListView.as_view(), name="scouting-leagues"),
     path("scouting/leagues/<uuid:pk>/squad", views.LeagueSquadView.as_view()),

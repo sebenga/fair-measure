@@ -64,6 +64,10 @@ const SOURCE_LABEL: Record<string, string> = {
         <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting/leagues" /></ion-buttons>
         <ion-title>League squad</ion-title>
         <ion-buttons slot="end">
+          <ion-button (click)="openTalentReport()">
+            <ion-icon slot="start" name="trending-up-outline" aria-hidden="true" />
+            Talent report
+          </ion-button>
           @if (squad()) {
             <ion-button (click)="savePdf()">
               <ion-icon slot="start" name="print-outline" aria-hidden="true" />
@@ -715,6 +719,12 @@ export class LeagueSquadPage {
   readonly canManageScouts = signal(false);
 
   private readonly leagueId = computed(() => this.route.snapshot.paramMap.get('id') ?? '');
+
+  openTalentReport(): void {
+    void this.router.navigate(['/tabs/scouting/reports/competition'], {
+      queryParams: { competition: this.leagueId() },
+    });
+  }
 
   readonly filteredCandidates = computed<LeagueCandidate[]>(() => {
     const rows = this.pool()?.results ?? [];

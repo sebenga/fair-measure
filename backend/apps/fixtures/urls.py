@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .awards import FixtureAwardsView, PlayerStatsView
 from .views import FixtureRefereeView, FixtureViewSet, ScoreAssistView, ScoreEventViewSet
 
 fixture_list = FixtureViewSet.as_view({"get": "list", "post": "create"})
@@ -40,6 +41,16 @@ urlpatterns = [
         "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/referees",
         FixtureRefereeView.as_view(),
         name="fixture-referees",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/awards",
+        FixtureAwardsView.as_view(),
+        name="fixture-awards",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/player-stats",
+        PlayerStatsView.as_view(),
+        name="competition-player-stats",
     ),
     path(
         "competitions/<uuid:competition_pk>/score-assist",

@@ -42,7 +42,7 @@ export interface MarkPoints {
 export interface ResultConfig {
   statuses?: ResultStatus[];
   record_fields?: string[];
-  rounds?: Array<{ key: string; label?: string; decides?: string }>;
+  rounds?: Array<{ key: string; label?: string; decides?: string; qualify?: string }>;
   penalties?: PenaltyItem[];
   mark_points?: MarkPoints;
   time_allowed?: Record<string, number | string>;
@@ -51,6 +51,7 @@ export interface ResultConfig {
     key: string;
     label: string;
     input?: 'percentage' | 'sheet';
+    time_label?: string;
     penalties?: PenaltyItem[];
   }>;
   inspections?: Array<{ key: string; label: string }>;
@@ -74,6 +75,8 @@ export interface ResultEntry {
   participant_id: string;
   name: string;
   combination: { horse_id: string; horse: string; rider: string; trainer: string } | null;
+  /** Team entrants: who rides, from the roster or numbered places. */
+  riders?: string[];
   data: EntryData;
   status: string;
   status_reason: string;
@@ -172,4 +175,5 @@ export interface CombinationStatRow {
   thirds: number;
   points: string;
   statuses: number;
+  prize?: string;
 }

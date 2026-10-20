@@ -128,7 +128,8 @@ def test_select_all_summer_creates_only_events_with_locked_presets(games):
     assert response.status_code == 201, response.data
     created = response.data["created"]
     assert created, "some Summer sports already have presets"
-    assert response.data["unavailable"], "sports without presets are reported, not created"
+    # With the FEI disciplines built, every Summer event has a locked preset.
+    assert response.data["unavailable"] == []
     for row in created:
         assert row["preset_key"] in PRESETS
     event = GamesEvent.objects.filter(games=games).first()

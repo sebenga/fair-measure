@@ -16,8 +16,8 @@ from apps.results.calculators import CALCULATORS
 
 User = get_user_model()
 
-# Built by the equestrian prompts (Fair Measure equestrian presets 4 to 6).
-EQUESTRIAN = {"show_jumping", "dressage", "eventing"}
+# Every FEI discipline now has its locked equestrian preset.
+EQUESTRIAN: set[str] = set()
 
 
 def _summer_presets() -> set[str]:
