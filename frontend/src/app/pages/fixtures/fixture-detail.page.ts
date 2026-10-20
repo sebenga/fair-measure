@@ -4,6 +4,7 @@ import {
   DestroyRef,
   OnDestroy,
   OnInit,
+  computed,
   effect,
   inject,
   signal,
@@ -13,6 +14,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   ActionSheetController,
+  AlertController,
   IonBackButton,
   IonButton,
   IonButtons,
@@ -39,6 +41,7 @@ import type {
 import { RealtimeService, fixtureRoom } from '../../core/realtime.service';
 import { RelativeTimePipe } from '../../shared/relative-time.pipe';
 import { MatchAwardsComponent } from './match-awards.component';
+import { MatchDayComponent } from './match-day.component';
 
 interface Celebration {
   title: string;
@@ -52,6 +55,7 @@ interface Celebration {
     DatePipe,
     RelativeTimePipe,
     MatchAwardsComponent,
+    MatchDayComponent,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -365,6 +369,13 @@ interface Celebration {
           }
         }
 
+        <fm-match-day
+          [competitionId]="competitionKey()"
+          [fixtureId]="fx.id"
+          [status]="fx.status"
+          [minute]="matchMinute()"
+        />
+
         <h3 class="fm-section-title">
           Timeline
           @if (fx.events.length) {
@@ -417,9 +428,9 @@ interface Celebration {
                     class="undo"
                     [disabled]="saving()"
                     (click)="removeEvent(event)"
-                    aria-label="Remove event"
+                    [attr.aria-label]="'Delete ' + event.scoring_category_name"
                   >
-                    <ion-icon name="close-circle-outline" />
+                    <ion-icon name="trash-outline" />
                   </button>
                 }
               </div>
@@ -462,6 +473,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   private readonly realtime = inject(RealtimeService);
   private readonly router = inject(Router);
   private readonly actionSheets = inject(ActionSheetController);
+  private readonly alerts = inject(AlertController);
   private readonly toasts = inject(ToastController);
 
   private competitionId = '';
@@ -648,6 +660,12 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   clockLabel(): string {
     return formatClock(this.displayedElapsed());
   }
+
+  readonly matchMinute = computed(() =>
+    this.fixture()?.status === 'live' && this.showClock()
+      ? Math.floor(this.displayedElapsed() / 60_000)
+      : null,
+  );
 
   /** Goals and cards take the minute showing on the match clock. */
   private clockMinute(category: ScoringCategory): number | null {
@@ -1124,14 +1142,51 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       });
   }
 
-  removeEvent(event: ScoreEvent): void {
+  /** Delete a recorded score after a confirmation; a counted official result also asks why. */
+  async removeEvent(event: ScoreEvent): Promise<void> {
     if (this.saving()) return;
-    this.saving.set(true);
+    const fixture = this.fixture();
+    const counted = fixture?.status === 'completed' || fixture?.status === 'forfeit';
+    const official = this.competition()?.settings_json?.['official_results'] === true;
+    const needsReason = counted && official;
+    const who = this.participantName(event);
+    const what = `${event.scoring_category_name}${event.player_name ? ' by ' + event.player_name : ''}`;
+    const points = this.signed(event.points);
+    const alert = await this.alerts.create({
+      header: 'Delete this score?',
+      message: `${who}: ${what} (${points}). ${
+        counted ? 'The result and the table are worked out again.' : 'The score is worked out again.'
+      }`,
+      inputs: needsReason
+        ? [{ name: 'reason', type: 'textarea', placeholder: 'Why is it being removed? This is logged.' }]
+        : [],
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Delete',
+          role: 'destructive',
+          handler: (values: { reason?: string } | undefined) => {
+            const reason = (values?.reason ?? '').trim();
+            if (needsReason && !reason) {
+              void this.showToast('Give a reason; changes to an official result are logged.', 'danger');
+              return false;
+            }
+            this.deleteEvent(event, reason || undefined);
+            return true;
+          },
+        },
+      ],
+    });
+    await alert.present();
+  }
 
-    this.api.deleteEvent(this.fixtureId, event.id).subscribe({
+  private deleteEvent(event: ScoreEvent, reason?: string): void {
+    this.saving.set(true);
+    this.api.deleteEvent(this.fixtureId, event.id, reason).subscribe({
       next: () => {
         this.saving.set(false);
         this.reloadFixture();
+        void this.showToast('Score deleted.', 'success');
       },
       error: async (err: unknown) => {
         this.saving.set(false);

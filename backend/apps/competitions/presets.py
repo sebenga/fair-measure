@@ -44,6 +44,8 @@ class Preset(TypedDict, total=False):
     governing_body: str
     rulebook: str
     local_body: str
+    # Match-day team sheet: starters, bench, substitutions and formations.
+    team_sheet: dict
 
 
 POINTS_TABLE = "points"
@@ -138,10 +140,36 @@ SOCCER: Preset = {
     "league_points": {"win": 3, "draw": 1, "loss": 0},
     "tiebreakers": ["points", "score_difference", "score_for", "head_to_head"],
     "locked": True,
+    "team_sheet": {
+        "starters": 11,
+        "bench_max": 12,
+        "max_substitutions": 5,
+        "rolling_substitutions": False,
+        "keeper": "GK",
+        "lines": ["DEF", "MID", "FWD"],
+        "formations": [
+            "4-4-2",
+            "4-3-3",
+            "4-2-3-1",
+            "4-1-4-1",
+            "4-5-1",
+            "3-5-2",
+            "3-4-3",
+            "5-3-2",
+            "5-4-1",
+        ],
+    },
     "rules": [
         {
             "name": "League points",
             "description": "A win is 3 points, a draw is 1, a loss is 0.",
+        },
+        {
+            "name": "Team sheet",
+            "description": (
+                "Each team names 11 starters and up to 12 substitutes. "
+                "Up to 5 substitutions; a player taken off cannot come back on."
+            ),
         },
         {
             "name": "Knockout",
@@ -468,6 +496,7 @@ def apply_preset(competition, preset_key: str, *, unit_count: int | None = None)
             "match_awards": list(preset.get("match_awards") or []),
             "player_stats": list(preset.get("player_stats") or []),
             "roster_numbers": list(preset.get("roster_numbers") or []),
+            "team_sheet": dict(preset.get("team_sheet") or {}),
             "unit_count": preset.get("unit_count"),
             **governance(preset),
             "category_better": {

@@ -252,6 +252,128 @@ export interface FixtureAwards {
   can_award: boolean;
 }
 
+export interface FormationSlot {
+  index: number;
+  row: number;
+  column: number;
+  columns: number;
+  label: string;
+}
+
+export interface MatchPlayer {
+  player_id: string;
+  user_id: string | null;
+  name: string;
+  number: number | null;
+}
+
+export interface LineupPlayer extends MatchPlayer {
+  slot: number | null;
+  position: string;
+  on_field: boolean;
+  subbed_off: boolean;
+}
+
+export interface TeamSheetSide {
+  side_id: string;
+  participant_id: string;
+  name: string;
+  can_edit: boolean;
+  squad: Array<MatchPlayer & { position: string }>;
+  lineup: {
+    formation: string;
+    slots: FormationSlot[];
+    captain_id: string | null;
+    starters: LineupPlayer[];
+    bench: LineupPlayer[];
+    updated_at: string;
+  } | null;
+  on_field: string[];
+  available_subs: string[];
+  substitutions_used: number;
+  substitutions_left: number | null;
+}
+
+export interface SubstitutionRecord {
+  id: string;
+  side_id: string;
+  team: string;
+  player_off: MatchPlayer;
+  player_on: MatchPlayer;
+  minute: number | null;
+  reason: string;
+  note: string;
+  created_at: string;
+}
+
+export interface MatchDay {
+  enabled: boolean;
+  config?: {
+    starters: number | null;
+    bench_max: number | null;
+    max_substitutions: number | null;
+    rolling_substitutions: boolean;
+    keeper: string;
+    lines: string[];
+    formations: string[];
+  };
+  formations?: Array<{ key: string; slots: FormationSlot[] }>;
+  status?: string;
+  sides?: TeamSheetSide[];
+  substitutions?: SubstitutionRecord[];
+  can_substitute?: boolean;
+  reasons?: Array<{ key: string; label: string }>;
+}
+
+export interface MatchReportEvent {
+  minute: number | null;
+  team: string;
+  player: string;
+  label: string;
+  quantity: string;
+  points: string;
+  kind?: string;
+}
+
+export interface MatchReportData {
+  fixture: {
+    id: string;
+    label: string;
+    competition: string;
+    status: string;
+    scheduled_at: string | null;
+    started_at: string | null;
+    completed_at: string | null;
+    location: string;
+    duration_minutes: number | null;
+  };
+  sides: Array<{
+    side_id: string;
+    name: string;
+    score: string;
+    outcome: string;
+    forfeited: boolean;
+    lineup: TeamSheetSide['lineup'];
+  }>;
+  goals: MatchReportEvent[];
+  cards: MatchReportEvent[];
+  other_events: MatchReportEvent[];
+  substitutions: SubstitutionRecord[];
+  awards: Array<{ label: string; winner: { name: string; team: string } }>;
+  referees: string[];
+  report: {
+    summary: string;
+    attendance: number | null;
+    conditions: string;
+    incidents: string;
+    injuries: string;
+    written_by: string;
+    submitted_at: string | null;
+  } | null;
+  finished: boolean;
+  can_edit: boolean;
+}
+
 export interface PlayerStatsTable {
   columns: Array<{ key: string; label: string }>;
   rows: Array<{
@@ -397,6 +519,8 @@ export interface CriterionBreakdown {
   points_each: string;
   total: string;
   entries: Array<{
+    id: string;
+    fixture_id: string;
     quantity: string;
     awarded: string;
     note: string;
@@ -406,6 +530,7 @@ export interface CriterionBreakdown {
 
 export interface ScoreAssistEntry {
   id: string;
+  fixture_id: string;
   participant_id: string;
   participant_name: string;
   criterion: string;

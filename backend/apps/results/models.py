@@ -27,6 +27,7 @@ class CompetitionOfficial(BaseModel):
         JUDGE = "judge", _("Judge")
         GROUND_JURY = "ground_jury", _("Ground jury")
         UMPIRE = "umpire", _("Umpire")
+        REFEREE = "referee", _("Referee")
         VET = "vet", _("Veterinary official")
         TECHNICAL_DELEGATE = "technical_delegate", _("Technical delegate")
 

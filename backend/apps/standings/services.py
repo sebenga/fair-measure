@@ -456,6 +456,8 @@ def criteria_breakdown(competition: Competition) -> dict[str, list[dict]]:
         bucket["total"] += awarded
         bucket["entries"].append(
             {
+                "id": str(event.id),
+                "fixture_id": str(event.fixture_id),
                 "quantity": str(event.quantity),
                 "awarded": str(awarded),
                 "note": event.note,

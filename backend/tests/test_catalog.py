@@ -16,6 +16,7 @@ ENGINE_FILES = [
     Path("apps/competitions/engine.py"),
     Path("apps/standings/services.py"),
     Path("apps/fixtures/awards.py"),
+    Path("apps/fixtures/matchday.py"),
 ]
 SPORT_NAMES = [
     "rugby",

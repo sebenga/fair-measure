@@ -55,6 +55,11 @@ export const routes: Routes = [
           import('./pages/competitions/player-profile.page').then((m) => m.PlayerProfilePage),
       },
       {
+        path: 'competitions/:competitionId/fixtures/:fixtureId/report',
+        loadComponent: () =>
+          import('./pages/fixtures/match-report.page').then((m) => m.MatchReportPage),
+      },
+      {
         path: 'competitions/:competitionId/fixtures/:fixtureId',
         loadComponent: () =>
           import('./pages/fixtures/fixture-detail.page').then((m) => m.FixtureDetailPage),

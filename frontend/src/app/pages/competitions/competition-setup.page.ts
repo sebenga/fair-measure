@@ -1626,13 +1626,33 @@ export class CompetitionSetupPage implements OnInit {
       });
   }
 
-  removeCategory(category: ScoringCategory): void {
-    this.api.deleteScoringCategory(this.competitionId, category.id).subscribe({
-      next: () =>
-        this.categories.update((current) =>
-          current.filter((candidate) => candidate.id !== category.id),
-        ),
+  async removeCategory(category: ScoringCategory): Promise<void> {
+    const points = this.pointsTable() ? `${this.trim(category.points)} per unit` : `${this.trim(category.points)} pts`;
+    const alert = await this.alerts.create({
+      header: `Delete ${category.name}?`,
+      message: `${points}. It will no longer be available for scoring in this competition.`,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Delete',
+          role: 'destructive',
+          handler: () => {
+            this.api.deleteScoringCategory(this.competitionId, category.id).subscribe({
+              next: () => {
+                this.categories.update((current) =>
+                  current.filter((candidate) => candidate.id !== category.id),
+                );
+                void this.toast(`${category.name} deleted.`, 'success');
+              },
+              error: async (err: unknown) => {
+                await this.toast(extractErrorMessage(err, `Could not delete ${category.name}.`), 'danger');
+              },
+            });
+          },
+        },
+      ],
     });
+    await alert.present();
   }
 
   patchPolicy(patch: Partial<PointsPolicy>): void {

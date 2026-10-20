@@ -198,6 +198,7 @@ const PER: Record<string, string> = { match: 'total', '90min': 'per 90', game: '
         height: 6px;
         border-radius: 3px;
         background: var(--ion-color-light);
+        color: var(--ion-color-light-contrast);
         overflow: hidden;
       }
       .bar span {

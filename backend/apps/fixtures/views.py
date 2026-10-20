@@ -383,6 +383,10 @@ class FixtureViewSet(viewsets.ModelViewSet):
                 fixture.completed_at = timezone.now()
                 fixture.recalculate_scores()
             fixture.save(update_fields=["status", "started_at", "completed_at", "updated_at"])
+            if new_status in {Fixture.Status.LIVE, Fixture.Status.COMPLETED}:
+                from .matchday import sync_minutes
+
+                sync_minutes(fixture)
             if official and (
                 new_status in {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT} or reopening
             ):
@@ -576,6 +580,7 @@ class ScoreAssistView(APIView):
             [
                 {
                     "id": str(event.id),
+                    "fixture_id": str(event.fixture_id),
                     "participant_id": str(event.side.participant_id),
                     "participant_name": event.side.participant.name,
                     "criterion": event.scoring_category.name,

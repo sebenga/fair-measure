@@ -437,6 +437,7 @@ def test_no_engine_module_names_a_horse_sport():
         "apps/results/services.py",
         "apps/results/views.py",
         "apps/fixtures/awards.py",
+        "apps/fixtures/matchday.py",
     ):
         text = Path(module).read_text().lower()
         for name in names:

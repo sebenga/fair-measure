@@ -126,6 +126,7 @@ const RECOMMENDATION: Record<string, string> = { monitor: 'Monitor', trial: 'Tri
         height: 8px;
         border-radius: 4px;
         background: var(--ion-color-light);
+        color: var(--ion-color-light-contrast);
         overflow: hidden;
       }
       .bar span {

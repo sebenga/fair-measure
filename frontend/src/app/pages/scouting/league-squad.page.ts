@@ -484,6 +484,7 @@ const SOURCE_LABEL: Record<string, string> = {
         text-align: center;
         font-weight: 800;
         background: var(--ion-color-light);
+        color: var(--ion-color-light-contrast);
 
         &[data-level='high'] {
           background: color-mix(in srgb, var(--ion-color-success) 20%, transparent);
@@ -557,7 +558,7 @@ const SOURCE_LABEL: Record<string, string> = {
         border: 0;
         border-radius: 50%;
         background: var(--ion-color-light);
-        color: var(--ion-text-color);
+        color: var(--ion-color-light-contrast);
         cursor: pointer;
 
         &.danger {
@@ -609,6 +610,7 @@ const SOURCE_LABEL: Record<string, string> = {
           height: 28px;
           border-radius: 50%;
           background: var(--ion-color-light);
+          color: var(--ion-color-light-contrast);
           font-size: 0.75rem;
           font-weight: 800;
         }

@@ -312,6 +312,91 @@ class FixtureReferee(BaseModel):
         return f"{self.user_id} referees {self.fixture_id}"
 
 
+class FixtureLineup(BaseModel):
+    """One side's team sheet for one fixture: the shape, who starts and who is on the bench."""
+
+    fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="lineups")
+    side = models.OneToOneField(FixtureSide, on_delete=models.CASCADE, related_name="lineup")
+    formation = models.CharField(max_length=40, blank=True)
+    captain = models.ForeignKey(
+        RosterMember, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+
+    def __str__(self) -> str:
+        return f"{self.side.participant.name} {self.formation}".strip()
+
+
+class LineupEntry(BaseModel):
+    class Role(models.TextChoices):
+        STARTER = "starter", _("Starting")
+        BENCH = "bench", _("Substitute")
+
+    lineup = models.ForeignKey(FixtureLineup, on_delete=models.CASCADE, related_name="entries")
+    player = models.ForeignKey(
+        RosterMember, on_delete=models.CASCADE, related_name="lineup_entries"
+    )
+    role = models.CharField(max_length=10, choices=Role.choices, default=Role.STARTER)
+    # Index into the formation's slots; empty for the bench.
+    slot = models.PositiveIntegerField(null=True, blank=True)
+    position = models.CharField(max_length=20, blank=True)
+    number = models.PositiveIntegerField(null=True, blank=True)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["lineup", "player"], name="uniq_player_per_lineup")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.player} ({self.role})"
+
+
+class Substitution(BaseModel):
+    class Reason(models.TextChoices):
+        TACTICAL = "tactical", _("Tactical")
+        INJURY = "injury", _("Injury")
+        OTHER = "other", _("Other")
+
+    fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="substitutions")
+    side = models.ForeignKey(FixtureSide, on_delete=models.CASCADE, related_name="substitutions")
+    player_off = models.ForeignKey(RosterMember, on_delete=models.CASCADE, related_name="+")
+    player_on = models.ForeignKey(RosterMember, on_delete=models.CASCADE, related_name="+")
+    minute = models.PositiveIntegerField(null=True, blank=True)
+    reason = models.CharField(max_length=12, choices=Reason.choices, default=Reason.TACTICAL)
+    note = models.CharField(max_length=280, blank=True)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.player_on} for {self.player_off}"
+
+
+class MatchReport(BaseModel):
+    """The officials' account of a finished match, read alongside the recorded facts."""
+
+    fixture = models.OneToOneField(Fixture, on_delete=models.CASCADE, related_name="report")
+    summary = models.TextField(blank=True)
+    attendance = models.PositiveIntegerField(null=True, blank=True)
+    conditions = models.CharField(max_length=240, blank=True)
+    incidents = models.TextField(blank=True)
+    injuries = models.TextField(blank=True)
+    written_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+    submitted_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"Report for {self.fixture_id}"
+
+
 class FixtureAward(BaseModel):
     """A per-match award the preset names, such as a best player or a best horse."""
 

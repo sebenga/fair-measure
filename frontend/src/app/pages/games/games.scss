@@ -63,6 +63,7 @@
   padding: 4px;
   border-radius: 14px;
   background: var(--ion-color-light);
+  color: var(--ion-color-light-contrast);
   overflow-x: auto;
 
   button {
@@ -72,7 +73,7 @@
     border: 0;
     border-radius: 10px;
     background: transparent;
-    color: var(--ion-text-color);
+    color: inherit;
     font: inherit;
     font-weight: 650;
     cursor: pointer;
@@ -114,6 +115,7 @@
 
     &:hover {
       background: var(--ion-color-light);
+      color: var(--ion-color-light-contrast);
     }
   }
 
@@ -184,6 +186,7 @@
 
   &:hover {
     background: var(--ion-color-light);
+    color: var(--ion-color-light-contrast);
   }
 
   .grow {
@@ -283,7 +286,7 @@
 
   &.ghost {
     background: var(--ion-color-light);
-    color: var(--ion-text-color);
+    color: var(--ion-color-light-contrast);
   }
 
   &.small {

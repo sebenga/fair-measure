@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import Fixture, FixtureSide, ScoreEvent
+from .models import (
+    Fixture,
+    FixtureLineup,
+    FixtureSide,
+    LineupEntry,
+    MatchReport,
+    ScoreEvent,
+    Substitution,
+)
 
 
 class FixtureSideInline(admin.TabularInline):
@@ -34,3 +42,25 @@ class ScoreEventAdmin(admin.ModelAdmin):
     list_filter = ["scoring_category"]
     search_fields = ["fixture__label", "note"]
     readonly_fields = ["points"]
+
+
+class LineupEntryInline(admin.TabularInline):
+    model = LineupEntry
+    extra = 0
+    fields = ["player", "role", "slot", "position", "number", "order"]
+
+
+@admin.register(FixtureLineup)
+class FixtureLineupAdmin(admin.ModelAdmin):
+    list_display = ["side", "fixture", "formation", "captain"]
+    inlines = [LineupEntryInline]
+
+
+@admin.register(Substitution)
+class SubstitutionAdmin(admin.ModelAdmin):
+    list_display = ["fixture", "side", "player_off", "player_on", "minute", "reason"]
+
+
+@admin.register(MatchReport)
+class MatchReportAdmin(admin.ModelAdmin):
+    list_display = ["fixture", "written_by", "submitted_at"]

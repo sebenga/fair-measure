@@ -11,10 +11,12 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { debounceTime } from 'rxjs';
 import {
+  AlertController,
   IonButton,
   IonIcon,
   IonSelect,
   IonSelectOption,
+  ToastController,
 } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../../core/api.service';
@@ -195,6 +197,17 @@ import { ResultsService } from '../../../core/results.service';
                             {{ trim(entry.quantity) }} × {{ trim(criterion.points_each) }}
                             = {{ trim(entry.awarded) }}.
                             {{ entry.note || 'No note on how this was accumulated.' }}
+                            @if (canScore() && entry.id) {
+                              <button
+                                type="button"
+                                class="entry-delete"
+                                [disabled]="deleting()"
+                                (click)="$event.stopPropagation(); confirmDeleteEntry(row.participant.name, criterion, entry)"
+                                [attr.aria-label]="'Delete this ' + criterion.name + ' entry'"
+                              >
+                                <ion-icon name="trash-outline" aria-hidden="true" />
+                              </button>
+                            }
                           </p>
                         }
                       </div>
@@ -564,6 +577,16 @@ import { ResultsService } from '../../../core/results.service';
         color: var(--ion-color-medium);
         text-align: left;
       }
+
+      .entry-delete {
+        margin-left: 6px;
+        padding: 2px 4px;
+        border: none;
+        background: transparent;
+        color: var(--ion-color-danger);
+        vertical-align: middle;
+        cursor: pointer;
+      }
     `,
   ],
 })
@@ -572,6 +595,64 @@ export class CompetitionStandingsComponent implements OnInit {
   private readonly realtime = inject(RealtimeService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly results = inject(ResultsService);
+  private readonly alerts = inject(AlertController);
+  private readonly toasts = inject(ToastController);
+
+  readonly deleting = signal(false);
+
+  canScore(): boolean {
+    const role = this.competition().my_role;
+    return role === 'owner' || role === 'admin' || role === 'scorer';
+  }
+
+  /** Delete one logged entry after a confirmation; the table is worked out again. */
+  async confirmDeleteEntry(
+    who: string,
+    criterion: CriterionBreakdown,
+    entry: CriterionBreakdown['entries'][number],
+  ): Promise<void> {
+    const official = this.competition().settings_json?.['official_results'] === true;
+    const alert = await this.alerts.create({
+      header: 'Delete this score?',
+      message: `${who} · ${criterion.name}: ${this.trim(entry.awarded)} pts${entry.note ? ' (' + entry.note + ')' : ''}. The table is worked out again.`,
+      inputs: official
+        ? [{ name: 'reason', type: 'textarea', placeholder: 'Why is it being removed? This is logged.' }]
+        : [],
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Delete',
+          role: 'destructive',
+          handler: (values: { reason?: string } | undefined) => {
+            const reason = (values?.reason ?? '').trim();
+            if (official && !reason) {
+              void this.notify('Give a reason; changes to an official result are logged.', 'danger');
+              return false;
+            }
+            this.deleting.set(true);
+            this.api.deleteEvent(entry.fixture_id, entry.id, reason || undefined).subscribe({
+              next: () => {
+                this.deleting.set(false);
+                void this.notify('Score deleted. The table is updated.', 'success');
+                this.load(false);
+              },
+              error: (err: unknown) => {
+                this.deleting.set(false);
+                void this.notify(extractErrorMessage(err, 'Could not delete that score.'), 'danger');
+              },
+            });
+            return true;
+          },
+        },
+      ],
+    });
+    await alert.present();
+  }
+
+  private async notify(message: string, color: string): Promise<void> {
+    const toast = await this.toasts.create({ message, color, duration: 2200, position: 'bottom' });
+    await toast.present();
+  }
 
   readonly competition = input.required<CompetitionDetail>();
   readonly statOptions = computed(() => {

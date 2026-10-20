@@ -230,7 +230,7 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
 
         &.ghost {
           background: var(--ion-color-light);
-          color: var(--ion-text-color);
+          color: var(--ion-color-light-contrast);
         }
 
         &.danger {
@@ -297,6 +297,7 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
 
         &:hover {
           background: var(--ion-color-light);
+          color: var(--ion-color-light-contrast);
         }
 
         .scouted {

@@ -197,6 +197,7 @@ const PER: Record<string, string> = { match: 'per match', '90min': 'per 90 minut
         padding: 8px 10px;
         border-radius: 12px;
         background: var(--ion-color-light);
+        color: var(--ion-color-light-contrast);
         font-size: 0.8rem;
       }
       .anchors strong {

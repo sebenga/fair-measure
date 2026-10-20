@@ -2,11 +2,13 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } 
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
+  AlertController,
   IonBackButton,
   IonButton,
   IonButtons,
   IonContent,
   IonHeader,
+  IonIcon,
   IonInput,
   IonItem,
   IonList,
@@ -43,6 +45,7 @@ import { isPointsTable } from '../../core/models';
     IonSelect,
     IonSelectOption,
     IonButton,
+    IonIcon,
     IonNote,
     IonSpinner,
   ],
@@ -185,6 +188,17 @@ import { isPointsTable } from '../../core/models';
                     <p class="quiet">{{ entry.description }}</p>
                   }
                 </div>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  color="danger"
+                  size="small"
+                  [disabled]="busy()"
+                  (click)="confirmDelete(entry)"
+                  [attr.aria-label]="'Delete ' + entry.criterion + ' for ' + entry.participant_name"
+                >
+                  <ion-icon slot="icon-only" name="trash-outline" aria-hidden="true" />
+                </ion-button>
               </ion-item>
             }
           </ion-list>
@@ -234,6 +248,7 @@ export class CompetitionScorePage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastController);
+  private readonly alerts = inject(AlertController);
 
   private competitionId = '';
 
@@ -347,6 +362,55 @@ export class CompetitionScorePage implements OnInit {
         this.error.set(extractErrorMessage(err, 'Could not record that score.'));
       },
     });
+  }
+
+  /** Delete a logged score after a confirmation; the table is worked out again. */
+  async confirmDelete(entry: ScoreAssistEntry): Promise<void> {
+    const official = this.competition()?.settings_json?.['official_results'] === true;
+    const alert = await this.alerts.create({
+      header: 'Delete this score?',
+      message: `${entry.participant_name} · ${entry.criterion}: ${this.trim(entry.awarded)} pts. The table is worked out again.`,
+      inputs: official
+        ? [{ name: 'reason', type: 'textarea', placeholder: 'Why is it being removed? This is logged.' }]
+        : [],
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Delete',
+          role: 'destructive',
+          handler: (values: { reason?: string } | undefined) => {
+            const reason = (values?.reason ?? '').trim();
+            if (official && !reason) {
+              void this.notify('Give a reason; changes to an official result are logged.', 'danger');
+              return false;
+            }
+            this.deleteEntry(entry, reason || undefined);
+            return true;
+          },
+        },
+      ],
+    });
+    await alert.present();
+  }
+
+  private deleteEntry(entry: ScoreAssistEntry, reason?: string): void {
+    this.busy.set(true);
+    this.api.deleteEvent(entry.fixture_id, entry.id, reason).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.entries.update((rows) => rows.filter((row) => row.id !== entry.id));
+        void this.notify('Score deleted. The table is updated.', 'success');
+      },
+      error: (err: unknown) => {
+        this.busy.set(false);
+        void this.notify(extractErrorMessage(err, 'Could not delete that score.'), 'danger');
+      },
+    });
+  }
+
+  private async notify(message: string, color: string): Promise<void> {
+    const toast = await this.toasts.create({ message, color, duration: 2200, position: 'bottom' });
+    await toast.present();
   }
 
   trim(value: string): string {

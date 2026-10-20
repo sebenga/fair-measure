@@ -1,6 +1,13 @@
 from django.urls import path
 
 from .awards import FixtureAwardsView, PlayerStatsView
+from .matchday import (
+    MatchReportView,
+    SubstitutionsView,
+    SubstitutionView,
+    TeamSheetsView,
+    TeamSheetView,
+)
 from .views import FixtureRefereeView, FixtureViewSet, ScoreAssistView, ScoreEventViewSet
 
 fixture_list = FixtureViewSet.as_view({"get": "list", "post": "create"})
@@ -46,6 +53,31 @@ urlpatterns = [
         "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/awards",
         FixtureAwardsView.as_view(),
         name="fixture-awards",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/team-sheets",
+        TeamSheetsView.as_view(),
+        name="fixture-team-sheets",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/team-sheets/<uuid:side_pk>",
+        TeamSheetView.as_view(),
+        name="fixture-team-sheet",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/substitutions",
+        SubstitutionsView.as_view(),
+        name="fixture-substitutions",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/substitutions/<uuid:sub_pk>",
+        SubstitutionView.as_view(),
+        name="fixture-substitution",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/report",
+        MatchReportView.as_view(),
+        name="fixture-report",
     ),
     path(
         "competitions/<uuid:competition_pk>/player-stats",

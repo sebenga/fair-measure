@@ -349,6 +349,7 @@ type Tab = 'feed' | 'fixtures' | 'standings';
         padding: 12px;
         border-radius: 12px;
         background: var(--ion-color-light);
+        color: var(--ion-color-light-contrast);
         display: flex;
         flex-wrap: wrap;
         gap: 8px;

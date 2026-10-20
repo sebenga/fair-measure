@@ -229,6 +229,7 @@ const RADIUS = 96;
         height: 8px;
         border-radius: 4px;
         background: var(--ion-color-light);
+        color: var(--ion-color-light-contrast);
         overflow: hidden;
       }
       .bar span {

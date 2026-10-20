@@ -123,6 +123,7 @@
   font-weight: 800;
   font-size: 0.85rem;
   background: var(--ion-color-light);
+  color: var(--ion-color-light-contrast);
 
   &[data-place='1'] {
     background: linear-gradient(135deg, #fde68a, #f59e0b);
@@ -175,7 +176,7 @@
   border: 0;
   border-radius: 50%;
   background: var(--ion-color-light);
-  color: var(--ion-text-color);
+  color: var(--ion-color-light-contrast);
   cursor: pointer;
 }
 
@@ -307,7 +308,7 @@
 
   &.ghost {
     background: var(--ion-color-light);
-    color: var(--ion-text-color);
+    color: var(--ion-color-light-contrast);
   }
 
   &.small {
@@ -329,6 +330,7 @@
     border-left: 3px solid var(--ion-color-primary);
     border-radius: 8px;
     background: var(--ion-color-light);
+    color: var(--ion-color-light-contrast);
     font-size: 0.86rem;
 
     small {

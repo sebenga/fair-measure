@@ -12,7 +12,9 @@
   color: #fff;
   background: linear-gradient(135deg, var(--ion-color-primary-shade), var(--ion-color-secondary));
   box-shadow: var(--fm-shadow);
-  position: relative;
+  position: sticky;
+  top: 8px;
+  z-index: 20;
   overflow: hidden;
 
   // A slow sheen across the board while the match is live.
@@ -211,7 +213,7 @@
   border-radius: 999px;
   padding: 7px 14px;
   background: var(--ion-color-light);
-  color: inherit;
+  color: var(--ion-color-light-contrast);
   font-size: 0.85rem;
   font-weight: 600;
   text-transform: capitalize;
@@ -465,7 +467,7 @@
 
   button.secondary {
     background: var(--ion-color-light);
-    color: inherit;
+    color: var(--ion-color-light-contrast);
   }
 }
 
@@ -501,6 +503,7 @@
     border: 0;
     border-radius: 8px;
     background: var(--ion-color-light);
+    color: var(--ion-color-light-contrast);
     text-align: left;
   }
 }

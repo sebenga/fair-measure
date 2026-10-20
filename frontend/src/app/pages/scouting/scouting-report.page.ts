@@ -401,6 +401,7 @@ import { ScoutingService } from '../../core/scouting.service';
           padding: 10px;
           border-radius: 12px;
           background: var(--ion-color-light);
+          color: var(--ion-color-light-contrast);
           text-align: center;
         }
 

@@ -19,6 +19,7 @@ import {
   IonTextarea,
   IonTitle,
   IonToolbar,
+  AlertController,
   NavController,
 } from '@ionic/angular/standalone';
 
@@ -331,8 +332,8 @@ function presetKind(preset: Preset): PresetKind {
                         color="danger"
                         size="small"
                         type="button"
-                        [disabled]="scoringDrafts().length === 1"
-                        (click)="removeDraft(row.key)"
+                        [disabled]="scoringDrafts().length === 1 && !row.name.trim() && !row.description.trim()"
+                        (click)="confirmRemoveDraft(row.key)"
                       >
                         <ion-icon
                           slot="icon-only"
@@ -800,6 +801,7 @@ export class CompetitionCreatePage implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(ApiService);
   private readonly navCtrl = inject(NavController);
+  private readonly alerts = inject(AlertController);
   private readonly scouting = inject(ScoutingService);
 
   readonly scoutingCatalog = signal<ScoutingCatalog | null>(null);
@@ -1160,6 +1162,26 @@ export class CompetitionCreatePage implements OnInit {
 
   addDraft(): void {
     this.scoringDrafts.update((rows) => [...rows, this.blankDraft()]);
+  }
+
+  /** Ask before deleting a filled-in scoring item; an empty row just goes. */
+  async confirmRemoveDraft(key: number): Promise<void> {
+    const row = this.scoringDrafts().find((item) => item.key === key);
+    if (!row) return;
+    if (!row.name.trim() && !row.description.trim()) {
+      this.removeDraft(key);
+      return;
+    }
+    const unit = this.pointsTable() ? 'per unit' : 'pts';
+    const alert = await this.alerts.create({
+      header: `Delete ${row.name.trim() || 'this scoring item'}?`,
+      message: `${row.points || '0'} ${unit}. This removes it from the scoring.`,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Delete', role: 'destructive', handler: () => this.removeDraft(key) },
+      ],
+    });
+    await alert.present();
   }
 
   removeDraft(key: number): void {

@@ -181,6 +181,7 @@ const STATUSES: Array<{ key: ShortlistStatus; label: string }> = [
         padding: 8px 10px;
         border-radius: 10px;
         background: var(--ion-color-light);
+        color: var(--ion-color-light-contrast);
         font-size: 0.85rem;
       }
       .comment-row {

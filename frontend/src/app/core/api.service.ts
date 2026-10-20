@@ -12,6 +12,8 @@ import type {
   FixtureAwards,
   FixtureDetail,
   GenerateFixturesRequest,
+  MatchDay,
+  MatchReportData,
   PlayerStatsTable,
   MediaAsset,
   Membership,
@@ -217,6 +219,50 @@ export class ApiService {
     );
   }
 
+  teamSheets(competitionId: string, fixtureId: string) {
+    return this.http.get<MatchDay>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/team-sheets`,
+    );
+  }
+
+  saveTeamSheet(
+    competitionId: string,
+    fixtureId: string,
+    sideId: string,
+    body: Record<string, unknown>,
+  ) {
+    return this.http.put<MatchDay>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/team-sheets/${sideId}`,
+      body,
+    );
+  }
+
+  recordSubstitution(competitionId: string, fixtureId: string, body: Record<string, unknown>) {
+    return this.http.post<MatchDay>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/substitutions`,
+      body,
+    );
+  }
+
+  deleteSubstitution(competitionId: string, fixtureId: string, substitutionId: string) {
+    return this.http.delete<MatchDay>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/substitutions/${substitutionId}`,
+    );
+  }
+
+  matchReport(competitionId: string, fixtureId: string) {
+    return this.http.get<MatchReportData>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/report`,
+    );
+  }
+
+  saveMatchReport(competitionId: string, fixtureId: string, body: Record<string, unknown>) {
+    return this.http.put<MatchReportData>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/report`,
+      body,
+    );
+  }
+
   playerStats(competitionId: string) {
     return this.http.get<PlayerStatsTable>(`${this.base}/competitions/${competitionId}/player-stats`);
   }
@@ -373,8 +419,10 @@ export class ApiService {
     return this.http.post<ScoreEvent>(`${this.base}/fixtures/${fixtureId}/events`, body);
   }
 
-  deleteEvent(fixtureId: string, eventId: string): Observable<void> {
-    return this.http.delete<void>(`${this.base}/fixtures/${fixtureId}/events/${eventId}`);
+  /** Remove a recorded score. A counted official result also needs the reason, which is logged. */
+  deleteEvent(fixtureId: string, eventId: string, reason?: string): Observable<void> {
+    const params = reason ? new HttpParams().set('amendment_reason', reason) : undefined;
+    return this.http.delete<void>(`${this.base}/fixtures/${fixtureId}/events/${eventId}`, { params });
   }
 
   listScoreAssist(competitionId: string): Observable<ScoreAssistEntry[]> {
