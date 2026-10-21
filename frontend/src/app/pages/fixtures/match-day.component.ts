@@ -10,8 +10,8 @@ import {
   signal,
   untracked,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
 import { AlertController, IonIcon, ToastController } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { arrowDownOutline, arrowUpOutline, swapHorizontalOutline, trashOutline } from 'ionicons/icons';
@@ -44,414 +44,377 @@ interface Draft {
   selector: 'fm-match-day',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [IonIcon, RouterLink],
+  imports: [IonIcon, NgTemplateOutlet],
   template: `
-    @if (status() === 'completed' || status() === 'forfeit') {
-      <h3 class="fm-section-title">Match report</h3>
-      <a class="fm-card report-link" [routerLink]="['/tabs/competitions', competitionId(), 'fixtures', fixtureId(), 'report']">
-        <ion-icon name="document-text-outline" aria-hidden="true" />
-        <span>
-          <strong>Post-match report</strong>
-          <em>Result, line-ups, goals, cards, substitutions and the officials' notes. Printable.</em>
-        </span>
-        <ion-icon name="chevron-forward-outline" aria-hidden="true" />
-      </a>
+    @if (day()?.enabled === false && part() !== 'subs') {
+      <div class="fm-empty compact"><p>This competition does not use team sheets.</p></div>
     }
 
-    @if (day()?.enabled && sides().length) {
+    <ng-template #sheetView let-side>
+      @if (side.lineup; as lineup) {
+        @if (lineup.slots.length) {
+          <div class="pitch" [attr.aria-label]="side.name + ' line-up'">
+            @for (row of rows(lineup.slots); track $index) {
+              <div class="pitch-row">
+                @for (slot of row; track slot.index) {
+                  @if (starterAt(side, slot.index); as player) {
+                    <div class="spot" [class.off]="player.subbed_off">
+                      <span class="shirt">{{ player.number ?? '' }}</span>
+                      <span class="who">
+                        {{ shortName(player.name) }}
+                        @if (lineup.captain_id === player.player_id) {
+                          <b class="captain" aria-label="Captain">C</b>
+                        }
+                      </span>
+                      @if (player.subbed_off) {
+                        <ion-icon name="arrow-down-outline" class="sub-off" aria-label="Substituted" />
+                      }
+                    </div>
+                  } @else {
+                    <div class="spot vacant"><span class="shirt">–</span><span class="who">{{ slot.label }}</span></div>
+                  }
+                }
+              </div>
+            }
+          </div>
+        } @else {
+          <ul class="list">
+            @for (player of lineup.starters; track player.player_id) {
+              <li [class.off]="player.subbed_off">
+                <span class="num">{{ player.number ?? '' }}</span>
+                {{ player.name }}
+                @if (lineup.captain_id === player.player_id) {
+                  <b class="captain">C</b>
+                }
+              </li>
+            }
+          </ul>
+        }
+        <p class="hint">Bench</p>
+        <ul class="list bench">
+          @for (player of lineup.bench; track player.player_id) {
+            <li [class.used]="player.on_field || player.subbed_off">
+              <span class="num">{{ player.number ?? '' }}</span>
+              {{ player.name }}
+              @if (player.on_field) {
+                <ion-icon name="arrow-up-outline" class="sub-on" aria-label="Came on" />
+              }
+            </li>
+          } @empty {
+            <li class="muted">No substitutes named.</li>
+          }
+        </ul>
+      } @else {
+        <p class="muted">{{ side.name }} have not picked their team yet.</p>
+      }
+      @if (side.can_edit) {
+        <div class="actions">
+          <button type="button" class="primary" (click)="edit(side)">
+            {{ side.lineup ? 'Edit team sheet' : 'Pick team' }}
+          </button>
+        </div>
+      } @else if (!side.lineup) {
+        <p class="hint">The team's manager, the referee or an admin picks the team.</p>
+      } @else if (status() !== 'scheduled' && status() !== 'postponed') {
+        <p class="hint">The team sheet is locked after kickoff.</p>
+      }
+    </ng-template>
+
+    @if (day()?.enabled && sides().length && part() !== 'subs') {
       <h3 class="fm-section-title">Team sheets</h3>
-      <div class="fm-card sheet">
-        <div class="team-tabs" role="tablist" aria-label="Team">
-          @for (side of sides(); track side.side_id) {
+      <div class="fm-team-columns" [class.many]="sides().length > 2" [class.editing]="!!draft()">
+        @for (side of sides(); track side.side_id) {
+          <div class="fm-card sheet" [class.edit]="draft()?.sideId === side.side_id">
+            <span class="fm-team-head">
+              {{ side.name }}
+              @if (side.lineup?.formation) {
+                <small>{{ side.lineup?.formation }}</small>
+              }
+            </span>
+            @if (draft(); as d) {
+              @if (d.sideId === side.side_id) {
+      <div class="editor">
+        @if (formationKeys().length) {
+          <label class="field">
+            Formation
+            <select [value]="d.formation" (change)="setFormation(value($event))">
+              @for (key of formationKeys(); track key) {
+                <option [value]="key" [selected]="key === d.formation">{{ key }}</option>
+              }
+            </select>
+          </label>
+        } @else {
+          <label class="field">
+            Formation (optional)
+            <input [value]="d.formation" placeholder="e.g. 3-2-1" (change)="setFreeFormation(value($event))" />
+          </label>
+        }
+
+        @if (draftSlots().length) {
+          <div class="pitch editing" aria-label="Starting positions">
+            @for (row of rows(draftSlots()); track $index) {
+              <div class="pitch-row">
+                @for (slot of row; track slot.index) {
+                  <label class="slot" [class.empty]="!d.slots[slot.index]">
+                    <span class="pos">{{ slot.label || 'Pos ' + (slot.index + 1) }}</span>
+                    <select
+                      [attr.aria-label]="(slot.label || 'Position') + ' ' + (slot.index + 1)"
+                      (change)="assignSlot(slot.index, value($event))"
+                    >
+                      <option value="" [selected]="!d.slots[slot.index]">Pick</option>
+                      @for (player of slotChoices(slot.index); track player.player_id) {
+                        <option [value]="player.player_id" [selected]="d.slots[slot.index] === player.player_id">
+                          {{ label(player) }}
+                        </option>
+                      }
+                    </select>
+                  </label>
+                }
+              </div>
+            }
+          </div>
+        } @else {
+          <p class="hint">
+            Starters
+            @if (config()?.starters; as limit) {
+              ({{ d.starters.length }} of {{ limit }})
+            }
+          </p>
+          <div class="chips">
+            @for (player of side.squad; track player.player_id) {
+              <button
+                type="button"
+                class="pick"
+                [class.on]="d.starters.includes(player.player_id)"
+                (click)="toggleStarter(player.player_id)"
+              >
+                {{ label(player) }}
+              </button>
+            }
+          </div>
+        }
+
+        <p class="hint">
+          Bench
+          @if (config()?.bench_max !== null && config()?.bench_max !== undefined) {
+            ({{ d.bench.length }} of {{ config()?.bench_max }})
+          }
+        </p>
+        <div class="chips">
+          @for (player of benchChoices(); track player.player_id) {
             <button
               type="button"
-              role="tab"
-              [attr.aria-selected]="side.side_id === selectedId()"
-              [class.on]="side.side_id === selectedId()"
-              (click)="select(side.side_id)"
+              class="pick"
+              [class.on]="d.bench.includes(player.player_id)"
+              (click)="toggleBench(player.player_id)"
             >
-              {{ side.name }}
-              @if (side.lineup) {
-                <small>{{ side.lineup.formation || side.lineup.starters.length + ' named' }}</small>
-              } @else {
-                <small>not picked</small>
-              }
+              {{ label(player) }}
             </button>
+          } @empty {
+            <span class="muted">Everyone in the squad is starting.</span>
           }
         </div>
 
-        @if (selected(); as side) {
-          @if (draft(); as d) {
-            <div class="editor">
-              @if (formationKeys().length) {
-                <label class="field">
-                  Formation
-                  <select [value]="d.formation" (change)="setFormation(value($event))">
-                    @for (key of formationKeys(); track key) {
-                      <option [value]="key" [selected]="key === d.formation">{{ key }}</option>
-                    }
-                  </select>
-                </label>
-              } @else {
-                <label class="field">
-                  Formation (optional)
-                  <input [value]="d.formation" placeholder="e.g. 3-2-1" (change)="setFreeFormation(value($event))" />
-                </label>
-              }
+        <label class="field">
+          Captain
+          <select (change)="setCaptain(value($event))">
+            <option value="" [selected]="!d.captain">No captain</option>
+            @for (player of draftStarters(); track player.player_id) {
+              <option [value]="player.player_id" [selected]="d.captain === player.player_id">
+                {{ player.name }}
+              </option>
+            }
+          </select>
+        </label>
 
-              @if (draftSlots().length) {
-                <div class="pitch editing" aria-label="Starting positions">
-                  @for (row of rows(draftSlots()); track $index) {
-                    <div class="pitch-row">
-                      @for (slot of row; track slot.index) {
-                        <label class="slot" [class.empty]="!d.slots[slot.index]">
-                          <span class="pos">{{ slot.label || 'Pos ' + (slot.index + 1) }}</span>
-                          <select
-                            [attr.aria-label]="(slot.label || 'Position') + ' ' + (slot.index + 1)"
-                            (change)="assignSlot(slot.index, value($event))"
-                          >
-                            <option value="" [selected]="!d.slots[slot.index]">Pick</option>
-                            @for (player of slotChoices(slot.index); track player.player_id) {
-                              <option [value]="player.player_id" [selected]="d.slots[slot.index] === player.player_id">
-                                {{ label(player) }}
-                              </option>
-                            }
-                          </select>
-                        </label>
-                      }
-                    </div>
-                  }
-                </div>
-              } @else {
-                <p class="hint">
-                  Starters
-                  @if (config()?.starters; as limit) {
-                    ({{ d.starters.length }} of {{ limit }})
-                  }
-                </p>
-                <div class="chips">
-                  @for (player of side.squad; track player.player_id) {
-                    <button
-                      type="button"
-                      class="pick"
-                      [class.on]="d.starters.includes(player.player_id)"
-                      (click)="toggleStarter(player.player_id)"
-                    >
-                      {{ label(player) }}
-                    </button>
-                  }
-                </div>
-              }
-
-              <p class="hint">
-                Bench
-                @if (config()?.bench_max !== null && config()?.bench_max !== undefined) {
-                  ({{ d.bench.length }} of {{ config()?.bench_max }})
-                }
-              </p>
-              <div class="chips">
-                @for (player of benchChoices(); track player.player_id) {
-                  <button
-                    type="button"
-                    class="pick"
-                    [class.on]="d.bench.includes(player.player_id)"
-                    (click)="toggleBench(player.player_id)"
-                  >
-                    {{ label(player) }}
-                  </button>
-                } @empty {
-                  <span class="muted">Everyone in the squad is starting.</span>
-                }
-              </div>
-
-              <label class="field">
-                Captain
-                <select (change)="setCaptain(value($event))">
-                  <option value="" [selected]="!d.captain">No captain</option>
-                  @for (player of draftStarters(); track player.player_id) {
-                    <option [value]="player.player_id" [selected]="d.captain === player.player_id">
-                      {{ player.name }}
-                    </option>
-                  }
-                </select>
+        @if (draftNamed().length) {
+          <details class="numbers">
+            <summary>Shirt numbers</summary>
+            @for (player of draftNamed(); track player.player_id) {
+              <label>
+                <span>{{ player.name }}</span>
+                <input
+                  type="number"
+                  min="0"
+                  inputmode="numeric"
+                  [value]="numberFor(player.player_id)"
+                  (change)="setNumber(player.player_id, value($event))"
+                />
               </label>
-
-              @if (draftNamed().length) {
-                <details class="numbers">
-                  <summary>Shirt numbers</summary>
-                  @for (player of draftNamed(); track player.player_id) {
-                    <label>
-                      <span>{{ player.name }}</span>
-                      <input
-                        type="number"
-                        min="0"
-                        inputmode="numeric"
-                        [value]="numberFor(player.player_id)"
-                        (change)="setNumber(player.player_id, value($event))"
-                      />
-                    </label>
-                  }
-                </details>
-              }
-
-              <div class="actions">
-                <button type="button" class="ghost" [disabled]="busy()" (click)="autoFill()">Auto-fill</button>
-                <button type="button" class="ghost" [disabled]="busy()" (click)="cancel()">Cancel</button>
-                <button type="button" class="primary" [disabled]="busy()" (click)="save()">Save team sheet</button>
-              </div>
-            </div>
-          } @else {
-            @if (side.lineup; as lineup) {
-              @if (lineup.slots.length) {
-                <div class="pitch" [attr.aria-label]="side.name + ' line-up'">
-                  @for (row of rows(lineup.slots); track $index) {
-                    <div class="pitch-row">
-                      @for (slot of row; track slot.index) {
-                        @if (starterAt(side, slot.index); as player) {
-                          <div class="spot" [class.off]="player.subbed_off">
-                            <span class="shirt">{{ player.number ?? '' }}</span>
-                            <span class="who">
-                              {{ shortName(player.name) }}
-                              @if (lineup.captain_id === player.player_id) {
-                                <b class="captain" aria-label="Captain">C</b>
-                              }
-                            </span>
-                            @if (player.subbed_off) {
-                              <ion-icon name="arrow-down-outline" class="sub-off" aria-label="Substituted" />
-                            }
-                          </div>
-                        } @else {
-                          <div class="spot vacant"><span class="shirt">–</span><span class="who">{{ slot.label }}</span></div>
-                        }
-                      }
-                    </div>
-                  }
-                </div>
-              } @else {
-                <ul class="list">
-                  @for (player of lineup.starters; track player.player_id) {
-                    <li [class.off]="player.subbed_off">
-                      <span class="num">{{ player.number ?? '' }}</span>
-                      {{ player.name }}
-                      @if (lineup.captain_id === player.player_id) {
-                        <b class="captain">C</b>
-                      }
-                    </li>
-                  }
-                </ul>
-              }
-              <p class="hint">Bench</p>
-              <ul class="list bench">
-                @for (player of lineup.bench; track player.player_id) {
-                  <li [class.used]="player.on_field || player.subbed_off">
-                    <span class="num">{{ player.number ?? '' }}</span>
-                    {{ player.name }}
-                    @if (player.on_field) {
-                      <ion-icon name="arrow-up-outline" class="sub-on" aria-label="Came on" />
-                    }
-                  </li>
-                } @empty {
-                  <li class="muted">No substitutes named.</li>
-                }
-              </ul>
-            } @else {
-              <p class="muted">{{ side.name }} have not picked their team yet.</p>
             }
-            @if (side.can_edit) {
-              <div class="actions">
-                <button type="button" class="primary" (click)="edit(side)">
-                  {{ side.lineup ? 'Edit team sheet' : 'Pick team' }}
-                </button>
-              </div>
-            } @else if (!side.lineup) {
-              <p class="hint">The team's manager, the referee or an admin picks the team.</p>
-            } @else if (status() !== 'scheduled' && status() !== 'postponed') {
-              <p class="hint">The team sheet is locked after kickoff.</p>
-            }
-          }
+          </details>
         }
-      </div>
 
-      @if (showSubstitutions()) {
-        <h3 class="fm-section-title">
-          Substitutions
-          @if (subs().length) {
-            <span class="count">{{ subs().length }}</span>
-          }
-        </h3>
-        <div class="fm-card subs">
-          <div class="used">
-            @for (side of sides(); track side.side_id) {
-              <span>
-                <strong>{{ side.name }}</strong>
-                {{ side.substitutions_used }}
-                @if (config()?.max_substitutions; as limit) {
-                  of {{ limit }}
-                }
-                used
-              </span>
+        <div class="actions">
+          <button type="button" class="ghost" [disabled]="busy()" (click)="autoFill()">Auto-fill</button>
+          <button type="button" class="ghost" [disabled]="busy()" (click)="cancel()">Cancel</button>
+          <button type="button" class="primary" [disabled]="busy()" (click)="save()">Save team sheet</button>
+        </div>
+      </div>
+              } @else {
+                <ng-container *ngTemplateOutlet="sheetView; context: { $implicit: side }" />
+              }
+            } @else {
+              <ng-container *ngTemplateOutlet="sheetView; context: { $implicit: side }" />
             }
           </div>
+        }
+      </div>
+    }
 
-          @if (day()?.can_substitute) {
-            @if (selected(); as side) {
+    @if (day()?.enabled && sides().length && part() !== 'sheets' && showSubstitutions()) {
+      <h3 class="fm-section-title">
+        Substitutions
+        @if (subs().length) {
+          <span class="count">{{ subs().length }}</span>
+        }
+      </h3>
+      <div class="fm-team-columns" [class.many]="sides().length > 2">
+        @for (side of sides(); track side.side_id) {
+          <div class="fm-card subs">
+            <span class="fm-team-head">{{ side.name }}</span>
+            <p class="used">
+              {{ side.substitutions_used }}
+              @if (config()?.max_substitutions; as limit) {
+                of {{ limit }}
+              }
+              used
+            </p>
+
+            @if (day()?.can_substitute) {
               @if (side.lineup) {
-                <div class="sub-form">
-                  <p class="hint">Recording for <strong>{{ side.name }}</strong>. Switch team with the tabs above.</p>
-                  <label class="field">
-                    Off
-                    <select (change)="subOff.set(value($event))">
-                      <option value="" [selected]="!subOff()">Player coming off</option>
-                      @for (player of onField(side); track player.player_id) {
-                        <option [value]="player.player_id" [selected]="subOff() === player.player_id">{{ label(player) }}</option>
-                      }
-                    </select>
-                  </label>
-                  <label class="field">
-                    On
-                    <select (change)="subOn.set(value($event))">
-                      <option value="" [selected]="!subOn()">Substitute coming on</option>
-                      @for (player of available(side); track player.player_id) {
-                        <option [value]="player.player_id" [selected]="subOn() === player.player_id">{{ label(player) }}</option>
-                      }
-                    </select>
-                  </label>
-                  <div class="row">
+                @if (side.substitutions_left !== 0) {
+                  <div class="sub-form">
                     <label class="field">
-                      Minute
-                      <input
-                        type="number"
-                        min="0"
-                        inputmode="numeric"
-                        [value]="subMinute()"
-                        (input)="setMinute(value($event))"
-                      />
-                    </label>
-                    <label class="field">
-                      Reason
-                      <select (change)="subReason.set(value($event))">
-                        @for (reason of day()?.reasons ?? []; track reason.key) {
-                          <option [value]="reason.key" [selected]="subReason() === reason.key">{{ reason.label }}</option>
+                      Off
+                      <select (change)="setSub(side.side_id, 'off', value($event))">
+                        <option value="" [selected]="!subFor(side.side_id).off">Coming off</option>
+                        @for (player of onField(side); track player.player_id) {
+                          <option [value]="player.player_id" [selected]="subFor(side.side_id).off === player.player_id">{{ label(player) }}</option>
                         }
                       </select>
                     </label>
-                  </div>
-                  <div class="actions">
+                    <label class="field">
+                      On
+                      <select (change)="setSub(side.side_id, 'on', value($event))">
+                        <option value="" [selected]="!subFor(side.side_id).on">Coming on</option>
+                        @for (player of available(side); track player.player_id) {
+                          <option [value]="player.player_id" [selected]="subFor(side.side_id).on === player.player_id">{{ label(player) }}</option>
+                        }
+                      </select>
+                    </label>
+                    <div class="row">
+                      <label class="field">
+                        Minute
+                        <input
+                          type="number"
+                          min="0"
+                          inputmode="numeric"
+                          [value]="subMinute()"
+                          (input)="setMinute(value($event))"
+                        />
+                      </label>
+                      <label class="field">
+                        Reason
+                        <select (change)="setSub(side.side_id, 'reason', value($event))">
+                          @for (reason of day()?.reasons ?? []; track reason.key) {
+                            <option [value]="reason.key" [selected]="subFor(side.side_id).reason === reason.key">{{ reason.label }}</option>
+                          }
+                        </select>
+                      </label>
+                    </div>
                     <button
                       type="button"
-                      class="primary"
-                      [disabled]="busy() || !subOff() || !subOn() || side.substitutions_left === 0"
+                      class="record"
+                      [disabled]="busy() || !subFor(side.side_id).off || !subFor(side.side_id).on"
                       (click)="substitute(side)"
                     >
                       <ion-icon name="swap-horizontal-outline" aria-hidden="true" />
-                      Record substitution
+                      Record
                     </button>
                   </div>
-                  @if (side.substitutions_left === 0) {
-                    <p class="hint">{{ side.name }} have used all their substitutions.</p>
-                  }
-                </div>
+                } @else {
+                  <p class="hint">All substitutions used.</p>
+                }
               } @else {
-                <p class="hint">Pick {{ side.name }}'s team sheet before recording substitutions.</p>
+                <p class="hint">Pick the team sheet first.</p>
               }
             }
-          }
 
-          @for (sub of subs(); track sub.id) {
-            <div class="sub">
-              <span class="minute">{{ sub.minute !== null ? sub.minute + "'" : '–' }}</span>
-              <span class="detail">
-                <span class="on"><ion-icon name="arrow-up-outline" aria-label="On" /> {{ sub.player_on.name }}</span>
-                <span class="off"><ion-icon name="arrow-down-outline" aria-label="Off" /> {{ sub.player_off.name }}</span>
-                <em>{{ sub.team }} · {{ reasonLabel(sub.reason) }}</em>
-              </span>
-              @if (day()?.can_substitute) {
-                <button
-                  type="button"
-                  class="undo"
-                  [disabled]="busy()"
-                  [attr.aria-label]="'Delete substitution of ' + sub.player_off.name"
-                  (click)="confirmDelete(sub)"
-                >
-                  <ion-icon name="trash-outline" />
-                </button>
+            @if (part() !== 'subs') {
+              @for (sub of subsFor(side.side_id); track sub.id) {
+                <div class="sub">
+                  <span class="minute">{{ sub.minute !== null ? sub.minute + "'" : '–' }}</span>
+                  <span class="detail">
+                    <span class="on"><ion-icon name="arrow-up-outline" aria-label="On" /> {{ sub.player_on.name }}</span>
+                    <span class="off"><ion-icon name="arrow-down-outline" aria-label="Off" /> {{ sub.player_off.name }}</span>
+                    <em>{{ reasonLabel(sub.reason) }}</em>
+                  </span>
+                  @if (day()?.can_substitute) {
+                    <button
+                      type="button"
+                      class="undo"
+                      [disabled]="busy()"
+                      [attr.aria-label]="'Delete substitution of ' + sub.player_off.name"
+                      (click)="confirmDelete(sub)"
+                    >
+                      <ion-icon name="trash-outline" />
+                    </button>
+                  }
+                </div>
+              } @empty {
+                <p class="muted">No substitutions yet.</p>
               }
-            </div>
-          } @empty {
-            <p class="muted">No substitutions yet.</p>
-          }
-        </div>
-      }
+            }
+          </div>
+        }
+      </div>
     }
   `,
   styles: [
     `
-      .report-link {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin: 0 16px 16px;
-        padding: 14px 16px;
-        color: inherit;
-        text-decoration: none;
-      }
-      .report-link > ion-icon:first-child {
-        font-size: 1.6rem;
-        color: var(--ion-color-primary);
-      }
-      .report-link span {
-        flex: 1 1 auto;
-        display: grid;
-        gap: 2px;
-      }
-      .report-link em {
-        font-style: normal;
-        font-size: 0.78rem;
-        color: var(--ion-color-medium);
-      }
       .sheet,
       .subs {
-        margin: 0 16px 16px;
-        padding: 12px 14px;
+        padding: 12px;
         display: grid;
+        align-content: start;
         gap: 10px;
       }
-      .team-tabs {
-        display: grid;
-        grid-auto-flow: column;
-        grid-auto-columns: 1fr;
-        gap: 6px;
-        padding: 4px;
-        border-radius: 12px;
-        background: var(--ion-color-light);
-        color: var(--ion-color-light-contrast);
+      .fm-team-head small {
+        margin-left: 6px;
+        font-weight: 600;
+        letter-spacing: 0;
+        color: var(--ion-color-medium);
       }
-      .team-tabs button {
-        display: grid;
-        gap: 2px;
-        padding: 8px 6px;
+      @media (max-width: 719px) {
+        .fm-team-columns.editing {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .record {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        width: 100%;
+        padding: 9px 12px;
         border: 0;
-        border-radius: 9px;
-        background: transparent;
-        color: inherit;
+        border-radius: 999px;
+        background: var(--ion-color-primary);
+        color: var(--ion-color-primary-contrast);
         font: inherit;
         font-weight: 700;
         cursor: pointer;
       }
-      .team-tabs button small {
-        font-weight: 500;
-        font-size: 0.72rem;
-        opacity: 0.75;
-      }
-      .team-tabs button.on {
-        background: var(--ion-color-primary);
-        color: var(--ion-color-primary-contrast);
+      .record:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
       }
       .pitch {
         display: flex;
         flex-direction: column;
         gap: 10px;
-        padding: 14px 8px;
+        padding: 12px 4px;
         border-radius: 14px;
         background:
           repeating-linear-gradient(0deg, rgb(255 255 255 / 0.05) 0 28px, transparent 28px 56px),
@@ -476,8 +439,8 @@ interface Draft {
       .spot .shirt {
         display: grid;
         place-items: center;
-        width: 30px;
-        height: 30px;
+        width: 26px;
+        height: 26px;
         border-radius: 50%;
         background: #fff;
         color: #14532d;
@@ -562,8 +525,8 @@ interface Draft {
       }
       .row {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
+        grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+        gap: 8px;
       }
       .editor,
       .sub-form {
@@ -674,18 +637,13 @@ interface Draft {
         color: var(--ion-color-medium);
       }
       .used {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px 16px;
-        font-size: 0.8rem;
+        margin: -4px 0 0;
+        font-size: 0.78rem;
         color: var(--ion-color-medium);
-      }
-      .used strong {
-        color: var(--ion-text-color);
       }
       .sub {
         display: grid;
-        grid-template-columns: 40px 1fr auto;
+        grid-template-columns: 32px 1fr auto;
         align-items: center;
         gap: 10px;
         padding-top: 8px;
@@ -737,23 +695,19 @@ export class MatchDayComponent implements OnInit {
   readonly status = input<string>('scheduled');
   /** The match clock's current minute, used as the default for a substitution. */
   readonly minute = input<number | null>(null);
+  /** Which panels to show: everything, only the team sheets, or only substitutions. */
+  readonly part = input<'all' | 'sheets' | 'subs'>('all');
 
   readonly day = signal<MatchDay | null>(null);
-  readonly selectedId = signal('');
   readonly draft = signal<Draft | null>(null);
   readonly busy = signal(false);
-  readonly subOff = signal('');
-  readonly subOn = signal('');
   readonly subMinute = signal('');
-  readonly subReason = signal('tactical');
+  readonly subDrafts = signal<Record<string, { off: string; on: string; reason: string }>>({});
   private minuteTouched = false;
 
   readonly sides = computed(() => this.day()?.sides ?? []);
   readonly config = computed(() => this.day()?.config);
   readonly subs = computed(() => this.day()?.substitutions ?? []);
-  readonly selected = computed(
-    () => this.sides().find((side) => side.side_id === this.selectedId()) ?? this.sides()[0] ?? null,
-  );
   readonly formationKeys = computed(() => this.config()?.formations ?? []);
   readonly draftSlots = computed<FormationSlot[]>(() => {
     const draft = this.draft();
@@ -792,13 +746,6 @@ export class MatchDayComponent implements OnInit {
 
   value(event: Event): string {
     return (event.target as HTMLInputElement | HTMLSelectElement).value.trim();
-  }
-
-  select(sideId: string): void {
-    if (this.draft() && this.draft()?.sideId !== sideId) this.draft.set(null);
-    this.selectedId.set(sideId);
-    this.subOff.set('');
-    this.subOn.set('');
   }
 
   label(player: MatchPlayer): string {
@@ -842,7 +789,6 @@ export class MatchDayComponent implements OnInit {
     for (const player of [...(lineup?.starters ?? []), ...(lineup?.bench ?? [])]) {
       numbers[player.player_id] = player.number !== null ? String(player.number) : '';
     }
-    this.selectedId.set(side.side_id);
     this.draft.set({
       sideId: side.side_id,
       formation,
@@ -859,7 +805,8 @@ export class MatchDayComponent implements OnInit {
   }
 
   private squad(): Array<MatchPlayer & { position: string }> {
-    return this.selected()?.squad ?? [];
+    const sideId = this.draft()?.sideId;
+    return this.sides().find((side) => side.side_id === sideId)?.squad ?? [];
   }
 
   private startingIds(draft: Draft): string[] {
@@ -1051,6 +998,18 @@ export class MatchDayComponent implements OnInit {
       .filter((player): player is MatchPlayer => !!player);
   }
 
+  subFor(sideId: string): { off: string; on: string; reason: string } {
+    return this.subDrafts()[sideId] ?? { off: '', on: '', reason: 'tactical' };
+  }
+
+  setSub(sideId: string, field: 'off' | 'on' | 'reason', value: string): void {
+    this.subDrafts.update((drafts) => ({ ...drafts, [sideId]: { ...this.subFor(sideId), [field]: value } }));
+  }
+
+  subsFor(sideId: string): SubstitutionRecord[] {
+    return this.subs().filter((sub) => sub.side_id === sideId);
+  }
+
   setMinute(minute: string): void {
     this.minuteTouched = true;
     this.subMinute.set(minute);
@@ -1062,17 +1021,16 @@ export class MatchDayComponent implements OnInit {
     this.api
       .recordSubstitution(this.competitionId(), this.fixtureId(), {
         side: side.side_id,
-        player_off: this.subOff(),
-        player_on: this.subOn(),
+        player_off: this.subFor(side.side_id).off,
+        player_on: this.subFor(side.side_id).on,
         minute: this.subMinute() || null,
-        reason: this.subReason(),
+        reason: this.subFor(side.side_id).reason,
       })
       .subscribe({
         next: (day) => {
           this.busy.set(false);
           this.day.set(day);
-          this.subOff.set('');
-          this.subOn.set('');
+          this.subDrafts.update((drafts) => ({ ...drafts, [side.side_id]: { off: '', on: '', reason: 'tactical' } }));
           this.minuteTouched = false;
         },
         error: async (err: unknown) => {
@@ -1112,7 +1070,6 @@ export class MatchDayComponent implements OnInit {
     this.api.teamSheets(this.competitionId(), this.fixtureId()).subscribe({
       next: (day) => {
         this.day.set(day);
-        if (!this.selectedId() && day.sides?.length) this.selectedId.set(day.sides[0].side_id);
       },
       error: () => this.day.set({ enabled: false }),
     });

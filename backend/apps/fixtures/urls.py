@@ -8,6 +8,7 @@ from .matchday import (
     TeamSheetsView,
     TeamSheetView,
 )
+from .raters import FixtureRatersView, RaterPlayerStatsView, RaterScoresView
 from .views import FixtureRefereeView, FixtureViewSet, ScoreAssistView, ScoreEventViewSet
 
 fixture_list = FixtureViewSet.as_view({"get": "list", "post": "create"})
@@ -73,6 +74,21 @@ urlpatterns = [
         "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/substitutions/<uuid:sub_pk>",
         SubstitutionView.as_view(),
         name="fixture-substitution",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/raters",
+        FixtureRatersView.as_view(),
+        name="fixture-raters",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/raters/ratings",
+        RaterScoresView.as_view(),
+        name="fixture-rater-scores",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/raters/stats",
+        RaterPlayerStatsView.as_view(),
+        name="fixture-rater-stats",
     ),
     path(
         "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/report",

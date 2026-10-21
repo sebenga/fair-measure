@@ -140,61 +140,92 @@
 }
 
 .scorer {
-  padding: 12px 14px;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
 
-  .score-hint {
-    margin: 0 0 8px;
-    color: var(--ion-color-medium);
-    font-size: 0.85rem;
-    text-transform: none;
-    letter-spacing: 0;
-    font-weight: 500;
+  .player {
+    display: grid;
+    gap: 6px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--ion-color-step-50, #f4f5f7);
+    font-size: 0.86rem;
+
+    &:last-child {
+      border-bottom: 0;
+    }
   }
 
-  .who {
-    display: grid;
-    gap: 10px;
-    margin-bottom: 12px;
+  .name {
+    font-weight: 650;
+  }
 
-    label {
-      display: grid;
-      gap: 4px;
-      font-size: 0.75rem;
-      font-weight: 650;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
-      color: var(--ion-color-medium);
+  .num {
+    display: inline-block;
+    min-width: 20px;
+    font-weight: 800;
+    color: var(--ion-color-primary);
+  }
+
+  .sheet {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+    gap: 4px;
+    margin: 0;
+  }
+
+  .step {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    justify-items: center;
+    gap: 2px;
+    padding: 6px 3px 5px;
+    border-radius: 8px;
+    background: var(--ion-color-light);
+    color: var(--ion-color-light-contrast);
+
+    strong,
+    span {
+      grid-column: 1 / -1;
     }
 
-    select,
-    input {
+    strong {
+      font-size: 0.95rem;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+    }
+
+    span {
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-align: center;
+      line-height: 1.15;
+    }
+
+    button {
+      min-height: 28px;
       width: 100%;
-      min-height: 40px;
-      padding: 8px 10px;
-      border: 1px solid var(--ion-color-step-200, #d7d8da);
-      border-radius: 10px;
+      border: 0;
+      border-radius: 6px;
       background: var(--ion-background-color, #fff);
       color: inherit;
-      font-size: 0.95rem;
-      text-transform: none;
-      letter-spacing: 0;
-      font-weight: 500;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
     }
   }
 
-  h4 {
-    margin: 0 0 10px;
-    font-size: 0.82rem;
-    font-weight: 650;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--ion-color-medium);
+  .step.hot {
+    box-shadow: inset 0 0 0 1px var(--ion-color-primary);
   }
 
-  .chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+  .step.card.hot {
+    box-shadow: inset 0 0 0 1px var(--ion-color-warning);
   }
 }
 
@@ -265,113 +296,10 @@
   }
 }
 
-.ratings {
-  display: grid;
-}
-
-.rating-row,
-.player.link {
-  border: 0;
-  background: transparent;
-  color: var(--ion-color-primary);
-  font: inherit;
-  text-align: left;
-}
-
-.rating-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--ion-color-step-50, #f4f5f7);
-
-  &:last-child {
-    border-bottom: none;
-  }
-
-  strong {
-    font-variant-numeric: tabular-nums;
-  }
-}
-
 .fm-section-title .count {
   margin-left: 6px;
   color: var(--ion-color-medium);
   font-weight: 500;
-}
-
-.timeline {
-  padding: 4px 0;
-}
-
-.event {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--ion-color-step-50, #f4f5f7);
-  font-size: 0.86rem;
-
-  &:last-child {
-    border-bottom: none;
-  }
-
-  .minute {
-    flex: 0 0 auto;
-    width: 34px;
-    font-variant-numeric: tabular-nums;
-    color: var(--ion-color-medium);
-    font-size: 0.8rem;
-  }
-
-  .detail {
-    flex: 1 1 auto;
-    min-width: 0;
-    line-height: 1.4;
-
-    strong {
-      margin-right: 5px;
-      font-weight: 650;
-    }
-
-    em {
-      font-style: normal;
-      color: var(--ion-color-medium);
-    }
-
-    .player {
-      display: block;
-      font-size: 0.76rem;
-      color: var(--ion-color-medium);
-    }
-  }
-
-  .points {
-    flex: 0 0 auto;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .undo {
-    flex: 0 0 auto;
-    padding: 2px;
-    border: none;
-    background: transparent;
-    color: var(--ion-color-medium);
-    cursor: pointer;
-
-    ion-icon {
-      font-size: 1.15rem;
-      display: block;
-    }
-  }
-}
-
-.updated {
-  margin: 12px 20px 40px;
-  font-size: 0.74rem;
-  color: var(--ion-color-medium);
 }
 
 .match-stats {
@@ -557,5 +485,12 @@
     background: var(--ion-color-primary);
     color: var(--ion-color-primary-contrast);
     font-weight: 700;
+  }
+}
+
+.match-stats {
+  > .fm-team-head,
+  > .hint {
+    padding: 10px 14px 0;
   }
 }

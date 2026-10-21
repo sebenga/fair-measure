@@ -181,7 +181,14 @@ def test_tagging_is_optional_for_stats_and_minutes_ride_along(league):
         },
         format="json",
     )
-    assert untagged.status_code == 201, untagged.data
+    assert untagged.status_code == 400
+    assert "Raters tab" in str(untagged.data)
+    tagged_stat = client.post(
+        f"/api/v1/competitions/{league['competition'].id}/fixtures/{fixture.id}/raters/stats",
+        {"player": str(league["member"].id), "code": "assist"},
+        format="json",
+    )
+    assert tagged_stat.status_code == 200, tagged_stat.data
     goal = client.post(
         f"/api/v1/fixtures/{fixture.id}/events",
         {

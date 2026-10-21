@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import CommentViewSet, PostViewSet
+from .views import CommentViewSet, DiscoverPostViewSet, PostViewSet
 
 post_list = PostViewSet.as_view({"get": "list", "post": "create"})
 post_detail = PostViewSet.as_view(
@@ -14,7 +14,10 @@ comment_detail = CommentViewSet.as_view(
 )
 comment_react = CommentViewSet.as_view({"post": "react"})
 
+discover_posts = DiscoverPostViewSet.as_view({"get": "list"})
+
 urlpatterns = [
+    path("discover/posts", discover_posts, name="discover-posts"),
     path("competitions/<uuid:competition_pk>/posts", post_list, name="post-list"),
     path(
         "competitions/<uuid:competition_pk>/posts/<uuid:pk>",

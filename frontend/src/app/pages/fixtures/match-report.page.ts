@@ -182,11 +182,20 @@ interface ReportDraft {
             <section>
               <h4>Scoring</h4>
               <ul class="events">
+                <li class="heads"><span>{{ r.sides[0]?.name }}</span><span></span><span>{{ r.sides[1]?.name }}</span></li>
                 @for (goal of r.goals; track $index) {
                   <li>
+                    <span class="home">
+                      @if (isHome(r, goal.team)) {
+                        <strong>{{ goal.player || goal.team }}</strong> <em>{{ goal.label }}</em>
+                      }
+                    </span>
                     <span class="min">{{ goal.minute !== null ? goal.minute + "'" : '' }}</span>
-                    <span><strong>{{ goal.player || goal.team }}</strong> {{ goal.label }}</span>
-                    <em>{{ goal.team }}</em>
+                    <span>
+                      @if (!isHome(r, goal.team)) {
+                        <strong>{{ goal.player || goal.team }}</strong> <em>{{ goal.label }}</em>
+                      }
+                    </span>
                   </li>
                 }
               </ul>
@@ -197,11 +206,20 @@ interface ReportDraft {
             <section>
               <h4>Discipline</h4>
               <ul class="events">
+                <li class="heads"><span>{{ r.sides[0]?.name }}</span><span></span><span>{{ r.sides[1]?.name }}</span></li>
                 @for (card of r.cards; track $index) {
                   <li>
+                    <span class="home">
+                      @if (isHome(r, card.team)) {
+                        <strong>{{ card.player || '—' }}</strong> <i class="card" [attr.data-kind]="card.kind" [attr.aria-label]="card.label"></i>
+                      }
+                    </span>
                     <span class="min">{{ card.minute !== null ? card.minute + "'" : '' }}</span>
-                    <span><i class="card" [attr.data-kind]="card.kind" aria-hidden="true"></i> <strong>{{ card.player || '—' }}</strong> {{ card.label }}</span>
-                    <em>{{ card.team }}</em>
+                    <span>
+                      @if (!isHome(r, card.team)) {
+                        <i class="card" [attr.data-kind]="card.kind" [attr.aria-label]="card.label"></i> <strong>{{ card.player || '—' }}</strong>
+                      }
+                    </span>
                   </li>
                 }
               </ul>
@@ -212,11 +230,20 @@ interface ReportDraft {
             <section>
               <h4>Substitutions</h4>
               <ul class="events">
+                <li class="heads"><span>{{ r.sides[0]?.name }}</span><span></span><span>{{ r.sides[1]?.name }}</span></li>
                 @for (sub of r.substitutions; track sub.id) {
                   <li>
+                    <span class="home">
+                      @if (isHome(r, sub.team)) {
+                        <strong>↑ {{ sub.player_on.name }}</strong> <em>↓ {{ sub.player_off.name }}</em>
+                      }
+                    </span>
                     <span class="min">{{ sub.minute !== null ? sub.minute + "'" : '' }}</span>
-                    <span><strong>{{ sub.player_on.name }}</strong> on for {{ sub.player_off.name }}</span>
-                    <em>{{ sub.team }}</em>
+                    <span>
+                      @if (!isHome(r, sub.team)) {
+                        <strong>↑ {{ sub.player_on.name }}</strong> <em>↓ {{ sub.player_off.name }}</em>
+                      }
+                    </span>
                   </li>
                 }
               </ul>
@@ -407,11 +434,22 @@ interface ReportDraft {
       }
       .events li {
         display: grid;
-        grid-template-columns: 36px 1fr auto;
+        grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr);
         gap: 8px;
         align-items: baseline;
       }
+      .events li.heads {
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--ion-color-medium);
+      }
+      .events .home {
+        text-align: right;
+      }
       .events .min {
+        text-align: center;
         font-weight: 800;
         color: var(--ion-color-primary);
       }
@@ -561,6 +599,11 @@ export class MatchReportPage implements OnInit {
 
   backHref(): string {
     return `/tabs/competitions/${this.competitionId}/fixtures/${this.fixtureId}`;
+  }
+
+  /** Two-sided matches split events into home and away columns. */
+  isHome(report: MatchReportData, team: string): boolean {
+    return report.sides.length !== 2 || report.sides[0].name === team;
   }
 
   hasLineups(report: MatchReportData): boolean {

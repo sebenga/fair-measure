@@ -10,7 +10,7 @@ import type { Competition } from '../core/models';
   imports: [TitleCasePipe, IonBadge, IonButton, IonIcon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="card">
+    <div class="card" [attr.data-size]="size()">
       <button type="button" class="card-main" (click)="open.emit()">
         <div class="crest" [style.background]="crestColour()">
           @if (competition().logo_url) {
@@ -114,6 +114,32 @@ import type { Competition } from '../core/models';
         }
       }
 
+      .card[data-size='large'] {
+        width: calc(100% - 24px);
+        margin: 16px 12px;
+      }
+
+      .card[data-size='large'] .card-main {
+        padding: 20px 16px;
+        gap: 16px;
+      }
+
+      .card[data-size='large'] .crest {
+        width: 72px;
+        height: 72px;
+        border-radius: 18px;
+        font-size: 1.25rem;
+      }
+
+      .card[data-size='large'] .title-row h2 {
+        font-size: 1.22rem;
+      }
+
+      .card[data-size='large'] .meta {
+        font-size: 0.88rem;
+        margin-top: 6px;
+      }
+
       .crest {
         flex: 0 0 auto;
         width: 48px;
@@ -202,6 +228,7 @@ import type { Competition } from '../core/models';
 })
 export class CompetitionCardComponent {
   readonly competition = input.required<Competition>();
+  readonly size = input<'default' | 'large'>('default');
   readonly canDelete = input(false);
   readonly open = output<void>();
   readonly deleteClick = output<void>();

@@ -25,6 +25,7 @@ api_v1 = [
     path("", include("apps.horses.urls")),
     path("", include("apps.results.urls")),
     path("", include("apps.games.urls")),
+    path("", include("apps.fantasy.urls")),
 ]
 
 urlpatterns = [

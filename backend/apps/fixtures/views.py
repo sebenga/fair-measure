@@ -25,7 +25,7 @@ from apps.core.bus import (
 )
 from apps.core.permissions import Role, has_at_least
 
-from .models import Fixture, FixtureReferee, PlayerMatchRating, ScoreEvent
+from .models import Fixture, FixtureReferee, ScoreEvent
 from .serializers import (
     BulkScoreEventSerializer,
     FixtureDetailSerializer,
@@ -399,6 +399,14 @@ class FixtureViewSet(viewsets.ModelViewSet):
                 )
 
         self._broadcast(fixture, f"fixture.{new_status}")
+        if new_status == Fixture.Status.LIVE:
+            from apps.social.live import publish_kickoff
+
+            publish_kickoff(fixture)
+        if new_status in {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT}:
+            from apps.social.live import publish_full_time
+
+            publish_full_time(fixture)
         return Response(FixtureDetailSerializer(fixture).data)
 
 
@@ -458,6 +466,7 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
         if reason is None:
             self._assert_can_score()
         before = _scores(fixture) if reason else {}
+        went_live = fixture.status == Fixture.Status.SCHEDULED
         if fixture.status == Fixture.Status.SCHEDULED:
             _assert_ready_for_kickoff(fixture)
         with transaction.atomic():
@@ -471,6 +480,13 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
             if reason:
                 _log_amendment(fixture, self.request, reason, before)
         self._after_change("score.recorded", {"event_id": str(serializer.instance.id)})
+        if went_live:
+            from apps.social.live import publish_kickoff
+
+            publish_kickoff(fixture)
+        from apps.social.live import publish_score_event
+
+        publish_score_event(serializer.instance)
 
     def perform_update(self, serializer) -> None:
         fixture = self.get_fixture()
@@ -512,6 +528,7 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
         if reason is None:
             self._assert_can_score()
         before = _scores(fixture) if reason else {}
+        went_live = fixture.status == Fixture.Status.SCHEDULED
         if fixture.status == Fixture.Status.SCHEDULED:
             _assert_ready_for_kickoff(fixture)
 
@@ -520,31 +537,32 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
 
-        pending_ratings = []
+        pending_minutes = []
         rows = []
         for item in serializer.validated_data["events"]:
-            rating = item.pop("rating", None)
+            item.pop("rating", None)
             minutes = item.pop("minutes", None)
             event = ScoreEvent(fixture=fixture, recorded_by=request.user, **item)
             rows.append(event)
-            pending_ratings.append((event, rating, minutes))
+            pending_minutes.append((event, minutes))
 
         with transaction.atomic():
             created = ScoreEvent.objects.bulk_create(rows)
-            for event, rating, minutes in pending_ratings:
+            for event, minutes in pending_minutes:
                 save_minutes(event, minutes)
-                if rating is None or event.player_id is None:
-                    continue
-                PlayerMatchRating.objects.update_or_create(
-                    fixture=fixture,
-                    player_id=event.player_id,
-                    defaults={"rating": rating},
-                )
             fixture.recalculate_scores()
             if reason:
                 _log_amendment(fixture, request, reason, before)
 
         self._after_change("score.recorded", {"count": len(created)})
+        if went_live:
+            from apps.social.live import publish_kickoff
+
+            publish_kickoff(fixture)
+        from apps.social.live import publish_score_event
+
+        for event in created:
+            publish_score_event(event)
         return Response(
             ScoreEventSerializer(created, many=True).data, status=status.HTTP_201_CREATED
         )

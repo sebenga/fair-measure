@@ -18,7 +18,7 @@ import { AttachmentTrayComponent } from './attachment-tray.component';
     <div class="fm-card composer">
       <ion-textarea
         [(ngModel)]="body"
-        placeholder="Share a result, a photo, a clip, or some trash talk…"
+        [placeholder]="placeholder()"
         autoGrow="true"
         rows="2"
         maxlength="5000"
@@ -86,6 +86,7 @@ export class PostComposerComponent {
 
   readonly competitionId = input.required<string>();
   readonly fixtureId = input<string | null>(null);
+  readonly placeholder = input('Share a result, a photo, a clip, or some trash talk…');
   readonly posted = output<Post>();
 
   readonly attachments = new AttachmentQueue(inject(UploadService), () => this.competitionId());

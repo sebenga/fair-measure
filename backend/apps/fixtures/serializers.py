@@ -100,15 +100,6 @@ class ScoreEventSerializer(serializers.ModelSerializer):
     )
     participant_id = serializers.UUIDField(source="side.participant_id", read_only=True)
     player_user_id = serializers.SerializerMethodField()
-    rating = serializers.DecimalField(
-        max_digits=3,
-        decimal_places=1,
-        required=False,
-        write_only=True,
-        min_value=Decimal("0"),
-        max_value=Decimal("10"),
-        help_text="This profile's rating for the fixture, from 0 to 10.",
-    )
     minutes = serializers.IntegerField(
         required=False,
         write_only=True,
@@ -133,7 +124,6 @@ class ScoreEventSerializer(serializers.ModelSerializer):
             "player",
             "player_user_id",
             "player_name",
-            "rating",
             "minutes",
             "note",
             "occurred_at",
@@ -163,6 +153,12 @@ class ScoreEventSerializer(serializers.ModelSerializer):
                         "That scoring category belongs to a different competition."
                     )
                 }
+            )
+        from .raters import player_stat_codes
+
+        if category is not None and category.code in player_stat_codes(fixture.competition):
+            raise serializers.ValidationError(
+                {"scoring_category": "Player stats are recorded on the Raters tab."}
             )
 
         from apps.competitions.engine import expand_units, golden_period_decided, score_rules
@@ -199,9 +195,9 @@ class ScoreEventSerializer(serializers.ModelSerializer):
             )
         if player is not None and not (attrs.get("player_name") or "").strip():
             attrs["player_name"] = player.name
-        if attrs.get("rating") is not None and player is None:
+        if "rating" in getattr(self, "initial_data", {}):
             raise serializers.ValidationError(
-                {"rating": "A rating belongs to the profile who played."}
+                {"rating": "Ratings come from the Raters tab, from the player's recorded stats."}
             )
         if attrs.get("minutes") is not None and player is None:
             raise serializers.ValidationError(
@@ -209,31 +205,18 @@ class ScoreEventSerializer(serializers.ModelSerializer):
             )
         return attrs
 
-    def _save_rating(self, event: ScoreEvent, rating: Decimal | None) -> None:
-        if rating is None or event.player_id is None:
-            return
-        PlayerMatchRating.objects.update_or_create(
-            fixture_id=event.fixture_id,
-            player_id=event.player_id,
-            defaults={"rating": rating},
-        )
-
     def _save_minutes(self, event: ScoreEvent, minutes: int | None) -> None:
         save_minutes(event, minutes)
 
     def create(self, validated_data: dict) -> ScoreEvent:
-        rating = validated_data.pop("rating", None)
         minutes = validated_data.pop("minutes", None)
         event = super().create(validated_data)
-        self._save_rating(event, rating)
         self._save_minutes(event, minutes)
         return event
 
     def update(self, instance: ScoreEvent, validated_data: dict) -> ScoreEvent:
-        rating = validated_data.pop("rating", None)
         minutes = validated_data.pop("minutes", None)
         event = super().update(instance, validated_data)
-        self._save_rating(event, rating)
         self._save_minutes(event, minutes)
         return event
 
@@ -324,6 +307,7 @@ class FixtureDetailSerializer(FixtureListSerializer):
     ratings = PlayerMatchRatingSerializer(many=True, read_only=True)
     referees = serializers.SerializerMethodField()
     kickoff_problems = serializers.SerializerMethodField()
+    raters_count = serializers.SerializerMethodField()
 
     class Meta(FixtureListSerializer.Meta):
         fields = [
@@ -332,9 +316,13 @@ class FixtureDetailSerializer(FixtureListSerializer):
             "events",
             "ratings",
             "referees",
+            "raters_count",
             "kickoff_problems",
             "created_at",
         ]
+
+    def get_raters_count(self, obj) -> int:
+        return obj.raters.count()
 
     def get_kickoff_problems(self, obj) -> list[str]:
         if obj.status != Fixture.Status.SCHEDULED:

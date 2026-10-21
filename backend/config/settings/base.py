@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     "apps.horses",
     "apps.results",
     "apps.games",
+    "apps.fantasy",
 ]
 
 MIDDLEWARE = [
@@ -193,6 +194,7 @@ SPECTACULAR_SETTINGS = {
         "MediaStatusEnum": "apps.media_assets.models.MEDIA_STATUS_CHOICES",
         "MediaKindEnum": "apps.media_assets.models.MEDIA_KIND_CHOICES",
         "ReactionKindEnum": "apps.social.models.REACTION_KIND_CHOICES",
+        "FantasySlotEnum": "apps.fantasy.models.FANTASY_SLOT_CHOICES",
     },
 }
 

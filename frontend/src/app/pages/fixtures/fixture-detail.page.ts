@@ -21,6 +21,9 @@ import {
   IonContent,
   IonHeader,
   IonIcon,
+  IonLabel,
+  IonSegment,
+  IonSegmentButton,
   IonTitle,
   IonToolbar,
   ToastController,
@@ -39,9 +42,14 @@ import type {
   ScoringCategory,
 } from '../../core/models';
 import { RealtimeService, fixtureRoom } from '../../core/realtime.service';
-import { RelativeTimePipe } from '../../shared/relative-time.pipe';
 import { MatchAwardsComponent } from './match-awards.component';
+import { FixtureOverviewComponent } from './fixture-overview.component';
+import { FixtureTimelineComponent } from './fixture-timeline.component';
 import { MatchDayComponent } from './match-day.component';
+import { MatchRatersComponent } from './match-raters.component';
+
+type FixtureTab = 'overview' | 'lineups' | 'live' | 'stats' | 'raters' | 'setup';
+const FIXTURE_TABS: FixtureTab[] = ['overview', 'lineups', 'live', 'stats', 'raters', 'setup'];
 
 interface Celebration {
   title: string;
@@ -53,9 +61,14 @@ interface Celebration {
   standalone: true,
   imports: [
     DatePipe,
-    RelativeTimePipe,
     MatchAwardsComponent,
     MatchDayComponent,
+    MatchRatersComponent,
+    FixtureOverviewComponent,
+    FixtureTimelineComponent,
+    IonSegment,
+    IonSegmentButton,
+    IonLabel,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -81,6 +94,22 @@ interface Celebration {
           }
         </ion-buttons>
       </ion-toolbar>
+      @if (fixture()) {
+        <ion-toolbar>
+          <ion-segment [value]="tab()" [scrollable]="true">
+            @for (item of tabs(); track item.key) {
+              <ion-segment-button [value]="item.key" (click)="selectTab(item.key)">
+                <ion-label>
+                  {{ item.label }}
+                  @if (item.key === 'live' && fixture()?.status === 'live') {
+                    <span class="tab-live" aria-label="Match is live"></span>
+                  }
+                </ion-label>
+              </ion-segment-button>
+            }
+          </ion-segment>
+        </ion-toolbar>
+      }
     </ion-header>
 
     @if (celebration(); as moment) {
@@ -170,31 +199,53 @@ interface Celebration {
           </div>
         </section>
 
-        @if (matchStats().length) {
+        @if (tab() === 'overview') {
+          <fm-fixture-overview
+            [fixture]="fx"
+            [categories]="categories()"
+            [competitionId]="competitionKey()"
+            [competitionName]="competition()?.name ?? ''"
+            [gameTime]="gameTimeLabel()"
+          />
+        }
+
+        @if (tab() === 'stats' && !matchStats().length) {
+          <div class="fm-empty compact">
+            <p>No player stats for this match yet.</p>
+          </div>
+        }
+
+        @if (tab() === 'stats' && matchStats().length) {
           <h3 class="fm-section-title">Match stats</h3>
-          <div class="fm-card match-stats">
-            @for (row of matchStats(); track row.key) {
-              <button
-                type="button"
-                class="stat"
-                [disabled]="!row.userId"
-                (click)="openPlayer(row.userId)"
-              >
-                <span class="who">
-                  <strong>{{ row.name }}</strong>
-                  <em>{{ row.team }}</em>
-                </span>
-                <span class="figures">
-                  @for (figure of row.figures; track figure.label) {
-                    <span>{{ figure.count }} {{ figure.label }}</span>
-                  }
-                </span>
-              </button>
+          <div class="fm-team-columns" [class.many]="fx.sides.length > 2">
+            @for (side of fx.sides; track side.id) {
+              <div class="fm-card match-stats">
+                <span class="fm-team-head">{{ side.participant.short_name || side.participant.name }}</span>
+                @for (row of statsFor(side.id); track row.key) {
+                  <button
+                    type="button"
+                    class="stat"
+                    [disabled]="!row.userId"
+                    (click)="openPlayer(row.userId)"
+                  >
+                    <span class="who">
+                      <strong>{{ row.name }}</strong>
+                    </span>
+                    <span class="figures">
+                      @for (figure of row.figures; track figure.label) {
+                        <span>{{ figure.count }} {{ figure.label }}</span>
+                      }
+                    </span>
+                  </button>
+                } @empty {
+                  <p class="hint">Nothing recorded.</p>
+                }
+              </div>
             }
           </div>
         }
 
-        @if (canManage()) {
+        @if (tab() === 'setup' && canManage()) {
           <h3 class="fm-section-title">Game time</h3>
           <p class="hint">
             A time limit is required before kickoff. Overtime is optional; remove it for a game that ends at full time.
@@ -256,7 +307,7 @@ interface Celebration {
           </div>
         }
 
-        @if (canScore() && fx.status !== 'completed' && fx.status !== 'cancelled') {
+        @if (tab() === 'live' && canScore() && fx.status !== 'completed' && fx.status !== 'cancelled') {
           <h3 class="fm-section-title">Record a score</h3>
 
           @if (units().length) {
@@ -274,191 +325,125 @@ interface Celebration {
             </div>
           }
 
-          @if (categories().length === 0) {
+          @if (scoreCategories().length === 0) {
             <div class="fm-empty compact">
               <p>No scoring categories are configured for this competition yet.</p>
             </div>
           } @else {
+            <p class="hint">Add a goal or card on the player. Player stats are recorded on the Raters tab.</p>
+            <div class="fm-team-columns" [class.many]="fx.sides.length > 2">
             @for (side of fx.sides; track side.id) {
               <div class="fm-card scorer">
-                <h4>{{ side.participant.short_name || side.participant.name }}</h4>
-                @if (rosterFor(side).length) {
-                  <p class="score-hint">Tap who it was, then what they did. Player stats can be left untagged.</p>
-                  <div class="roster-chips" role="radiogroup" [attr.aria-label]="'Player for ' + (side.participant.short_name || side.participant.name)">
-                    @for (member of rosterFor(side); track member.id) {
-                      <button
-                        type="button"
-                        class="roster-chip"
-                        role="radio"
-                        [attr.aria-checked]="scorerFor(side.id) === member.id"
-                        [class.on]="scorerFor(side.id) === member.id"
-                        (click)="toggleScorer(side.id, member.id)"
-                      >
-                        @if (member.number !== null) {
-                          <span class="number">{{ member.number }}</span>
-                        }
-                        {{ member.name }}
-                      </button>
-                    }
+                <span class="fm-team-head">{{ side.participant.short_name || side.participant.name }}</span>
+                @if (awardedScoreCategories().length || !rosterFor(side).length) {
+                  <div class="player">
+                    <span class="name">Team</span>
+                    <dl class="sheet">
+                      @for (category of rosterFor(side).length ? awardedScoreCategories() : scoreCategories(); track category.id) {
+                        <div class="step" [class.hot]="scoreCount(side, category) > 0" [class.card]="isCard(category)">
+                          <button
+                            type="button"
+                            [disabled]="saving() || kickoffBlocked() || scoreCount(side, category) === 0"
+                            [attr.aria-label]="'Remove one ' + category.name + ' from ' + (side.participant.short_name || side.participant.name)"
+                            (click)="adjustScore(side, category, '', -1)"
+                          >−</button>
+                          <strong>{{ scoreCount(side, category) }}</strong>
+                          <span>{{ category.name }}@if (countsForOtherSide(category)) { · other side }</span>
+                          <button
+                            type="button"
+                            [disabled]="saving() || kickoffBlocked()"
+                            [attr.aria-label]="'Add one ' + category.name + ' for ' + (side.participant.short_name || side.participant.name)"
+                            (click)="adjustScore(side, category, '', 1)"
+                          >+</button>
+                        </div>
+                      }
+                    </dl>
                   </div>
-                  @if (scorerFor(side.id)) {
-                    <div class="who">
-                      <label>
-                        Rating this game
-                        <input
-                          type="number"
-                          min="0"
-                          max="10"
-                          step="0.1"
-                          placeholder="0–10"
-                          [value]="ratingFor(side.id)"
-                          (input)="setRating(side.id, $any($event.target).value)"
-                        />
-                      </label>
-                      <label>
-                        Minutes played
-                        <input
-                          type="number"
-                          min="0"
-                          max="300"
-                          inputmode="numeric"
-                          placeholder="Full match"
-                          [value]="minutesFor(side.id)"
-                          (input)="setMinutes(side.id, $any($event.target).value)"
-                        />
-                      </label>
-                    </div>
-                  }
                 }
-                <div class="chips">
-                  @for (category of scoreCategories(); track category.id) {
-                    <button
-                      type="button"
-                      class="chip-button"
-                      [disabled]="saving() || kickoffBlocked()"
-                      (click)="record(side, category)"
-                    >
-                      <span class="label">{{ category.name }}</span>
-                      @if (countsForOtherSide(category)) {
-                        <span class="points">other side</span>
-                      } @else if (category.affects_score) {
-                        <span class="points">+{{ trim(category.points) }}</span>
+                @for (member of rosterFor(side); track member.id) {
+                  <div class="player">
+                    <span class="name">
+                      @if (member.number !== null) {
+                        <span class="num">{{ member.number }}</span>
                       }
-                    </button>
-                  }
-                </div>
-                @if (statCategories().length) {
-                  <details class="player-stats">
-                    <summary>Player stats ({{ statCategories().length }}) <small>don't change the score</small></summary>
-                    <div class="chips">
-                      @for (category of statCategories(); track category.id) {
-                        <button
-                          type="button"
-                          class="chip-button stat"
-                          [disabled]="saving() || kickoffBlocked()"
-                          (click)="record(side, category)"
-                        >
-                          <span class="label">{{ category.name }}</span>
-                        </button>
+                      {{ member.name }}
+                    </span>
+                    <dl class="sheet">
+                      @for (category of playerScoreCategories(); track category.id) {
+                        <div class="step" [class.hot]="scoreCount(side, category, member.id) > 0" [class.card]="isCard(category)">
+                          <button
+                            type="button"
+                            [disabled]="saving() || kickoffBlocked() || scoreCount(side, category, member.id) === 0"
+                            [attr.aria-label]="'Remove one ' + category.name + ' from ' + member.name"
+                            (click)="adjustScore(side, category, member.id, -1)"
+                          >−</button>
+                          <strong>{{ scoreCount(side, category, member.id) }}</strong>
+                          <span>{{ category.name }}@if (countsForOtherSide(category)) { · other side }</span>
+                          <button
+                            type="button"
+                            [disabled]="saving() || kickoffBlocked()"
+                            [attr.aria-label]="'Add one ' + category.name + ' for ' + member.name"
+                            (click)="adjustScore(side, category, member.id, 1)"
+                          >+</button>
+                        </div>
                       }
-                    </div>
-                  </details>
+                    </dl>
+                  </div>
                 }
               </div>
             }
+            </div>
           }
         }
 
-        <fm-match-day
-          [competitionId]="competitionKey()"
-          [fixtureId]="fx.id"
-          [status]="fx.status"
-          [minute]="matchMinute()"
-        />
+        @if (tab() === 'lineups' || (tab() === 'live' && fx.status === 'live')) {
+          <fm-match-day
+            [competitionId]="competitionKey()"
+            [fixtureId]="fx.id"
+            [status]="fx.status"
+            [minute]="matchMinute()"
+            [part]="tab() === 'live' ? 'subs' : 'all'"
+          />
+        }
 
+        @if (tab() === 'live') {
         <h3 class="fm-section-title">
-          Timeline
+          Live updates
           @if (fx.events.length) {
             <span class="count">{{ fx.events.length }}</span>
           }
         </h3>
 
-        @if (fx.events.length === 0) {
-          <div class="fm-empty compact">
-            <p>Nothing has happened yet.</p>
-          </div>
-        } @else {
-          <div class="fm-card timeline">
-            @for (event of orderedEvents(); track event.id) {
-              <div class="event">
-                <span class="minute">
-                  @if (event.minute !== null) {
-                    {{ event.minute + "'" }}
-                  } @else {
-                    {{ event.created_at | date: 'HH:mm' }}
-                  }
-                </span>
-                <span class="detail">
-                  <strong>{{ participantName(event) }}</strong>
-                  {{ event.scoring_category_name }}
-                  @if (unitLabel(event); as unit) {
-                    <span class="player">{{ unit }}</span>
-                  }
-                  @if (numeric(event.quantity) !== 1) {
-                    <em>×{{ trim(event.quantity) }}</em>
-                  }
-                  @if (event.player_name) {
-                    @if (event.player_user_id) {
-                      <button
-                        type="button"
-                        class="player link"
-                        (click)="openPlayer(event.player_user_id)"
-                      >
-                        {{ event.player_name }}
-                      </button>
-                    } @else {
-                      <span class="player">{{ event.player_name }}</span>
-                    }
-                  }
-                </span>
-                <span class="points">{{ signed(event.points) }}</span>
-                @if (canScore()) {
-                  <button
-                    type="button"
-                    class="undo"
-                    [disabled]="saving()"
-                    (click)="removeEvent(event)"
-                    [attr.aria-label]="'Delete ' + event.scoring_category_name"
-                  >
-                    <ion-icon name="trash-outline" />
-                  </button>
-                }
-              </div>
-            }
-          </div>
-
-          <p class="updated">Last change {{ lastChangeAt() | relativeTime }}</p>
+        <fm-fixture-timeline
+          [fixture]="fx"
+          [competitionId]="competitionKey()"
+          [categories]="categories()"
+          [statCodes]="statCodes()"
+          [units]="units()"
+          [canScore]="canScore()"
+          [busy]="saving()"
+          (remove)="removeEvent($event)"
+          (openPlayer)="openPlayer($event)"
+        />
         }
 
-        @if (hasAwards()) {
+        @if (tab() === 'raters') {
+          <fm-match-raters [competitionId]="competitionKey()" [fixtureId]="fx.id" (changed)="reloadFixture()" />
+        }
+
+        @if (tab() === 'overview' && hasAwards()) {
           <fm-match-awards [competitionId]="competitionKey()" [fixtureId]="fx.id" [players]="awardPlayers()" />
         }
 
-        @if (fx.ratings.length) {
-          <h3 class="fm-section-title">Ratings this game</h3>
-          <div class="fm-card ratings">
-            @for (rating of fx.ratings; track rating.id) {
-              <button
-                type="button"
-                class="rating-row"
-                [disabled]="!rating.player_user_id"
-                (click)="openPlayer(rating.player_user_id)"
-              >
-                <span>{{ rating.player_name }}</span>
-                <strong>{{ trim(rating.rating) }}</strong>
-              </button>
-            }
-          </div>
+        @if (tab() === 'stats') {
+          <button type="button" class="fm-card report-link" (click)="selectTab('raters')">
+            <ion-icon name="star-outline" aria-hidden="true" />
+            <span>
+              <strong>Rate players on the Raters tab</strong>
+              <em>Match ratings come from appointed raters, from the stats recorded here.</em>
+            </span>
+            <ion-icon name="chevron-forward-outline" aria-hidden="true" />
+          </button>
         }
       }
     </ion-content>
@@ -493,9 +478,6 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   readonly celebration = signal<Celebration | null>(null);
   private bumpTimer: ReturnType<typeof setTimeout> | undefined;
   private celebrationTimer: ReturnType<typeof setTimeout> | undefined;
-  readonly scorers = signal<Record<string, string>>({});
-  readonly gameRatings = signal<Record<string, string>>({});
-  readonly gameMinutes = signal<Record<string, string>>({});
   readonly profiles = signal<ProfileSummary[]>([]);
   readonly refereeQuery = signal('');
   readonly timeLimitDraft = signal('');
@@ -519,6 +501,11 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.competitionId = this.route.snapshot.paramMap.get('competitionId') ?? '';
     this.fixtureId = this.route.snapshot.paramMap.get('fixtureId') ?? '';
+    const requested = this.route.snapshot.queryParamMap.get('tab') as FixtureTab | null;
+    if (requested && FIXTURE_TABS.includes(requested)) {
+      this.selectedTab.set(requested);
+      this.tabChosen = true;
+    }
 
     this.clock.set(readMatchClock(this.fixtureId));
     this.tickHandle = setInterval(() => this.now.set(Date.now()), 1000);
@@ -661,6 +648,34 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     return formatClock(this.displayedElapsed());
   }
 
+  private readonly selectedTab = signal<FixtureTab>('overview');
+  private tabChosen = false;
+  readonly tab = computed<FixtureTab>(() => {
+    const selected = this.selectedTab();
+    return this.tabs().some((item) => item.key === selected) ? selected : 'overview';
+  });
+
+  readonly tabs = computed(() => {
+    const settings = this.competition()?.settings_json ?? {};
+    const teams = (settings['participant_type'] ?? 'team') === 'team';
+    const items: Array<{ key: FixtureTab; label: string }> = [{ key: 'overview', label: 'Overview' }];
+    if (teams) items.push({ key: 'lineups', label: 'Line-ups' });
+    items.push({ key: 'live', label: 'Live' }, { key: 'stats', label: 'Stats' }, { key: 'raters', label: 'Raters' });
+    if (this.canManage()) items.push({ key: 'setup', label: 'Setup' });
+    return items;
+  });
+
+  selectTab(tab: FixtureTab): void {
+    this.tabChosen = true;
+    this.selectedTab.set(tab);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
   readonly matchMinute = computed(() =>
     this.fixture()?.status === 'live' && this.showClock()
       ? Math.floor(this.displayedElapsed() / 60_000)
@@ -732,6 +747,10 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     this.api.getFixture(this.competitionId, this.fixtureId).subscribe({
       next: (fixture) => {
         if (fixture.status === 'scheduled') this.resetClock();
+        if (!this.tabChosen) {
+          this.tabChosen = true;
+          this.selectedTab.set(fixture.status === 'live' ? 'live' : 'overview');
+        }
         this.applyFixture(fixture);
         this.loading.set(false);
       },
@@ -790,7 +809,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     this.celebrationTimer = setTimeout(() => this.celebration.set(null), 2400);
   }
 
-  private reloadFixture(): void {
+  reloadFixture(): void {
     this.api.getFixture(this.competitionId, this.fixtureId).subscribe({
       next: (fixture) => this.applyFixture(fixture),
       error: () => undefined,
@@ -802,7 +821,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   }
 
   /** Score types the preset marks as player stats (assists, tackles, ...). */
-  private statCodes(): Set<string> {
+  statCodes(): Set<string> {
     const types = this.competition()?.settings_json?.['score_types'];
     if (!Array.isArray(types)) return new Set();
     return new Set(
@@ -815,9 +834,33 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     return this.categories().filter((category) => !stats.has(category.code));
   }
 
-  statCategories(): ScoringCategory[] {
-    const stats = this.statCodes();
-    return this.categories().filter((category) => stats.has(category.code));
+  playerScoreCategories(): ScoringCategory[] {
+    return this.scoreCategories().filter((category) => !this.noPlayer(category));
+  }
+
+  awardedScoreCategories(): ScoringCategory[] {
+    return this.scoreCategories().filter((category) => this.noPlayer(category));
+  }
+
+  isCard(category: ScoringCategory): boolean {
+    return category.code.toLowerCase().includes('card');
+  }
+
+  scoreCount(side: FixtureSide, category: ScoringCategory, playerId = ''): number {
+    return (this.fixture()?.events ?? []).reduce((total, event) => {
+      if (event.side !== side.id || event.scoring_category !== category.id) return total;
+      if (playerId ? event.player !== playerId : event.player) return total;
+      const qty = Number(event.quantity);
+      return total + (Number.isFinite(qty) ? qty : 1);
+    }, 0);
+  }
+
+  lastScoreEvent(side: FixtureSide, category: ScoringCategory, playerId = ''): ScoreEvent | undefined {
+    const matches = (this.fixture()?.events ?? []).filter((event) => {
+      if (event.side !== side.id || event.scoring_category !== category.id) return false;
+      return playerId ? event.player === playerId : !event.player;
+    });
+    return matches[matches.length - 1];
   }
 
   countsForOtherSide(category: ScoringCategory): boolean {
@@ -929,43 +972,6 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     );
   }
 
-  scorerFor(sideId: string): string {
-    const chosen = this.scorers()[sideId];
-    if (chosen) return chosen;
-    const side = this.fixture()?.sides.find((item) => item.id === sideId);
-    const roster = side ? this.rosterFor(side) : [];
-    return roster.length === 1 ? roster[0].id : '';
-  }
-
-  ratingFor(sideId: string): string {
-    return this.gameRatings()[sideId] ?? '';
-  }
-
-  setScorer(sideId: string, value: string): void {
-    this.scorers.update((current) => ({ ...current, [sideId]: value }));
-  }
-
-  /** One tap picks the player; tapping them again clears the tag. */
-  toggleScorer(sideId: string, memberId: string): void {
-    this.setScorer(sideId, this.scorers()[sideId] === memberId ? '' : memberId);
-  }
-
-  minutesFor(sideId: string): string {
-    return this.gameMinutes()[sideId] ?? '';
-  }
-
-  setMinutes(sideId: string, value: string): void {
-    this.gameMinutes.update((current) => ({ ...current, [sideId]: value }));
-  }
-
-  setRating(sideId: string, value: string): void {
-    this.gameRatings.update((current) => ({ ...current, [sideId]: value }));
-  }
-
-  needsScorer(side: FixtureSide): boolean {
-    return this.rosterFor(side).length > 0 && !this.scorerFor(side.id);
-  }
-
   requiresProfile(category: ScoringCategory): boolean {
     const code = category.code.trim().toLowerCase();
     const name = category.name.trim().toLowerCase();
@@ -993,8 +999,13 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     );
   }
 
+  statsFor(sideId: string) {
+    return this.matchStats().filter((row) => row.sideId === sideId);
+  }
+
   matchStats(): Array<{
     key: string;
+    sideId: string;
     name: string;
     team: string;
     userId: string | null;
@@ -1004,12 +1015,13 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     if (!fixture) return [];
     const grouped = new Map<
       string,
-      { name: string; team: string; userId: string | null; counts: Map<string, number> }
+      { sideId: string; name: string; team: string; userId: string | null; counts: Map<string, number> }
     >();
     for (const event of fixture.events) {
       const key = event.player || event.player_name || event.id;
       const team = this.participantName(event);
       const current = grouped.get(key) ?? {
+        sideId: event.side,
         name: event.player_name || team,
         team,
         userId: event.player_user_id,
@@ -1023,6 +1035,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     }
     return [...grouped.entries()].map(([key, row]) => ({
       key,
+      sideId: row.sideId,
       name: row.name,
       team: row.team,
       userId: row.userId,
@@ -1069,11 +1082,32 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     );
   }
 
-  async record(side: FixtureSide, category: ScoringCategory): Promise<void> {
+  async adjustScore(
+    side: FixtureSide,
+    category: ScoringCategory,
+    playerId: string,
+    delta: number,
+  ): Promise<void> {
+    if (delta > 0) {
+      await this.record(side, category, playerId);
+      return;
+    }
+    const event = this.lastScoreEvent(side, category, playerId);
+    if (!event) return;
+    const fixture = this.fixture();
+    const counted = fixture?.status === 'completed' || fixture?.status === 'forfeit';
+    const official = this.competition()?.settings_json?.['official_results'] === true;
+    if (counted && official) {
+      await this.removeEvent(event);
+      return;
+    }
+    this.deleteEvent(event, undefined, true);
+  }
+
+  async record(side: FixtureSide, category: ScoringCategory, playerId = ''): Promise<void> {
     if (this.saving()) return;
     const awarded = this.noPlayer(category);
     const roster = awarded ? [] : this.rosterFor(side);
-    const playerId = awarded ? '' : this.scorerFor(side.id);
     if (!awarded && this.requiresProfile(category) && !playerId) {
       await this.showToast(
         roster.length
@@ -1083,21 +1117,10 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       );
       return;
     }
-    // A team with a roster names who scored; player stats can stay untagged.
-    const isStat = this.statCategories().some((item) => item.id === category.id);
-    if (roster.length && !playerId && category.affects_score && !isStat) {
-      await this.showToast('Tap the player first.', 'danger');
+    if (this.statCodes().has(category.code)) {
+      await this.showToast('Player stats are recorded on the Raters tab.', 'danger');
       return;
     }
-    const rating = this.ratingFor(side.id).trim();
-    if (rating) {
-      const value = Number(rating);
-      if (Number.isNaN(value) || value < 0 || value > 10) {
-        await this.showToast('Rate this game from 0 to 10.', 'danger');
-        return;
-      }
-    }
-
     this.saving.set(true);
 
     const body: Record<string, unknown> = {
@@ -1109,17 +1132,6 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       body['player'] = playerId;
       const member = roster.find((item) => item.id === playerId);
       if (member) body['player_name'] = member.name;
-    }
-    if (rating) body['rating'] = Number(rating).toFixed(1);
-    const minutes = this.minutesFor(side.id).trim();
-    if (playerId && minutes) {
-      const value = Number(minutes);
-      if (!Number.isInteger(value) || value < 0 || value > 300) {
-        this.saving.set(false);
-        await this.showToast('Minutes played must be a whole number.', 'danger');
-        return;
-      }
-      body['minutes'] = value;
     }
     if (this.units().length) {
       body['unit_index'] = this.unitIndex();
@@ -1180,13 +1192,13 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     await alert.present();
   }
 
-  private deleteEvent(event: ScoreEvent, reason?: string): void {
+  private deleteEvent(event: ScoreEvent, reason?: string, quiet = false): void {
     this.saving.set(true);
     this.api.deleteEvent(this.fixtureId, event.id, reason).subscribe({
       next: () => {
         this.saving.set(false);
         this.reloadFixture();
-        void this.showToast('Score deleted.', 'success');
+        if (!quiet) void this.showToast('Score deleted.', 'success');
       },
       error: async (err: unknown) => {
         this.saving.set(false);
@@ -1231,16 +1243,6 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   private async showToast(message: string, color: string): Promise<void> {
     const toast = await this.toasts.create({ message, color, duration: 2600, position: 'bottom' });
     await toast.present();
-  }
-
-  orderedEvents(): ScoreEvent[] {
-    return [...(this.fixture()?.events ?? [])].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-    );
-  }
-
-  lastChangeAt(): string | null {
-    return this.orderedEvents()[0]?.created_at ?? null;
   }
 
   participantName(event: ScoreEvent): string {

@@ -4,6 +4,7 @@ import { EMPTY, Observable, expand, reduce } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import type {
+  AppNotification,
   Comment,
   Competition,
   CompetitionDetail,
@@ -13,6 +14,7 @@ import type {
   FixtureDetail,
   GenerateFixturesRequest,
   MatchDay,
+  MatchRaters,
   MatchReportData,
   PlayerStatsTable,
   MediaAsset,
@@ -30,6 +32,9 @@ import type {
   Rule,
   PlayerLeagueProfile,
   DraftBoard,
+  FantasyOverview,
+  FantasyPlayer,
+  FantasyStandingRow,
   ScoreEvent,
   ScoreAssistEntry,
   ScoringCategory,
@@ -250,6 +255,49 @@ export class ApiService {
     );
   }
 
+  matchRaters(competitionId: string, fixtureId: string, query = '') {
+    return this.http.get<MatchRaters>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/raters`,
+      { params: toParams({ q: query || undefined }) },
+    );
+  }
+
+  appointRater(competitionId: string, fixtureId: string, userId: string) {
+    return this.http.post<MatchRaters>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/raters`,
+      { user: userId },
+    );
+  }
+
+  removeRater(competitionId: string, fixtureId: string, userId: string) {
+    return this.http.delete<MatchRaters>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/raters`,
+      { params: toParams({ user: userId }) },
+    );
+  }
+
+  submitRatings(
+    competitionId: string,
+    fixtureId: string,
+    ratings: Array<{ player: string; rating: string }>,
+  ) {
+    return this.http.put<MatchRaters>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/raters/ratings`,
+      { ratings },
+    );
+  }
+
+  recordPlayerStat(
+    competitionId: string,
+    fixtureId: string,
+    body: { player: string; code?: string; delta?: number; minutes?: number },
+  ) {
+    return this.http.post<MatchRaters>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/raters/stats`,
+      body,
+    );
+  }
+
   matchReport(competitionId: string, fixtureId: string) {
     return this.http.get<MatchReportData>(
       `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/report`,
@@ -447,6 +495,12 @@ export class ApiService {
 
   // --- Feed -----------------------------------------------------------------
 
+  listDiscoverPosts(query: Query = {}): Observable<CursorPaginated<Post>> {
+    return this.http.get<CursorPaginated<Post>>(`${this.base}/discover/posts`, {
+      params: toParams(query),
+    });
+  }
+
   listPosts(competitionId: string, query: Query = {}): Observable<CursorPaginated<Post>> {
     return this.http.get<CursorPaginated<Post>>(
       `${this.base}/competitions/${competitionId}/posts`,
@@ -533,9 +587,13 @@ export class ApiService {
   }
 
   listNotifications(query: Query = {}) {
-    return this.http.get<Paginated<Record<string, unknown>>>(`${this.base}/notifications`, {
+    return this.http.get<Paginated<AppNotification>>(`${this.base}/notifications`, {
       params: toParams(query),
     });
+  }
+
+  markNotificationRead(id: string) {
+    return this.http.post<AppNotification>(`${this.base}/notifications/${id}/read`, {});
   }
 
   markAllNotificationsRead() {
@@ -543,6 +601,58 @@ export class ApiService {
       `${this.base}/notifications/mark-all-read`,
       {},
     );
+  }
+
+  // --- Fantasy --------------------------------------------------------------
+
+  getFantasy(competitionId: string) {
+    return this.http.get<FantasyOverview>(`${this.base}/competitions/${competitionId}/fantasy`);
+  }
+
+  saveFantasy(
+    competitionId: string,
+    body: {
+      name: string;
+      picks: Array<{
+        player: string;
+        slot: string;
+        is_starter: boolean;
+        is_captain: boolean;
+        is_vice: boolean;
+        bench_order: number;
+      }>;
+    },
+  ) {
+    return this.http.put<FantasyOverview>(`${this.base}/competitions/${competitionId}/fantasy`, body);
+  }
+
+  fantasyPlayers(
+    competitionId: string,
+    query: { q?: string; slot?: string; club?: string } = {},
+  ) {
+    return this.http.get<{ players: FantasyPlayer[]; count: number }>(
+      `${this.base}/competitions/${competitionId}/fantasy/players`,
+      { params: toParams(query) },
+    );
+  }
+
+  fantasyStandings(competitionId: string) {
+    return this.http.get<{ rows: FantasyStandingRow[]; count: number }>(
+      `${this.base}/competitions/${competitionId}/fantasy/standings`,
+    );
+  }
+
+  autoPickFantasy(competitionId: string) {
+    return this.http.post<{
+      picks: Array<{
+        player: string;
+        slot: string;
+        is_starter: boolean;
+        is_captain: boolean;
+        is_vice: boolean;
+        bench_order: number;
+      }>;
+    }>(`${this.base}/competitions/${competitionId}/fantasy/auto-pick`, {});
   }
 
   // --- Search ---------------------------------------------------------------

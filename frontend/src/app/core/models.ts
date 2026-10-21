@@ -18,6 +18,17 @@ export type Outcome = 'pending' | 'win' | 'draw' | 'loss';
 
 export type ReactionKind = 'like' | 'love' | 'laugh' | 'wow' | 'clap';
 
+export interface AppNotification {
+  id: string;
+  competition: string | null;
+  kind: string;
+  title: string;
+  body: string;
+  data: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
+}
+
 export interface Paginated<T> {
   count: number;
   next: string | null;
@@ -58,6 +69,9 @@ export interface UserSummary {
   id: string;
   display_name: string;
   avatar_url: string;
+  headline?: string;
+  city?: string;
+  bio?: string;
 }
 
 export interface ProfileSummary {
@@ -250,6 +264,42 @@ export interface FixtureAward {
 export interface FixtureAwards {
   awards: FixtureAward[];
   can_award: boolean;
+}
+
+export interface MatchRaters {
+  minimum: number;
+  raters: Array<{ id: string; user_id: string; name: string; email: string; rated: number }>;
+  enough: boolean;
+  can_manage: boolean;
+  is_rater: boolean;
+  can_rate: boolean;
+  can_record_stats: boolean;
+  status: string;
+  teams: Array<{
+    side_id: string;
+    team: string;
+    players: Array<{
+      player_id: string;
+      user_id: string | null;
+      name: string;
+      number: number | null;
+      role: string;
+      position: string;
+      captain: boolean;
+      average: string | null;
+      count: number;
+      mine: string | null;
+      stats: Array<{
+        code: string;
+        label: string;
+        count: string;
+        kind?: string;
+        recorded?: boolean;
+        editable?: boolean;
+      }>;
+    }>;
+  }>;
+  candidates: Array<{ id: string; name: string; email: string }>;
 }
 
 export interface FormationSlot {
@@ -445,6 +495,7 @@ export interface FixtureDetail extends Fixture {
   events: ScoreEvent[];
   ratings: MatchRating[];
   referees: Array<{ id: string; display_name: string; email: string }>;
+  raters_count?: number;
   kickoff_problems: string[];
   created_at: string;
 }
@@ -573,12 +624,20 @@ export interface PostMedia {
   display_order: number;
 }
 
+export type PostKind = 'profile' | 'competition' | 'live';
+
 export interface Post {
   id: string;
+  kind?: PostKind;
   competition: string;
+  competition_name?: string;
+  competition_logo_url?: string;
+  competition_sport?: string;
   author: UserSummary;
   body: string;
   fixture: string | null;
+  fixture_label?: string | null;
+  scoreline?: string | null;
   participant: string | null;
   is_pinned: boolean;
   is_announcement: boolean;
@@ -680,6 +739,71 @@ export function isPointsPreset(preset: Pick<Preset, 'kind' | 'table_mode' | 'key
   if (preset.table_mode === 'head_to_head') return false;
   const kind = preset.kind ?? (preset.key === 'kpi' ? 'work' : preset.key === 'cleaning' ? 'home' : preset.key === 'custom' ? 'custom' : 'sport');
   return kind === 'work' || kind === 'home' || kind === 'custom';
+}
+
+export type FantasySlot = 'GKP' | 'DEF' | 'MID' | 'FWD';
+
+export interface FantasyRules {
+  budget: string;
+  squad_size: number;
+  starters: number;
+  max_per_club: number;
+  slots: Array<{ key: FantasySlot; label: string; count: number }>;
+  formations: string[];
+  scoring: Array<{ label: string; points: string }>;
+}
+
+export interface FantasyPlayer {
+  id: string;
+  name: string;
+  number: number | null;
+  position: string;
+  slot: FantasySlot;
+  team_id: string;
+  team_name: string;
+  team_short: string;
+  user_id: string | null;
+  price: string;
+  points: string;
+  event_points: string;
+  pick_id?: string;
+  is_starter?: boolean;
+  is_captain?: boolean;
+  is_vice?: boolean;
+  bench_order?: number;
+}
+
+export interface FantasyTeam {
+  id: string;
+  name: string;
+  manager: UserSummary;
+  complete: boolean;
+  budget_used: string;
+  budget_remaining: string;
+  points: string;
+  event_points: string;
+  formation: string;
+  picks: FantasyPlayer[];
+  rank?: number;
+  managers?: number;
+}
+
+export interface FantasyStandingRow {
+  rank: number;
+  team_id: string;
+  name: string;
+  manager: UserSummary;
+  complete: boolean;
+  points: string;
+  event_points: string;
+}
+
+export interface FantasyOverview {
+  rules: FantasyRules;
+  player_count: number;
+  team: FantasyTeam | null;
+  standings: FantasyStandingRow[];
+  valid_formations: string[];
 }
 
 export interface ApiError {

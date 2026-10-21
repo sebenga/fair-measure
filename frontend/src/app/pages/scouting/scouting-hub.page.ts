@@ -1,6 +1,7 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import {
+  IonButtons,
   IonContent,
   IonHeader,
   IonIcon,
@@ -12,21 +13,40 @@ import {
   ToastController,
 } from '@ionic/angular/standalone';
 
+import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
-import type { ScoutingCatalog, ScoutingRoleKey } from '../../core/scouting.models';
+import type { Competition } from '../../core/models';
+import type { ContactRequestRow, ScoutingCatalog, ScoutingRoleKey } from '../../core/scouting.models';
 import { RatingQueueService } from '../../core/rating-queue.service';
 import { ROLE_GUIDE, ScoutingService } from '../../core/scouting.service';
+import { InboxTrayComponent } from '../../shared/inbox-tray.component';
+import { PromoSlotComponent } from '../../shared/promo-slot.component';
 
 @Component({
   selector: 'fm-scouting-hub',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonContent, IonIcon, IonSpinner, IonRefresher, IonRefresherContent],
+  imports: [
+    IonHeader,
+    IonToolbar,
+    IonTitle,
+    IonButtons,
+    IonContent,
+    IonIcon,
+    IonSpinner,
+    IonRefresher,
+    IonRefresherContent,
+    InboxTrayComponent,
+    PromoSlotComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
         <ion-title>Scouting</ion-title>
+        <ion-buttons slot="end">
+          <fm-inbox-tray />
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -38,6 +58,20 @@ import { ROLE_GUIDE, ScoutingService } from '../../core/scouting.service';
       @if (loading()) {
         <div class="centered"><ion-spinner name="crescent" /></div>
       } @else {
+        <div class="discover-shell">
+          <aside class="sponsored-rail left" aria-label="Sponsored">
+            <fm-promo-slot
+              kind="sponsored"
+              eyebrow="Sponsored"
+              title="Get found by scouts"
+              body="Players decide what is shown. Put your profile on the talent side of Fair Measure."
+              action="Open talent profile"
+              icon="person-outline"
+              (open)="go('profile')"
+            />
+          </aside>
+
+          <div class="feed">
         <section class="hero fm-enter">
           <h2>Find talent. Get found.</h2>
           <p>
@@ -54,6 +88,44 @@ import { ROLE_GUIDE, ScoutingService } from '../../core/scouting.service';
             <p class="you"><strong>You have no scouting role yet.</strong> Pick one below.</p>
           }
         </section>
+
+        @if (incoming().length || me()?.pending_guardian_requests) {
+          <fm-promo-slot
+            kind="suggested"
+            eyebrow="Needs a reply"
+            [title]="inboxTitle()"
+            [body]="inboxBody()"
+            action="Open inbox"
+            icon="mail-outline"
+            (open)="go(me()?.pending_guardian_requests ? 'guardian' : 'requests')"
+          />
+        }
+
+        @if (!me()?.profile_id) {
+          <fm-promo-slot
+            kind="banner"
+            eyebrow="Get found"
+            title="Put your profile in front of scouts"
+            body="Players decide what is shown. This is the LinkedIn side of Fair Measure — be discoverable on your terms."
+            action="Create my talent profile"
+            icon="person-outline"
+            (open)="go('profile')"
+          />
+        }
+
+        @if (trials().length) {
+          <section class="rail">
+            <h3 class="fm-section-title">Featured leagues looking for talent</h3>
+            <div class="scroller">
+              @for (league of trials(); track league.id) {
+                <button type="button" class="chip" (click)="openLeague(league)">
+                  <strong>{{ league.name }}</strong>
+                  <small>Open to scouts · {{ league.sport || 'League' }}</small>
+                </button>
+              }
+            </div>
+          </section>
+        }
 
         <div class="quick fm-stagger">
           <button type="button" class="tile" (click)="go('profile')">
@@ -232,11 +304,81 @@ import { ROLE_GUIDE, ScoutingService } from '../../core/scouting.service';
           }
         </div>
         <div class="tail"></div>
+          </div>
+
+          <aside class="sponsored-rail right" aria-label="Sponsored">
+            @if (canRate()) {
+              <fm-promo-slot
+                kind="sponsored"
+                eyebrow="Sponsored"
+                title="Saved searches that ping you"
+                body="Get notified when a player matches your filters — the same habit as a LinkedIn job alert."
+                action="Set up talent alerts"
+                icon="notifications-outline"
+                (open)="go('search')"
+              />
+            } @else {
+              <fm-promo-slot
+                kind="sponsored"
+                eyebrow="Sponsored"
+                title="Talent alerts for scouts"
+                body="When you join a scouting organisation, this rail is where saved-search ads land."
+                action="Open rating guide"
+                icon="notifications-outline"
+                (open)="go('guide')"
+              />
+            }
+            @if (trials()[0]; as lead) {
+              <fm-promo-slot
+                kind="sponsored"
+                eyebrow="Sponsored"
+                [title]="lead.name"
+                [body]="'Looking for talent · ' + (lead.sport || 'League')"
+                action="Open league"
+                icon="ribbon-outline"
+                (open)="openLeague(lead)"
+              />
+            }
+          </aside>
+        </div>
       }
     </ion-content>
   `,
   styles: [
     `
+      .discover-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(128px, 34vw);
+        align-items: start;
+        gap: 12px;
+        padding: 0 8px 24px;
+      }
+
+      .sponsored-rail {
+        position: sticky;
+        top: 8px;
+        display: grid;
+      }
+
+      .sponsored-rail.left {
+        display: none;
+      }
+
+      .feed {
+        min-width: 0;
+      }
+
+      @media (min-width: 1024px) {
+        .discover-shell {
+          grid-template-columns: 220px minmax(0, 1fr) 220px;
+          padding: 0 16px 24px;
+        }
+
+        .sponsored-rail.left {
+          display: grid;
+        }
+      }
+
       .hero {
         margin: 12px 16px;
         padding: 20px 18px;
@@ -363,11 +505,41 @@ import { ROLE_GUIDE, ScoutingService } from '../../core/scouting.service';
       .tail {
         height: 32px;
       }
+
+      .rail {
+        margin: 8px 0 16px;
+      }
+
+      .scroller {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding: 0 16px 4px;
+      }
+
+      .chip {
+        flex: 0 0 210px;
+        display: grid;
+        gap: 2px;
+        padding: 12px;
+        border: 0;
+        border-radius: 14px;
+        background: var(--ion-card-background, #fff);
+        box-shadow: var(--fm-shadow);
+        color: inherit;
+        font: inherit;
+        text-align: left;
+      }
+
+      .chip small {
+        color: var(--ion-color-medium);
+      }
     `,
   ],
 })
 export class ScoutingHubPage {
   private readonly scouting = inject(ScoutingService);
+  private readonly api = inject(ApiService);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastController);
 
@@ -382,6 +554,9 @@ export class ScoutingHubPage {
   readonly orgName = signal('');
   readonly orgKind = signal('club');
   readonly orgRegion = signal('');
+  readonly incoming = signal<ContactRequestRow[]>([]);
+  readonly trials = signal<Competition[]>([]);
+  private readonly inbox = viewChild(InboxTrayComponent);
 
   readonly roleKeys = computed(() => this.me()?.role_keys ?? []);
   readonly coachRoles = computed(() => (this.me()?.roles ?? []).filter((role) => role.role === 'coach'));
@@ -394,6 +569,19 @@ export class ScoutingHubPage {
     (this.scouting.me()?.role_keys ?? []).some((role) => role === 'scout' || role === 'scout_admin'),
   );
 
+  readonly inboxTitle = computed(() => {
+    const waiting = this.me()?.pending_guardian_requests ?? 0;
+    if (waiting) return `${waiting} guardian request${waiting === 1 ? '' : 's'} waiting`;
+    const mail = this.incoming().length;
+    return `${mail} scout contact${mail === 1 ? '' : 's'} to review`;
+  });
+
+  readonly inboxBody = computed(() =>
+    this.me()?.pending_guardian_requests
+      ? 'A parent or player needs you to confirm access before a profile can be shown.'
+      : 'Someone wants to talk. Reply from Contact requests — this is your talent inbox.',
+  );
+
   readonly isCoachOrPlayer = computed(() => {
     const roles = this.scouting.me()?.role_keys ?? [];
     return roles.includes('coach') || !!this.scouting.me()?.profile_id;
@@ -401,11 +589,20 @@ export class ScoutingHubPage {
 
   ionViewWillEnter(): void {
     this.load();
+    this.inbox()?.refresh();
   }
 
   load(done?: () => void): void {
     this.scouting.catalog().subscribe((catalog) => this.catalog.set(catalog));
     this.scouting.myTeams().subscribe((teams) => this.teams.set(teams));
+    this.scouting.contactRequests('received').subscribe({
+      next: (rows) => this.incoming.set(rows.filter((row) => row.status === 'pending')),
+      error: () => this.incoming.set([]),
+    });
+    this.api.listCompetitions({ page_size: 20 }).subscribe({
+      next: (page) => this.trials.set(page.results.filter((row) => row.open_to_scouts).slice(0, 8)),
+      error: () => this.trials.set([]),
+    });
     this.scouting.loadMe().subscribe({
       next: () => {
         this.loading.set(false);
@@ -433,6 +630,10 @@ export class ScoutingHubPage {
 
   go(path: string): void {
     void this.router.navigateByUrl(`/tabs/scouting/${path}`);
+  }
+
+  openLeague(league: Competition): void {
+    void this.router.navigate(['/tabs/competitions', league.id]);
   }
 
   createOrganisation(event: Event): void {

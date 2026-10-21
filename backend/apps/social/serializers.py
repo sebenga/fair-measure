@@ -157,19 +157,38 @@ class CommentSerializer(serializers.ModelSerializer):
         return parent
 
 
+class PostAuthorSerializer(serializers.ModelSerializer):
+    """The person on the post — a personal profile, not just a display name."""
+
+    class Meta:
+        model = UserSummarySerializer.Meta.model
+        fields = ["id", "display_name", "avatar_url", "headline", "city", "bio"]
+
+
 class PostSerializer(serializers.ModelSerializer):
-    author = UserSummarySerializer(read_only=True)
+    author = PostAuthorSerializer(read_only=True)
     media = PostMediaSerializer(many=True, read_only=True)
+    competition_name = serializers.CharField(source="competition.name", read_only=True)
+    competition_logo_url = serializers.CharField(source="competition.logo_url", read_only=True)
+    competition_sport = serializers.CharField(source="competition.sport", read_only=True)
+    fixture_label = serializers.SerializerMethodField()
+    scoreline = serializers.SerializerMethodField()
     my_reaction = serializers.SerializerMethodField()
 
     class Meta:
         model = Post
         fields = [
             "id",
+            "kind",
             "competition",
+            "competition_name",
+            "competition_logo_url",
+            "competition_sport",
             "author",
             "body",
             "fixture",
+            "fixture_label",
+            "scoreline",
             "participant",
             "is_pinned",
             "is_announcement",
@@ -182,6 +201,7 @@ class PostSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            "kind",
             "competition",
             "author",
             "comment_count",
@@ -196,6 +216,24 @@ class PostSerializer(serializers.ModelSerializer):
             return None
         reaction = next((r for r in obj.reactions.all() if r.user_id == request.user.id), None)
         return reaction.kind if reaction else None
+
+    def get_fixture_label(self, obj: Post) -> str | None:
+        fixture = obj.fixture
+        if fixture is None:
+            return None
+        if fixture.label:
+            return fixture.label
+        names = " v ".join(side.participant.name for side in fixture.sides.all()[:2])
+        return names or None
+
+    def get_scoreline(self, obj: Post) -> str | None:
+        fixture = obj.fixture
+        if fixture is None:
+            return None
+        sides = list(fixture.sides.all())
+        if len(sides) < 2:
+            return None
+        return " – ".join(f"{side.participant.name} {side.score}" for side in sides[:2])
 
 
 class PostWriteSerializer(serializers.ModelSerializer):

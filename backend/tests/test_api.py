@@ -992,9 +992,12 @@ def test_score_event_updates_the_fixture_score(api, competition, rugby_scoring, 
 def test_scoring_names_the_player_and_rates_the_game(
     api, competition, rugby_scoring, other_user
 ):
+    from rest_framework.test import APIClient
+
     from apps.accounts.models import User
     from apps.competitions.models import Participant, RosterMember
     from apps.fixtures.models import FixtureSide
+    from rest_framework.test import APIClient
 
     mate = User.objects.create_user(
         email="mate@example.com", password="s3cret-password", display_name="Mate"
@@ -1042,13 +1045,27 @@ def test_scoring_names_the_player_and_rates_the_game(
             "quantity": "1",
             "minute": 23,
             "player": roster_id,
-            "rating": "7.5",
         },
         format="json",
     )
     assert recorded.status_code == 201
     assert recorded.data["player_name"] == "Mate"
     assert recorded.data["minute"] == 23
+
+    first = User.objects.create_user(email="rater-one@example.com", password="s3cret-password")
+    second = User.objects.create_user(email="rater-two@example.com", password="s3cret-password")
+    raters = f"/api/v1/competitions/{competition.id}/fixtures/{fixture.id}/raters"
+    assert api.post(raters, {"user": str(first.id)}, format="json").status_code == 201
+    assert api.post(raters, {"user": str(second.id)}, format="json").status_code == 201
+    for person in (first, second):
+        client = APIClient()
+        client.force_authenticate(person)
+        marked = client.put(
+            f"{raters}/ratings",
+            {"ratings": [{"player": roster_id, "rating": "7.5"}]},
+            format="json",
+        )
+        assert marked.status_code == 200, marked.data
 
     detail = api.get(f"/api/v1/competitions/{competition.id}/fixtures/{fixture.id}")
     assert detail.data["ratings"][0]["player_name"] == "Mate"

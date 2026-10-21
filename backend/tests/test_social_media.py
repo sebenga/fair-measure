@@ -292,3 +292,97 @@ def test_local_uploads_are_off_unless_enabled(api, settings):
         "PUT", f"/api/v1/media/{asset.id}/local-upload?token=x", b"x", content_type="image/png"
     )
     assert response.status_code == 403
+
+
+def test_discover_feed_lists_public_posts_with_league_name(api, competition, user):
+    image = ready_image(user, competition)
+    created = api.post(
+        f"/api/v1/competitions/{competition.id}/posts",
+        {"body": "Discover me", "media_asset_ids": [str(image.id)]},
+        format="json",
+    )
+    assert created.status_code == 201
+
+    listed = api.get("/api/v1/discover/posts")
+    assert listed.status_code == 200
+    match = next(row for row in listed.data["results"] if row["id"] == created.data["id"])
+    assert match["competition_name"] == competition.name
+    assert match["media"][0]["media_asset"]["kind"] == "image"
+
+    media_only = api.get("/api/v1/discover/posts", {"has_media": "true"})
+    assert any(row["id"] == created.data["id"] for row in media_only.data["results"])
+
+
+def test_a_written_post_is_from_a_personal_profile(api, competition, user):
+    user.headline = "Centre-back · Testing football"
+    user.city = "Johannesburg"
+    user.save(update_fields=["headline", "city"])
+    response = api.post(
+        f"/api/v1/competitions/{competition.id}/posts",
+        {"body": "From my profile"},
+        format="json",
+    )
+    assert response.status_code == 201
+    assert response.data["kind"] == "profile"
+    assert response.data["author"]["headline"] == "Centre-back · Testing football"
+    assert response.data["author"]["city"] == "Johannesburg"
+    assert response.data["competition_name"] == competition.name
+
+
+def test_live_match_events_become_feed_posts(competition, user, rugby_scoring, participants):
+    from apps.competitions.models import RosterMember
+    from apps.fixtures.models import Fixture, FixtureSide, ScoreEvent
+    from apps.social.live import publish_full_time, publish_kickoff, publish_score_event
+    from apps.social.models import Post
+
+    home, away = participants[0], participants[1]
+    fixture = Fixture.objects.create(
+        competition=competition,
+        status=Fixture.Status.LIVE,
+        label="Round 1",
+        duration_minutes=80,
+    )
+    home_side = FixtureSide.objects.create(fixture=fixture, participant=home, score=0)
+    FixtureSide.objects.create(fixture=fixture, participant=away, score=0)
+    player = RosterMember.objects.create(
+        participant=home, name="Carmen Adams", number=9, user=user
+    )
+    event = ScoreEvent.objects.create(
+        fixture=fixture,
+        side=home_side,
+        scoring_category=rugby_scoring["try"],
+        player=player,
+        player_name="Carmen Adams",
+        minute=12,
+        recorded_by=user,
+        quantity=1,
+    )
+    home_side.score = 5
+    home_side.save(update_fields=["score"])
+
+    kickoff = publish_kickoff(fixture)
+    scored = publish_score_event(event)
+    fixture.status = Fixture.Status.COMPLETED
+    fixture.save(update_fields=["status"])
+    full_time = publish_full_time(fixture)
+
+    assert kickoff is not None and kickoff.kind == Post.Kind.LIVE
+    assert "Kick-off" in kickoff.body
+    assert scored.author_id == user.id
+    assert "Carmen Adams" in scored.body
+    assert "Try" in scored.body
+    assert full_time is not None and "Full time" in full_time.body
+    assert Post.objects.filter(kind=Post.Kind.LIVE, competition=competition).count() == 3
+    assert publish_score_event(event).id == scored.id
+
+
+def test_discover_feed_hides_private_league_posts(api, competition, outsider, post_id):
+    competition.is_private = True
+    competition.save(update_fields=["is_private"])
+
+    hidden = client_for(outsider).get("/api/v1/discover/posts")
+    assert hidden.status_code == 200
+    assert all(row["id"] != post_id for row in hidden.data["results"])
+
+    visible = api.get("/api/v1/discover/posts")
+    assert any(row["id"] == post_id for row in visible.data["results"])

@@ -13,9 +13,21 @@ from apps.media_assets.models import MediaAsset
 
 
 class Post(BaseModel, SoftDeleteModel):
+    class Kind(models.TextChoices):
+        PROFILE = "profile", _("Personal profile")
+        COMPETITION = "competition", _("Competition")
+        LIVE = "live", _("Live update")
+
     competition = models.ForeignKey(Competition, on_delete=models.CASCADE, related_name="posts")
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="posts"
+    )
+    kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.PROFILE, db_index=True)
+    source_key = models.CharField(
+        max_length=80,
+        blank=True,
+        db_index=True,
+        help_text=_("Stable id for generated live updates, so the same event is not posted twice."),
     )
     body = models.TextField(blank=True)
     # Optional context: a post can be attached to a match or a team.
@@ -44,6 +56,14 @@ class Post(BaseModel, SoftDeleteModel):
         indexes = [
             models.Index(fields=["competition", "-created_at"]),
             models.Index(fields=["fixture"]),
+            models.Index(fields=["kind", "-created_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source_key"],
+                condition=models.Q(source_key__gt=""),
+                name="uniq_post_source_key",
+            )
         ]
 
     def __str__(self) -> str:

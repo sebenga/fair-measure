@@ -312,6 +312,44 @@ class FixtureReferee(BaseModel):
         return f"{self.user_id} referees {self.fixture_id}"
 
 
+class FixtureRater(BaseModel):
+    """A profile appointed to rate the players in one match. Never someone who plays."""
+
+    fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="raters")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="rater_assignments"
+    )
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["fixture", "user"], name="uniq_rater_per_fixture")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} rates {self.fixture_id}"
+
+
+class RaterScore(BaseModel):
+    """One rater's mark for one player. The player's match rating is the raters' average."""
+
+    fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="rater_scores")
+    rater = models.ForeignKey(FixtureRater, on_delete=models.CASCADE, related_name="scores")
+    player = models.ForeignKey(RosterMember, on_delete=models.CASCADE, related_name="rater_scores")
+    rating = models.DecimalField(max_digits=3, decimal_places=1)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["rater", "player"], name="uniq_rater_score")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.player} {self.rating}"
+
+
 class FixtureLineup(BaseModel):
     """One side's team sheet for one fixture: the shape, who starts and who is on the bench."""
 

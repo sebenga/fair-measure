@@ -34,11 +34,12 @@ import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail, TeamPick } from '../../core/models';
 import { isPointsTable } from '../../core/models';
 import { RealtimeService, competitionRoom } from '../../core/realtime.service';
+import { CompetitionFantasyComponent } from './tabs/competition-fantasy.component';
 import { CompetitionFeedComponent } from './tabs/competition-feed.component';
 import { CompetitionFixturesComponent } from './tabs/competition-fixtures.component';
 import { CompetitionStandingsComponent } from './tabs/competition-standings.component';
 
-type Tab = 'feed' | 'fixtures' | 'standings';
+type Tab = 'feed' | 'fixtures' | 'standings' | 'fantasy';
 
 @Component({
   selector: 'fm-competition-detail',
@@ -59,6 +60,7 @@ type Tab = 'feed' | 'fixtures' | 'standings';
     CompetitionFeedComponent,
     CompetitionFixturesComponent,
     CompetitionStandingsComponent,
+    CompetitionFantasyComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -97,7 +99,7 @@ type Tab = 'feed' | 'fixtures' | 'standings';
       </ion-toolbar>
 
       <ion-toolbar>
-        <ion-segment [value]="tab()">
+        <ion-segment [value]="tab()" [scrollable]="true">
           <ion-segment-button value="feed" (click)="selectTab('feed')">
             <ion-label>Feed</ion-label>
           </ion-segment-button>
@@ -111,6 +113,9 @@ type Tab = 'feed' | 'fixtures' | 'standings';
               <ion-label>Table</ion-label>
             </ion-segment-button>
           }
+          <ion-segment-button value="fantasy" (click)="selectTab('fantasy')">
+            <ion-label>Fantasy</ion-label>
+          </ion-segment-button>
         </ion-segment>
       </ion-toolbar>
     </ion-header>
@@ -135,53 +140,55 @@ type Tab = 'feed' | 'fixtures' | 'standings';
             </ion-button>
           </div>
         }
-        @if (governance(); as g) {
-          <section class="governance fm-card fm-enter">
-            <ion-icon name="ribbon-outline" aria-hidden="true" />
-            <div>
-              <strong>{{ g.body }}</strong>
-              @if (g.rulebook) {
-                <small>Rules: {{ g.rulebook }}</small>
-              }
-              @if (g.local) {
-                <small>Locally: {{ g.local }}</small>
-              }
-              @if (howItScores()) {
-                <p>{{ howItScores() }}</p>
-              }
-            </div>
-          </section>
-        } @else if (howItScores()) {
-          <p class="how-points fm-enter">{{ howItScores() }}</p>
-        }
-        @if (comp.open_to_scouts) {
-          <button type="button" class="scouted fm-enter" (click)="openSquad()">
-            <ion-icon name="ribbon-outline" aria-hidden="true" />
-            <span>
-              <strong>Open to scouts</strong>
-              <small>See the league squad: its best players, picked by position.</small>
-            </span>
-            <ion-icon name="chevron-forward-outline" aria-hidden="true" />
-          </button>
-        }
-        @if (comp.rules.length) {
-          <details class="rules fm-card fm-enter">
-            <summary>
-              <ion-icon name="book-outline" aria-hidden="true" />
-              Rules of play
-              <span class="count">{{ comp.rules.length }}</span>
-            </summary>
-            <ol class="fm-stagger">
-              @for (rule of comp.rules; track rule.id) {
-                <li>
-                  <strong>{{ rule.name }}</strong>
-                  @if (rule.description) {
-                    <p>{{ rule.description }}</p>
-                  }
-                </li>
-              }
-            </ol>
-          </details>
+        @if (tab() !== 'fantasy') {
+          @if (governance(); as g) {
+            <section class="governance fm-card fm-enter">
+              <ion-icon name="ribbon-outline" aria-hidden="true" />
+              <div>
+                <strong>{{ g.body }}</strong>
+                @if (g.rulebook) {
+                  <small>Rules: {{ g.rulebook }}</small>
+                }
+                @if (g.local) {
+                  <small>Locally: {{ g.local }}</small>
+                }
+                @if (howItScores()) {
+                  <p>{{ howItScores() }}</p>
+                }
+              </div>
+            </section>
+          } @else if (howItScores()) {
+            <p class="how-points fm-enter">{{ howItScores() }}</p>
+          }
+          @if (comp.open_to_scouts) {
+            <button type="button" class="scouted fm-enter" (click)="openSquad()">
+              <ion-icon name="ribbon-outline" aria-hidden="true" />
+              <span>
+                <strong>Open to scouts</strong>
+                <small>See the league squad: its best players, picked by position.</small>
+              </span>
+              <ion-icon name="chevron-forward-outline" aria-hidden="true" />
+            </button>
+          }
+          @if (comp.rules.length) {
+            <details class="rules fm-card fm-enter">
+              <summary>
+                <ion-icon name="book-outline" aria-hidden="true" />
+                Rules of play
+                <span class="count">{{ comp.rules.length }}</span>
+              </summary>
+              <ol class="fm-stagger">
+                @for (rule of comp.rules; track rule.id) {
+                  <li>
+                    <strong>{{ rule.name }}</strong>
+                    @if (rule.description) {
+                      <p>{{ rule.description }}</p>
+                    }
+                  </li>
+                }
+              </ol>
+            </details>
+          }
         }
         @switch (tab()) {
           @case ('feed') {
@@ -199,6 +206,9 @@ type Tab = 'feed' | 'fixtures' | 'standings';
               </div>
             }
             <fm-competition-standings [competition]="comp" />
+          }
+          @case ('fantasy') {
+            <fm-competition-fantasy [competition]="comp" />
           }
         }
       }
@@ -386,7 +396,12 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.competitionId = this.route.snapshot.paramMap.get('id') ?? '';
     const requestedTab = this.route.snapshot.queryParamMap.get('tab');
-    if (requestedTab === 'feed' || requestedTab === 'fixtures' || requestedTab === 'standings') {
+    if (
+      requestedTab === 'feed' ||
+      requestedTab === 'fixtures' ||
+      requestedTab === 'standings' ||
+      requestedTab === 'fantasy'
+    ) {
       this.tab.set(requestedTab);
     }
 
@@ -395,7 +410,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
 
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       const tab = params.get('tab');
-      if (tab === 'feed' || tab === 'fixtures' || tab === 'standings') {
+      if (tab === 'feed' || tab === 'fixtures' || tab === 'standings' || tab === 'fantasy') {
         this.tab.set(tab);
       }
     });
@@ -506,7 +521,9 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
 
   selectTab(value: string | undefined): void {
     if (value === 'fixtures' && !this.showsFixtures()) return;
-    if (value !== 'feed' && value !== 'fixtures' && value !== 'standings') return;
+    if (value !== 'feed' && value !== 'fixtures' && value !== 'standings' && value !== 'fantasy') {
+      return;
+    }
     if (value === this.tab()) return;
     this.tab.set(value);
   }

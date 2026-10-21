@@ -106,8 +106,8 @@ class PostViewSet(ReactionMixin, viewsets.ModelViewSet):
         queryset = (
             Post.objects.filter(competition=self.get_competition())
             .alive()
-            .select_related("author")
-            .prefetch_related("media__media_asset")
+            .select_related("author", "competition", "fixture")
+            .prefetch_related("media__media_asset", "fixture__sides__participant")
         )
 
         if self.request.user.is_authenticated:
@@ -124,6 +124,8 @@ class PostViewSet(ReactionMixin, viewsets.ModelViewSet):
             queryset = queryset.filter(participant_id=participant_id)
         if params.get("has_media") in {"1", "true", "yes"}:
             queryset = queryset.filter(media__isnull=False).distinct()
+        if kind := params.get("kind"):
+            queryset = queryset.filter(kind=kind)
 
         return queryset
 
@@ -145,7 +147,12 @@ class PostViewSet(ReactionMixin, viewsets.ModelViewSet):
         ):
             raise PermissionDenied("Only admins can post announcements.")
 
-        serializer.save(competition=competition, author=self.request.user)
+        kind = (
+            Post.Kind.COMPETITION
+            if serializer.validated_data.get("is_announcement")
+            else Post.Kind.PROFILE
+        )
+        serializer.save(competition=competition, author=self.request.user, kind=kind)
         post = serializer.instance
 
         publish_event(
@@ -197,6 +204,43 @@ class PostViewSet(ReactionMixin, viewsets.ModelViewSet):
     def react(self, request: Request, **kwargs) -> Response:
         self._assert_member()
         return self._toggle_reaction(self.get_object(), request)
+
+
+@extend_schema_view(
+    list=extend_schema(
+        tags=["Feed"],
+        summary="Public Discover feed",
+        description="Recent posts from competitions you can see, for the mixed Discover stream.",
+        parameters=[
+            OpenApiParameter("has_media", bool, description="Only posts with photos or videos."),
+            OpenApiParameter("kind", str, description="profile | competition | live"),
+        ],
+    ),
+)
+class DiscoverPostViewSet(viewsets.ReadOnlyModelViewSet):
+    """Cross-league posts for Discover — updates, comments, photos and clips."""
+
+    serializer_class = PostSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    pagination_class = FeedPagination
+    queryset = Post.objects.none()
+
+    def get_queryset(self):
+        queryset = (
+            Post.objects.filter(competition__in=visible_competitions(self.request.user))
+            .alive()
+            .select_related("author", "competition", "fixture")
+            .prefetch_related("media__media_asset", "fixture__sides__participant")
+        )
+        if self.request.user.is_authenticated:
+            queryset = queryset.prefetch_related(
+                Prefetch("reactions", queryset=Reaction.objects.filter(user=self.request.user))
+            )
+        if self.request.query_params.get("has_media") in {"1", "true", "yes"}:
+            queryset = queryset.filter(media__isnull=False).distinct()
+        if kind := self.request.query_params.get("kind"):
+            queryset = queryset.filter(kind=kind)
+        return queryset
 
 
 @extend_schema_view(
