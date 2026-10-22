@@ -147,6 +147,12 @@ def test_accepted_team_invites_appear_on_my_profile():
     before = player.get("/api/v1/scouting/me/team-memberships").data
     assert before["teams"] == []
     assert before["pending_invites"] == 1
+    assert before["invites"][0]["team_name"] == "Harbour Hawks"
+    assert before["invites"][0]["competition_name"] == "Harbour League"
+
+    inbox = player.get("/api/v1/me/team-picks")
+    assert inbox.status_code == 200
+    assert [row["team_name"] for row in inbox.data] == ["Harbour Hawks"]
 
     accepted = player.post(f"/api/v1/competitions/{competition.id}/picks/{pick.id}/accept")
     assert accepted.status_code in {200, 201}, accepted.data

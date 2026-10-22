@@ -235,19 +235,37 @@ _HIGHLIGHT_CODES = _PROFILE_EVENT_CODES | {"try", "penalty-try"}
 def _highlight_kind(category) -> str | None:
     """The live-ticker type for an event, or None when it is too routine to list."""
 
+    if category is None:
+        return None
     code = (category.code or "").strip().lower()
     if code.endswith("-card"):
         return code.removesuffix("-card")
     if code == "own-goal":
         return "own_goal"
-    if code in _HIGHLIGHT_CODES or _event_needs_profile(category):
+    if (
+        getattr(category, "affects_score", False)
+        or code in _HIGHLIGHT_CODES
+        or _event_needs_profile(category)
+    ):
         return "score"
     return None
+
+
+class PlayerMatchRatingSerializer(serializers.ModelSerializer):
+    player_name = serializers.CharField(source="player.name", read_only=True)
+    player_user_id = serializers.UUIDField(
+        source="player.user_id", read_only=True, allow_null=True
+    )
+
+    class Meta:
+        model = PlayerMatchRating
+        fields = ["id", "player", "player_name", "player_user_id", "rating"]
 
 
 class FixtureListSerializer(serializers.ModelSerializer):
     sides = FixtureSideSerializer(many=True, read_only=True)
     highlights = serializers.SerializerMethodField()
+    ratings = PlayerMatchRatingSerializer(many=True, read_only=True)
 
     def get_highlights(self, obj) -> list[dict]:
         if obj.status == Fixture.Status.SCHEDULED:
@@ -286,25 +304,14 @@ class FixtureListSerializer(serializers.ModelSerializer):
             "status",
             "sides",
             "highlights",
+            "ratings",
             "started_at",
             "completed_at",
         ]
 
 
-class PlayerMatchRatingSerializer(serializers.ModelSerializer):
-    player_name = serializers.CharField(source="player.name", read_only=True)
-    player_user_id = serializers.UUIDField(
-        source="player.user_id", read_only=True, allow_null=True
-    )
-
-    class Meta:
-        model = PlayerMatchRating
-        fields = ["id", "player", "player_name", "player_user_id", "rating"]
-
-
 class FixtureDetailSerializer(FixtureListSerializer):
     events = ScoreEventSerializer(many=True, read_only=True)
-    ratings = PlayerMatchRatingSerializer(many=True, read_only=True)
     referees = serializers.SerializerMethodField()
     kickoff_problems = serializers.SerializerMethodField()
     raters_count = serializers.SerializerMethodField()
@@ -314,7 +321,6 @@ class FixtureDetailSerializer(FixtureListSerializer):
             *FixtureListSerializer.Meta.fields,
             "notes",
             "events",
-            "ratings",
             "referees",
             "raters_count",
             "kickoff_problems",

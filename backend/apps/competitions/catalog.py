@@ -59,16 +59,22 @@ TENNIS_SCORES = [
 
 CATALOG: dict[str, dict] = {
     "rugby_union": _sport(
-        label="Rugby union",
+        label="Rugby union (fifteens)",
         icon="american-football-outline",
         sport="rugby union",
+        family="rugby_union",
+        variant="fifteens",
+        family_label="Rugby union",
+        variant_label="Fifteens",
+        governing_body="World Rugby",
+        rulebook="World Rugby Laws of the Game",
         description=(
             "A try is 5, a conversion 2, a penalty goal or drop goal 3, and a "
             "penalty try 7. Yellow and red cards are recorded without points. "
-            "A match is two halves of 40 minutes. A league draw shares the points. "
-            "In a knockout, a level score goes to extra time, then the next score, "
-            "then a kicking competition. The table uses points, then points "
-            "difference, then tries, then the head-to-head result."
+            "A match is two halves of 40 minutes. A league win is 4, a draw 2. "
+            "A side that scores 4 or more tries, or loses by 7 or fewer, gets "
+            "1 bonus point. In a knockout, extra time, then sudden death, then "
+            "a kicking competition."
         ),
         score_types=[
             {"key": "try", "label": "Try", "value": 5, "affects_score": True},
@@ -80,39 +86,118 @@ CATALOG: dict[str, dict] = {
             {"key": "red-card", "label": "Red card", "value": 0, "affects_score": False},
         ],
         match_structure=[
-            {"unit": "half", "count": 2, "minutes": 40},
-            {"unit": "extra_time", "count": 2, "minutes": 10},
-            {"unit": "sudden_death", "count": 1},
-            {"unit": "kicking", "count": 1, "affects_total": False, "resolves_draw": True},
+            {"unit": "half", "count": 2, "minutes": 40, "clock": "running"},
+            {"unit": "extra_time", "count": 2, "minutes": 10, "extra": True},
+            {"unit": "sudden_death", "count": 1, "minutes": 10, "extra": True},
+            {"unit": "kicking", "count": 1, "affects_total": False, "resolves_draw": True, "extra": True},
         ],
         draw_resolution="penalties",
+        league_points={"win": 4, "draw": 2, "loss": 0},
+        table_bonus={
+            "enabled": True,
+            "scoring_codes": ["try", "penalty-try"],
+            "scoring_code": "try",
+            "scoring_threshold": 4,
+            "scoring_points": 1,
+            "loss_margin": 7,
+            "loss_points": 1,
+        },
+        formats_allowed=["league", "knockout", "groups_knockout", "round_robin"],
         tiebreakers=["points", "score_difference", "category:try", "head_to_head"],
+        team_sheet={
+            "starters": 15,
+            "min_on_field": 11,
+            "min_squad": 15,
+            "bench_max": 8,
+            "max_substitutions": 8,
+            "rolling_substitutions": False,
+        },
+        rules=[
+            {
+                "name": "League points",
+                "description": (
+                    "A win is 4, a draw is 2, a loss is 0. "
+                    "1 bonus for 4 or more tries, and 1 for losing by 7 or fewer."
+                ),
+            },
+            {
+                "name": "Players",
+                "description": "15 start, with up to 8 on the bench.",
+            },
+            {
+                "name": "Knockout",
+                "description": (
+                    "If the match is level, two periods of 10 minutes, then sudden "
+                    "death of 10 minutes, then a kicking competition."
+                ),
+            },
+        ],
     ),
     "rugby_league": _sport(
-        label="Rugby league",
+        label="Rugby league (thirteens)",
         icon="american-football-outline",
         sport="rugby league",
+        family="rugby_league",
+        variant="thirteens",
+        family_label="Rugby league",
+        variant_label="Thirteens",
+        governing_body="International Rugby League",
+        rulebook="International Rugby League Laws of the Game",
         description=(
             "A try is 4, a conversion 2, a penalty goal 2, and a field goal 1. "
             "Yellow and red cards are recorded without points. "
-            "A match is two halves of 40 minutes. League points are 3, 1 and 0. "
-            "A knockout that is level goes to golden point: the next score wins. "
-            "The table uses points, then points difference, then points scored."
+            "A match is two halves of 40 minutes. A league win is 2, a draw 1. "
+            "A knockout that is level goes to golden point: the next score wins."
         ),
         score_types=[
             {"key": "try", "label": "Try", "value": 4, "affects_score": True},
             {"key": "conversion", "label": "Conversion", "value": 2, "affects_score": True},
             {"key": "penalty-goal", "label": "Penalty goal", "value": 2, "affects_score": True},
             {"key": "field-goal", "label": "Field goal", "value": 1, "affects_score": True},
+            {
+                "key": "long-field-goal",
+                "label": "Field goal (40m+)",
+                "value": 2,
+                "affects_score": True,
+                "description": "Used when the competition awards 2 for a drop from beyond 40 m.",
+            },
             YELLOW_CARD,
             RED_CARD,
         ],
         match_structure=[
-            {"unit": "half", "count": 2, "minutes": 40},
-            {"unit": "extra_time", "count": 1},
+            {"unit": "half", "count": 2, "minutes": 40, "clock": "running"},
+            {"unit": "extra_time", "count": 1, "extra": True, "golden": True},
         ],
         draw_resolution="sudden_death",
+        league_points={"win": 2, "draw": 1, "loss": 0},
+        formats_allowed=["league", "knockout", "groups_knockout", "round_robin"],
         tiebreakers=["points", "score_difference", "score_for"],
+        team_sheet={
+            "starters": 13,
+            "min_on_field": 9,
+            "min_squad": 13,
+            "bench_max": 4,
+            "max_substitutions": 10,
+            "rolling_substitutions": True,
+        },
+        rules=[
+            {
+                "name": "League points",
+                "description": "A win is 2 points, a draw is 1, a loss is 0.",
+            },
+            {
+                "name": "Players",
+                "description": "13 start, with 4 on the bench. Substitutions are rolling.",
+            },
+            {
+                "name": "Tackle set",
+                "description": "A team has 6 tackles before handing over the ball. Recorded as a stat, not scoring.",
+            },
+            {
+                "name": "Knockout",
+                "description": "If the match is level, golden point extra time decides it.",
+            },
+        ],
     ),
     "american_football": _sport(
         label="American football",

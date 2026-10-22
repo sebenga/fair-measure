@@ -91,11 +91,14 @@ class Fixture(BaseModel):
     def kickoff_problems(self) -> list[str]:
         """What still has to be set before this game can start."""
 
+        from .matchday import team_sheet_kickoff_problems
+
         problems = []
         if not self.duration_minutes:
             problems.append("Set this game's time limit before kickoff.")
         if not self.referees.exists():
-            problems.append("Assign a referee before kickoff.")
+            problems.append("Pick the match officials before kickoff.")
+        problems.extend(team_sheet_kickoff_problems(self))
         return problems
 
     @property

@@ -27,6 +27,7 @@ import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail, Membership, Participant, ProfileSummary, TeamPick } from '../../core/models';
+import { squadSizeOf } from '../../core/models';
 
 @Component({
   selector: 'fm-team-profile',
@@ -105,9 +106,9 @@ import type { CompetitionDetail, Membership, Participant, ProfileSummary, TeamPi
           }
           <p class="hint">
             @if (teamEntry() === 'draft') {
-              Players join through the draft. A player accepts before they count toward the 14.
+              Players join through the draft. A player accepts before they count toward the {{ squadSize() }}.
             } @else if (teamEntry() === 'pick') {
-              {{ current.roster.length }} of 14 players have accepted.
+              {{ current.roster.length }} of {{ squadSize() }} players have accepted.
             } @else {
               A player joins after they accept a pick. Someone already on a team, or waiting on another pick, stays unavailable.
             }
@@ -304,13 +305,18 @@ export class TeamProfilePage implements OnInit {
     return this.auth.user()?.id;
   }
 
+  squadSize(): number {
+    const competition = this.competition();
+    return competition ? squadSizeOf(competition) : 14;
+  }
+
   teamEntry(): 'pick' | 'draft' | null {
     const value = this.competition()?.settings_json?.['team_entry'];
     return value === 'pick' || value === 'draft' ? value : null;
   }
 
   squadLabel(): string {
-    return this.teamEntry() ? ' of 14' : '';
+    return this.teamEntry() ? ` of ${this.squadSize()}` : '';
   }
 
   playingNumbers(): number[] {

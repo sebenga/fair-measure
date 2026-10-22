@@ -129,6 +129,19 @@ export interface PointsPolicy {
   allow_draws: boolean;
 }
 
+/** Extra table points on a VS competition, stored in settings_json.table_bonus. */
+export interface TableBonus {
+  enabled: boolean;
+  scoring_threshold?: number | null;
+  scoring_points?: number;
+  scoring_code?: string;
+  scoring_codes?: string[];
+  win_margin?: number | null;
+  win_points?: number;
+  loss_margin?: number | null;
+  loss_points?: number;
+}
+
 export interface Stage {
   id: string;
   name: string;
@@ -156,6 +169,8 @@ export interface TeamPick {
   id: string;
   participant: string;
   team_name: string;
+  competition: string;
+  competition_name: string;
   user: string;
   user_display_name: string;
   user_email: string;
@@ -233,6 +248,8 @@ export interface CompetitionDetail extends Competition {
   stages: Stage[];
   participants: Participant[];
   updated_at: string;
+  /** Every remaining fixture is finished, so a new season or knockout can be scheduled. */
+  season_finished?: boolean;
 }
 
 export interface FixtureSide {
@@ -322,6 +339,8 @@ export interface LineupPlayer extends MatchPlayer {
   position: string;
   on_field: boolean;
   subbed_off: boolean;
+  minutes?: number | null;
+  rating?: string | null;
 }
 
 export interface TeamSheetSide {
@@ -360,6 +379,7 @@ export interface MatchDay {
   enabled: boolean;
   config?: {
     starters: number | null;
+    min_personnel?: number;
     bench_max: number | null;
     max_substitutions: number | null;
     rolling_substitutions: boolean;
@@ -467,6 +487,7 @@ export interface Fixture {
   status: FixtureStatus;
   sides: FixtureSide[];
   highlights?: FixtureHighlight[];
+  ratings?: MatchRating[];
   started_at: string | null;
   completed_at: string | null;
 }
@@ -700,6 +721,46 @@ export interface Preset {
   result_type?: string | null;
   /** Presets that let the owner pick how many periods a match has. */
   unit_count_options?: { unit: string; options: number[]; default?: number };
+  team_sheet?: TeamSheet;
+  /** Separate category of the same sport, for example women. */
+  category?: string;
+  /** Setup groups variants of one sport under a single card. */
+  family?: string;
+  variant?: string;
+  family_label?: string;
+  variant_label?: string;
+  league_points?: Record<string, number>;
+  table_bonus?: TableBonus;
+}
+
+export interface TeamSheet {
+  starters?: number;
+  min_on_field?: number;
+  min_squad?: number;
+  bench_max?: number;
+  max_substitutions?: number;
+  rolling_substitutions?: boolean;
+}
+
+export function teamSheetOf(competition: {
+  settings_json?: Record<string, unknown>;
+}): TeamSheet | null {
+  const raw = competition.settings_json?.['team_sheet'];
+  if (!raw || typeof raw !== 'object') return null;
+  return raw as TeamSheet;
+}
+
+/** Fewest accepted players a team needs for this competition. */
+export function squadSizeOf(competition: {
+  settings_json?: Record<string, unknown>;
+}): number {
+  const sheet = teamSheetOf(competition);
+  const minimum = Number(sheet?.min_squad);
+  if (minimum > 0) return minimum;
+  const starters = Number(sheet?.starters);
+  if (starters >= 11) return 14;
+  if (starters > 0) return starters;
+  return 14;
 }
 
 /** Ranked by accumulated score, not head-to-head match results. */
@@ -720,6 +781,25 @@ export function isPointsTable(competition: {
     Number(policy.draw_points) === 0 &&
     Number(policy.loss_points) === 0
   );
+}
+
+export function tableBonusOf(competition: {
+  settings_json?: Record<string, unknown>;
+}): TableBonus | null {
+  const raw = competition.settings_json?.['table_bonus'];
+  if (!raw || typeof raw !== 'object') return null;
+  return raw as TableBonus;
+}
+
+/** VS table awards extra points from scoring or from the winning/losing margin. */
+export function tableBonusEnabled(competition: {
+  settings_json?: Record<string, unknown>;
+  points_policy?: Pick<PointsPolicy, 'bonus_win_margin' | 'bonus_loss_margin'>;
+}): boolean {
+  const bonus = tableBonusOf(competition);
+  if (bonus && 'enabled' in bonus) return !!bonus.enabled;
+  const policy = competition.points_policy;
+  return policy?.bonus_win_margin != null || policy?.bonus_loss_margin != null;
 }
 
 export function isScoringLocked(competition: {
@@ -812,6 +892,23 @@ export interface ApiError {
     message: string;
     detail?: unknown;
   };
+}
+
+export interface NextSeasonRequest {
+  kind: 'season' | 'knockout';
+  starts_on: string;
+  kickoff?: string;
+  weekdays?: number[];
+  minutes_between_fixtures?: number;
+  double_round?: boolean;
+  location?: string;
+  advance?: number;
+}
+
+export interface NextSeasonResponse {
+  stage: Stage;
+  fixtures: Fixture[];
+  competition: CompetitionDetail;
 }
 
 export interface GenerateFixturesRequest {

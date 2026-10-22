@@ -156,7 +156,7 @@ def test_rugby_union_tries_and_kicking(api):
     assert _outcome(league, "Ada") == "win"
     assert _score(league, "Ada") == Decimal("7")
     rows = _table(competition)
-    assert rows["Ada"].points == rows["Bo"].points == Decimal("3")
+    assert rows["Ada"].points == rows["Bo"].points == Decimal("4")
     assert rows["Ada"].score_difference == rows["Bo"].score_difference == Decimal("7")
     assert _order(competition).index("Ada") < _order(competition).index("Bo")
 
@@ -171,7 +171,7 @@ def test_rugby_union_tries_and_kicking(api):
     assert _score(decided, "Home") == Decimal("5")
     assert _score(decided, "Away") == Decimal("5")
     assert _outcome(decided, "Home") == "win"
-    assert _table(knockout)["Home"].points == Decimal("3")
+    assert _table(knockout)["Home"].points == Decimal("4")
 
 
 def test_rugby_league_points_for_and_golden_point(api):
@@ -185,7 +185,7 @@ def test_rugby_league_points_for_and_golden_point(api):
         [(p["Bo"], [("try", 2, 0)]), (p["Dee"], [("penalty-goal", 1, 1)])],
     )
     rows = _table(competition)
-    assert rows["Ada"].points == rows["Bo"].points == Decimal("3")
+    assert rows["Ada"].points == rows["Bo"].points == Decimal("2")
     assert rows["Ada"].score_difference == rows["Bo"].score_difference == Decimal("6")
     assert rows["Ada"].score_for == Decimal("12")
     assert _order(competition).index("Ada") < _order(competition).index("Bo")
@@ -894,6 +894,163 @@ def test_cleaning_describes_tasks_and_locks_after_start(api):
         format="json",
     )
     assert locked.status_code == 403
+
+
+def test_soccer_variants_set_how_many_start_and_the_minimum_squad(api):
+    from apps.competitions.serializers import squad_size_for
+
+    expected = {
+        "futsal": (5, 3, 5, 40),
+        "beach_soccer": (5, 3, 5, 36),
+        "soccer_5": (5, 3, 5, 40),
+        "soccer_6": (6, 4, 6, 40),
+        "soccer_7": (7, 5, 7, 50),
+        "youth_4v4": (4, 3, 4, 20),
+        "youth_7v7": (7, 5, 7, 40),
+        "youth_9v9": (9, 6, 9, 50),
+        "blind_football": (5, 3, 5, 40),
+        "cp_football": (7, 4, 7, 60),
+        "amputee_football": (7, 5, 7, 50),
+        "powerchair_football": (4, 2, 4, 40),
+        "walking_football": (6, 5, 6, 40),
+        "arena_soccer": (6, 4, 6, 60),
+        "street_football": (5, 3, 5, 30),
+        "soccer_women": (11, 7, 14, 90),
+        "freestyle_football": (1, 1, 1, None),
+    }
+    for key, (starters, fewest, squad, minutes) in expected.items():
+        created = api.post(
+            "/api/v1/competitions",
+            {"name": key, "preset": key},
+            format="json",
+        )
+        assert created.status_code == 201, (key, created.data)
+        competition = Competition.objects.get(pk=created.data["id"])
+        sheet = competition.settings_json["team_sheet"]
+        assert sheet["starters"] == starters, key
+        assert sheet["min_on_field"] == fewest, key
+        assert sheet["min_squad"] == squad, key
+        assert squad_size_for(competition) == squad, key
+        if minutes is not None:
+            assert competition.settings_json["time_limit_minutes"] == minutes, key
+
+    women = Competition.objects.get(name="soccer_women")
+    assert women.settings_json["category"] == "women"
+    assert women.settings_json["draw_allowed"] is True
+    beach = Competition.objects.get(name="beach_soccer")
+    assert beach.settings_json["draw_allowed"] is False
+    futsal = Competition.objects.get(name="futsal")
+    codes = set(futsal.scoring_categories.values_list("code", flat=True))
+    assert "accumulated-foul" in codes
+    assert "goal" in codes
+    freestyle = Competition.objects.get(name="freestyle_football")
+    assert freestyle.settings_json["participant_type"] == "individual"
+    assert freestyle.settings_json["result_type"] == "judged_score"
+
+
+def test_rugby_union_awards_try_and_losing_bonus(api):
+    competition, p = _open(api, "rugby_union", ["Ada", "Bo", "Cy", "Dee"])
+    _play(
+        competition,
+        [
+            (p["Ada"], [("try", 4, 0), ("conversion", 2, 0)]),
+            (p["Cy"], []),
+        ],
+    )
+    _play(
+        competition,
+        [
+            (p["Bo"], [("try", 1, 0), ("conversion", 1, 0)]),
+            (p["Dee"], [("try", 1, 0)]),
+        ],
+    )
+    rows = _table(competition)
+    assert rows["Ada"].points == Decimal("5")
+    assert rows["Ada"].bonus_points == Decimal("1")
+    assert rows["Bo"].points == Decimal("4")
+    assert rows["Dee"].points == Decimal("1")
+    assert rows["Dee"].bonus_points == Decimal("1")
+
+
+def test_rugby_sevens_pool_uses_three_two_one(api):
+    competition, p = _open(api, "rugby_sevens", ["Ada", "Bo", "Cy", "Dee"])
+    _play(competition, [(p["Ada"], [("try", 1, 0)]), (p["Cy"], [])])
+    _play(competition, [(p["Bo"], [("try", 1, 0)]), (p["Dee"], [("try", 1, 0)])])
+    rows = _table(competition)
+    assert rows["Ada"].points == Decimal("3")
+    assert rows["Bo"].points == rows["Dee"].points == Decimal("2")
+    assert rows["Cy"].points == Decimal("1")
+
+
+def test_beach_soccer_awards_three_two_one_zero(api):
+    competition, p = _open(api, "beach_soccer", ["Ada", "Bo", "Cy", "Dee"])
+    _play(competition, [(p["Ada"], [("goal", 1, 0)]), (p["Cy"], [])])
+    _play(
+        competition,
+        [
+            (p["Bo"], [("goal", 1, 0), ("goal", 1, 3)]),
+            (p["Dee"], [("goal", 1, 1)]),
+        ],
+    )
+    rows = _table(competition)
+    assert rows["Ada"].points == Decimal("3")
+    assert rows["Bo"].points == Decimal("2")
+    assert rows["Cy"].points == rows["Dee"].points == Decimal("0")
+
+    pens, k = _open(api, "beach_soccer", ["Home", "Away"])
+    decided = _play(
+        pens,
+        [
+            (k["Home"], [("goal", 1, 4)]),
+            (k["Away"], []),
+        ],
+    )
+    assert _outcome(decided, "Home") == "win"
+    assert _table(pens)["Home"].points == Decimal("1")
+
+
+def test_walking_and_arena_football_can_be_edited(api):
+    created = api.post("/api/v1/competitions", {"name": "walk", "preset": "walking_football"}, format="json")
+    assert created.status_code == 201
+    edited = api.patch(
+        f"/api/v1/competitions/{created.data['id']}/points-policy",
+        {"win_points": "5"},
+        format="json",
+    )
+    assert edited.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "rugby_union",
+        "rugby_sevens",
+        "rugby_tens",
+        "rugby_beach",
+        "wheelchair_rugby",
+        "touch_rugby",
+        "tag_rugby",
+        "rugby_league",
+        "rugby_nines",
+        "wheelchair_rugby_league",
+        "soccer",
+        "futsal",
+        "beach_soccer",
+        "soccer_5",
+        "soccer_7",
+        "youth_4v4",
+        "blind_football",
+    ],
+)
+def test_locked_rugby_and_soccer_variants_refuse_edits(api, key):
+    created = api.post("/api/v1/competitions", {"name": key, "preset": key}, format="json")
+    assert created.status_code == 201, created.data
+    edited = api.patch(
+        f"/api/v1/competitions/{created.data['id']}/points-policy",
+        {"win_points": "9"},
+        format="json",
+    )
+    assert edited.status_code in (400, 403)
 
 
 @pytest.mark.parametrize("key", [key for key, preset in CATALOG.items() if preset.get("locked")])

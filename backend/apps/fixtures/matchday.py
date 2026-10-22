@@ -7,6 +7,7 @@ without one still get a free-form sheet. Nothing here names a sport.
 
 from __future__ import annotations
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -30,6 +31,7 @@ from .models import (
     LineupEntry,
     MatchReport,
     PlayerAppearance,
+    PlayerMatchRating,
     ScoreEvent,
     Substitution,
 )
@@ -64,6 +66,40 @@ def team_sheet_config(competition) -> dict | None:
     if settings.get("contest_type", "head_to_head") != "head_to_head":
         return None
     return dict(FREE_FORM)
+
+
+DEFAULT_SHEET_MINIMUM = 11
+
+
+def team_sheet_minimum(config: dict) -> int:
+    """How many named starters a side must list before the game can start."""
+
+    starters = config.get("starters")
+    try:
+        return int(starters) if starters else DEFAULT_SHEET_MINIMUM
+    except (TypeError, ValueError):
+        return DEFAULT_SHEET_MINIMUM
+
+
+def team_sheet_kickoff_problems(fixture) -> list[str]:
+    """Team-sheet gaps that still block kickoff. Empty when sheets do not apply."""
+
+    config = team_sheet_config(fixture.competition)
+    if config is None:
+        return []
+    needed = team_sheet_minimum(config)
+    problems = []
+    for side in fixture.sides.all():
+        name = side.participant.name
+        try:
+            lineup = side.lineup
+        except ObjectDoesNotExist:
+            problems.append(f"Submit {name}'s team sheet before kickoff.")
+            continue
+        starters = sum(1 for entry in lineup.entries.all() if entry.role == LineupEntry.Role.STARTER)
+        if starters < needed:
+            problems.append(f"{name}'s team sheet needs at least {needed} named players.")
+    return problems
 
 
 def formation_slots(formation: str, config: dict) -> list[dict]:
@@ -172,7 +208,21 @@ def _field_state(lineup: FixtureLineup | None, subs: list[Substitution]) -> tupl
     return on, bench, off
 
 
-def _side_payload(fixture: Fixture, side: FixtureSide, config: dict, user, subs) -> dict:
+def _minutes_map(fixture: Fixture) -> dict:
+    return {
+        row.player_id: row.minutes
+        for row in PlayerAppearance.objects.filter(fixture=fixture)
+        if row.minutes is not None
+    }
+
+
+def _ratings_map(fixture: Fixture) -> dict:
+    return {row.player_id: format(row.rating, "f") for row in PlayerMatchRating.objects.filter(fixture=fixture)}
+
+
+def _side_payload(
+    fixture: Fixture, side: FixtureSide, config: dict, user, subs, minutes: dict, ratings: dict
+) -> dict:
     lineup = getattr(side, "lineup", None)
     side_subs = [sub for sub in subs if sub.side_id == side.id]
     on, bench_left, off = _field_state(lineup, side_subs)
@@ -195,6 +245,8 @@ def _side_payload(fixture: Fixture, side: FixtureSide, config: dict, user, subs)
             "position": entry.position,
             "on_field": entry.player_id in on,
             "subbed_off": entry.player_id in off,
+            "minutes": minutes.get(entry.player_id),
+            "rating": ratings.get(entry.player_id),
         }
 
     used = len(side_subs)
@@ -254,15 +306,20 @@ def match_day(fixture: Fixture, user) -> dict:
             "position"
         )
     )
+    minutes = _minutes_map(fixture)
+    ratings = _ratings_map(fixture)
     return {
         "enabled": True,
-        "config": config,
+        "config": {**config, "min_personnel": team_sheet_minimum(config)},
         "formations": [
             {"key": key, "slots": formation_slots(key, config)}
             for key in config.get("formations") or []
         ],
         "status": fixture.status,
-        "sides": [_side_payload(fixture, side, config, user, subs) for side in sides],
+        "sides": [
+            _side_payload(fixture, side, config, user, subs, minutes, ratings)
+            for side in sides
+        ],
         "substitutions": [_sub_row(sub) for sub in subs],
         "can_substitute": fixture.status in {Fixture.Status.LIVE, *FINISHED}
         and can_substitute(fixture, user),
@@ -400,6 +457,9 @@ class TeamSheetView(_FixtureView):
         starting = [clean(row, "starters") for row in starters]
         benched = [clean(row, "bench") for row in bench]
 
+        needed = team_sheet_minimum(config)
+        if len(starting) < needed:
+            raise ValidationError({"starters": f"Name at least {needed} players on the team sheet."})
         limit = config.get("starters")
         if limit and len(starting) > limit:
             raise ValidationError({"starters": f"Name at most {limit} starters."})

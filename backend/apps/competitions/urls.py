@@ -4,6 +4,7 @@ from rest_framework_nested import routers
 from .views import (
     CompetitionViewSet,
     MembershipViewSet,
+    MyPendingTeamPickListView,
     MyTeamPickListView,
     ParticipantViewSet,
     PlayerLeagueProfileView,
@@ -40,6 +41,11 @@ participant_router = routers.NestedSimpleRouter(
 participant_router.register("roster", RosterMemberViewSet, basename="roster-member")
 
 urlpatterns = [
+    path(
+        "me/team-picks",
+        MyPendingTeamPickListView.as_view(),
+        name="my-pending-team-picks",
+    ),
     path(
         "competitions/<uuid:competition_pk>/points-policy",
         PointsPolicyView.as_view(),

@@ -93,3 +93,32 @@ STAT_SCORE_TYPES: dict[str, list[dict]] = {
 STAT_SCORE_TYPES["padel"] = STAT_SCORE_TYPES["tennis"]
 STAT_SCORE_TYPES["beach_volleyball"] = STAT_SCORE_TYPES["volleyball"]
 STAT_SCORE_TYPES["rugby_sevens"] = STAT_SCORE_TYPES["rugby_union"]
+STAT_SCORE_TYPES["rugby_tens"] = STAT_SCORE_TYPES["rugby_union"]
+STAT_SCORE_TYPES["rugby_beach"] = STAT_SCORE_TYPES["rugby_union"]
+STAT_SCORE_TYPES["touch_rugby"] = STAT_SCORE_TYPES["rugby_union"]
+STAT_SCORE_TYPES["tag_rugby"] = STAT_SCORE_TYPES["rugby_union"]
+STAT_SCORE_TYPES["rugby_league"] = [
+    *STAT_SCORE_TYPES["rugby_union"],
+    _stat_type("tackle-set", "Tackle in set", "Count toward the 6-tackle set. Does not change the score."),
+]
+STAT_SCORE_TYPES["rugby_nines"] = STAT_SCORE_TYPES["rugby_league"]
+STAT_SCORE_TYPES["wheelchair_rugby_league"] = STAT_SCORE_TYPES["rugby_league"]
+for _soccer_key in (
+    "soccer_women",
+    "futsal",
+    "beach_soccer",
+    "soccer_5",
+    "soccer_6",
+    "soccer_7",
+    "youth_4v4",
+    "youth_7v7",
+    "youth_9v9",
+    "blind_football",
+    "cp_football",
+    "amputee_football",
+    "powerchair_football",
+    "walking_football",
+    "arena_soccer",
+    "street_football",
+):
+    STAT_SCORE_TYPES[_soccer_key] = STAT_SCORE_TYPES["soccer"]

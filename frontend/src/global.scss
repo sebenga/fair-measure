@@ -55,16 +55,21 @@ a.fm-card.report-link {
   }
 }
 
-// One column per team: home on the left, away on the right.
+// Teams stack as rows on a phone; home | away only when there is room.
 .fm-team-columns {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 10px;
+  gap: 12px;
   margin: 0 16px 16px;
 
-  &.many {
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  @media (min-width: 720px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+
+    &.many {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
   }
 
   > * {

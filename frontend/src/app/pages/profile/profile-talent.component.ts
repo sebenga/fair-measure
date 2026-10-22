@@ -4,12 +4,14 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { AlertController, IonIcon, IonSpinner, ToastController } from '@ionic/angular/standalone';
 
+import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type {
   IdentityDocument,
   IdentityDocumentKind,
   PlayerProfile,
   ScoutingCatalog,
+  TeamInvite,
   TeamMembership,
 } from '../../core/scouting.models';
 import { ScoutingService, groupBySport } from '../../core/scouting.service';
@@ -75,10 +77,33 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
     }
 
     <h3 class="fm-section-title">My teams</h3>
-    @if (pendingInvites() > 0) {
-      <p class="hint">
-        {{ pendingInvites() }} team invite(s) waiting. Open the competition to accept; the team then shows here.
-      </p>
+    @if (invites().length) {
+      <section class="card fm-card invites">
+        @for (invite of invites(); track invite.id) {
+          <div class="invite-row">
+            <span class="grow">
+              <strong>{{ invite.team_name }}</strong>
+              <small>{{ invite.competition_name }} picked you. Accept to join the team.</small>
+            </span>
+            <button
+              type="button"
+              class="btn small"
+              [disabled]="busyInvite() === invite.id"
+              (click)="acceptInvite(invite)"
+            >
+              Accept
+            </button>
+            <button
+              type="button"
+              class="btn ghost small"
+              [disabled]="busyInvite() === invite.id"
+              (click)="declineInvite(invite)"
+            >
+              Decline
+            </button>
+          </div>
+        }
+      </section>
     }
     @for (group of teamGroups(); track group.key) {
       <section class="card fm-card team-group">
@@ -263,6 +288,18 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
         color: var(--ion-color-medium);
       }
 
+      .invites {
+        display: grid;
+        gap: 10px;
+      }
+
+      .invite-row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
       .team-group {
         padding: 8px 6px;
       }
@@ -338,6 +375,7 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
   ],
 })
 export class ProfileTalentComponent {
+  private readonly api = inject(ApiService);
   private readonly scouting = inject(ScoutingService);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastController);
@@ -348,9 +386,10 @@ export class ProfileTalentComponent {
   readonly talent = signal<PlayerProfile | null>(null);
   readonly loadingTalent = signal(true);
   readonly teams = signal<TeamMembership[]>([]);
-  readonly pendingInvites = signal(0);
+  readonly invites = signal<TeamInvite[]>([]);
   readonly documents = signal<IdentityDocument[]>([]);
   readonly busyKind = signal<IdentityDocumentKind | null>(null);
+  readonly busyInvite = signal<string | null>(null);
 
   readonly teamGroups = computed(() =>
     groupBySport(this.teams(), (team) => ({ key: team.sport_key, label: team.sport_label }), this.catalog()),
@@ -383,7 +422,7 @@ export class ProfileTalentComponent {
     this.scouting.teamMemberships().subscribe({
       next: (result) => {
         this.teams.set(result.teams);
-        this.pendingInvites.set(result.pending_invites);
+        this.invites.set(result.invites ?? []);
       },
     });
     this.scouting.documents().subscribe({ next: (rows) => this.documents.set(rows) });
@@ -456,6 +495,37 @@ export class ProfileTalentComponent {
 
   go(path: string): void {
     void this.router.navigateByUrl(path);
+  }
+
+  acceptInvite(invite: TeamInvite): void {
+    this.respondInvite(invite, 'accept');
+  }
+
+  declineInvite(invite: TeamInvite): void {
+    this.respondInvite(invite, 'decline');
+  }
+
+  private respondInvite(invite: TeamInvite, action: 'accept' | 'decline'): void {
+    if (this.busyInvite()) return;
+    this.busyInvite.set(invite.id);
+    const request =
+      action === 'accept'
+        ? this.api.acceptTeamPick(invite.competition, invite.id)
+        : this.api.declineTeamPick(invite.competition, invite.id);
+    request.subscribe({
+      next: async () => {
+        this.busyInvite.set(null);
+        this.refresh();
+        await this.toast(
+          action === 'accept' ? `You joined ${invite.team_name}.` : 'Invite declined.',
+          'success',
+        );
+      },
+      error: async (err: unknown) => {
+        this.busyInvite.set(null);
+        await this.toast(extractErrorMessage(err, 'Could not update that invite.'), 'danger');
+      },
+    });
   }
 
   visibilityLabel(value: string): string {

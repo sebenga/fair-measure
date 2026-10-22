@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
 import { RouterLink } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 
-import type { FixtureDetail, ScoringCategory } from '../../core/models';
+import type { FixtureDetail, MatchRating, ScoringCategory } from '../../core/models';
 
 type Moment = {
   id: string;
@@ -71,6 +71,18 @@ type Moment = {
       </ng-template>
     } @else {
       <div class="fm-empty compact"><p>No goals or cards yet.</p></div>
+    }
+
+    @if (ratings().length) {
+      <h3 class="fm-section-title">Match ratings</h3>
+      <ul class="fm-card rates">
+        @for (row of ratings(); track row.id) {
+          <li>
+            <span>{{ row.player_name }}</span>
+            <strong>{{ row.rating }}</strong>
+          </li>
+        }
+      </ul>
     }
 
     <h3 class="fm-section-title">Match info</h3>
@@ -183,6 +195,21 @@ type Moment = {
       .card[data-kind='red'] {
         background: #dc2626;
       }
+      .rates {
+        list-style: none;
+        margin: 0 16px 16px;
+        padding: 4px 16px;
+      }
+      .rates li {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 0;
+        font-size: 0.9rem;
+      }
+      .rates li + li {
+        border-top: 1px solid var(--ion-color-step-100, #eef0f2);
+      }
       .info {
         display: grid;
         grid-template-columns: max-content 1fr;
@@ -250,4 +277,8 @@ export class FixtureOverviewComponent {
       (a, b) => (a.minute ?? Number.MAX_SAFE_INTEGER) - (b.minute ?? Number.MAX_SAFE_INTEGER),
     );
   });
+
+  readonly ratings = computed<MatchRating[]>(() =>
+    [...(this.fixture().ratings ?? [])].sort((left, right) => Number(right.rating) - Number(left.rating)),
+  );
 }

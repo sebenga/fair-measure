@@ -22,7 +22,7 @@ import {
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
-import type { Competition } from '../../core/models';
+import type { Competition, TeamPick } from '../../core/models';
 import { CompetitionCardComponent } from '../../shared/competition-card.component';
 
 @Component({
@@ -69,6 +69,24 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
       </ion-refresher>
 
       <div class="page-body">
+        @for (invite of invites(); track invite.id) {
+          <div class="pick-banner">
+            <p>
+              <strong>{{ invite.team_name }}</strong> picked you in {{ invite.competition_name }}.
+            </p>
+            <ion-button size="small" (click)="acceptInvite(invite)" [disabled]="responding() === invite.id">
+              Accept
+            </ion-button>
+            <ion-button
+              size="small"
+              fill="outline"
+              (click)="declineInvite(invite)"
+              [disabled]="responding() === invite.id"
+            >
+              Decline
+            </ion-button>
+          </div>
+        }
         @if (loading()) {
           @for (placeholder of [1, 2, 3]; track placeholder) {
             <div class="fm-card">
@@ -150,6 +168,24 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
         position: relative;
         z-index: 1;
       }
+
+      .pick-banner {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin: 12px 16px 0;
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: color-mix(in srgb, var(--ion-color-primary) 12%, transparent);
+      }
+
+      .pick-banner p {
+        flex: 1 1 160px;
+        margin: 0;
+        font-size: 0.9rem;
+        line-height: 1.4;
+      }
     `,
   ],
 })
@@ -160,6 +196,8 @@ export class CompetitionListPage {
   private readonly toasts = inject(ToastController);
 
   readonly competitions = signal<Competition[]>([]);
+  readonly invites = signal<TeamPick[]>([]);
+  readonly responding = signal<string | null>(null);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly refreshedAt = signal(new Date());
@@ -183,6 +221,10 @@ export class CompetitionListPage {
         this.loading.set(false);
       },
     });
+    this.api.myPendingTeamPicks().subscribe({
+      next: (picks) => this.invites.set(picks),
+      error: () => this.invites.set([]),
+    });
   }
 
   refresh(event: RefresherCustomEvent): void {
@@ -193,6 +235,41 @@ export class CompetitionListPage {
         void event.target.complete();
       },
       error: () => void event.target.complete(),
+    });
+    this.api.myPendingTeamPicks().subscribe({
+      next: (picks) => this.invites.set(picks),
+    });
+  }
+
+  acceptInvite(invite: TeamPick): void {
+    this.respondInvite(invite, 'accept');
+  }
+
+  declineInvite(invite: TeamPick): void {
+    this.respondInvite(invite, 'decline');
+  }
+
+  private respondInvite(invite: TeamPick, action: 'accept' | 'decline'): void {
+    if (this.responding()) return;
+    this.responding.set(invite.id);
+    const request =
+      action === 'accept'
+        ? this.api.acceptTeamPick(invite.competition, invite.id)
+        : this.api.declineTeamPick(invite.competition, invite.id);
+    request.subscribe({
+      next: () => {
+        this.responding.set(null);
+        this.invites.update((rows) => rows.filter((row) => row.id !== invite.id));
+        this.load(false);
+        void this.toast(
+          action === 'accept' ? `You joined ${invite.team_name}.` : 'Invite declined.',
+          'success',
+        );
+      },
+      error: (err: unknown) => {
+        this.responding.set(null);
+        void this.toast(extractErrorMessage(err, 'Could not update that invite.'), 'danger');
+      },
     });
   }
 

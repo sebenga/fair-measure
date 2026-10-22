@@ -44,7 +44,7 @@ import type {
   ProfileSummary,
   ScoringCategory,
 } from '../../core/models';
-import { isPointsTable, isScoringLocked } from '../../core/models';
+import { isPointsTable, isScoringLocked, squadSizeOf, tableBonusOf } from '../../core/models';
 
 type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
 
@@ -112,7 +112,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
 
             @if (entrantKind() === 'team' && !isCombination()) {
               <p class="hint">
-                Choose how teams are filled. A team needs 14 players, and each player accepts before they count.
+                Choose how teams are filled. A team needs {{ squadSize() }} players, and each player accepts before they count.
               </p>
               <div class="entry-modes">
                 <button
@@ -194,9 +194,9 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   } @else if (entrantKind() === 'pair') {
                     Name the pair first. Open it and pick two profiles. Each person accepts before they are in.
                   } @else if (teamEntry() === 'draft') {
-                    Name each team. Players are drafted onto them, one pick at a time, until every team has 14.
+                    Name each team. Players are drafted onto them, one pick at a time, until every team has {{ squadSize() }}.
                   } @else {
-                    Name the team and select at least 14 profiles. They accept before they join.
+                    Name the team and select at least {{ squadSize() }} profiles. They accept before they join.
                   }
                 </p>
                 @if (teamEntry() === 'pick') {
@@ -205,7 +205,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                     [debounce]="150"
                     (ionInput)="profileQuery.set($any($event.detail.value) ?? '')"
                   />
-                  <p class="hint">{{ selectedProfileIds().length }} of 14 selected</p>
+                  <p class="hint">{{ selectedProfileIds().length }} of {{ squadSize() }} selected</p>
                   <ion-list class="profiles" lines="none">
                     @for (profile of visibleProfiles(); track profile.id) {
                       <ion-item>
@@ -274,7 +274,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
               } @else if (!board.teams.length) {
                 <p class="hint">Name the teams first, then draft profiles onto them.</p>
               } @else {
-                <p class="hint">Every team has 14 players drafted.</p>
+                <p class="hint">Every team has {{ squadSize() }} players drafted.</p>
               }
               <ion-list inset="true">
                 @for (team of board.teams; track team.id) {
@@ -338,7 +338,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                       <h2>{{ participant.name }}</h2>
                       <p>
                         @if (teamEntry() && participant.kind === 'team') {
-                          {{ participant.roster.length }} of 14 accepted
+                          {{ participant.roster.length }} of {{ squadSize() }} accepted
                           @if (participant.pending_count) {
                             · {{ participant.pending_count }} waiting
                           }
@@ -539,9 +539,113 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                 </ion-item>
               </ion-list>
               <ion-note class="footnote">
+                {{ leaguePointsNote() }}
                 Tie-breakers are applied in this order:
                 {{ pol.tiebreakers.join(', ') }}.
               </ion-note>
+            }
+            @if (!scoringLocked()) {
+              <h3 class="fm-section-title">Bonus points</h3>
+              <p class="hint">
+                Extra table points from scoring, or from winning or losing by a set margin.
+                Switch them off to keep the table as win, draw and loss only.
+              </p>
+              <ion-list inset="true">
+                <ion-item>
+                  <ion-toggle
+                    labelPlacement="start"
+                    justify="space-between"
+                    [checked]="bonusEnabled()"
+                    [disabled]="scoringLocked()"
+                    (ionChange)="setBonusEnabled($any($event).detail.checked)"
+                  >
+                    Award bonus points
+                  </ion-toggle>
+                </ion-item>
+                @if (bonusEnabled()) {
+                  <ion-item>
+                    <ion-select
+                      label="Scoring bonus counts"
+                      labelPlacement="stacked"
+                      interface="action-sheet"
+                      [value]="scoringBonusCode()"
+                      [disabled]="scoringLocked()"
+                      (ionChange)="scoringBonusCode.set($any($event).detail.value ?? ''); saveBonus()"
+                    >
+                      <ion-select-option value="">Match score</ion-select-option>
+                      @for (category of categories(); track category.id) {
+                        <ion-select-option [value]="category.code">{{ category.name }}</ion-select-option>
+                      }
+                    </ion-select>
+                  </ion-item>
+                  <ion-item>
+                    <ion-input
+                      label="Award when they reach"
+                      labelPlacement="stacked"
+                      type="number"
+                      inputmode="numeric"
+                      [value]="scoringBonusThreshold()"
+                      [readonly]="scoringLocked()"
+                      (ionBlur)="scoringBonusThreshold.set($any($event.target).value); saveBonus()"
+                    />
+                  </ion-item>
+                  <ion-item>
+                    <ion-input
+                      label="Scoring bonus points"
+                      labelPlacement="stacked"
+                      type="number"
+                      inputmode="decimal"
+                      [value]="scoringBonusPoints()"
+                      [readonly]="scoringLocked()"
+                      (ionBlur)="scoringBonusPoints.set($any($event.target).value); saveBonus()"
+                    />
+                  </ion-item>
+                  <ion-item>
+                    <ion-input
+                      label="Winning-margin bonus at"
+                      labelPlacement="stacked"
+                      type="number"
+                      inputmode="numeric"
+                      [value]="winBonusMargin()"
+                      [readonly]="scoringLocked()"
+                      (ionBlur)="winBonusMargin.set($any($event.target).value); saveBonus()"
+                    />
+                  </ion-item>
+                  <ion-item>
+                    <ion-input
+                      label="Winning-margin bonus points"
+                      labelPlacement="stacked"
+                      type="number"
+                      inputmode="decimal"
+                      [value]="winBonusPoints()"
+                      [readonly]="scoringLocked()"
+                      (ionBlur)="winBonusPoints.set($any($event.target).value); saveBonus()"
+                    />
+                  </ion-item>
+                  <ion-item>
+                    <ion-input
+                      label="Losing bonus within"
+                      labelPlacement="stacked"
+                      type="number"
+                      inputmode="numeric"
+                      [value]="lossBonusMargin()"
+                      [readonly]="scoringLocked()"
+                      (ionBlur)="lossBonusMargin.set($any($event.target).value); saveBonus()"
+                    />
+                  </ion-item>
+                  <ion-item>
+                    <ion-input
+                      label="Losing bonus points"
+                      labelPlacement="stacked"
+                      type="number"
+                      inputmode="decimal"
+                      [value]="lossBonusPoints()"
+                      [readonly]="scoringLocked()"
+                      (ionBlur)="lossBonusPoints.set($any($event.target).value); saveBonus()"
+                    />
+                  </ion-item>
+                }
+              </ion-list>
             }
             }
           }
@@ -550,8 +654,14 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
             @if (!pointsTable()) {
               <h3 class="fm-section-title">Generate fixtures</h3>
               <p class="hint">
-                This creates the whole schedule at once. Completed fixtures are never
-                touched, so it is safe to re-run after adding an entrant.
+                @if (competition()?.season_finished) {
+                  This season is finished. Generate a new season or a knockout here,
+                  or use the buttons on the competition page. Completed fixtures stay
+                  in the record.
+                } @else {
+                  This creates the whole schedule at once. Completed fixtures are never
+                  touched, so it is safe to re-run after adding an entrant.
+                }
               </p>
 
               <ion-list inset="true">
@@ -928,6 +1038,14 @@ export class CompetitionSetupPage implements OnInit {
   readonly memberships = signal<Membership[]>([]);
   readonly officialQuery = signal('');
   readonly policy = signal<PointsPolicy | null>(null);
+  readonly bonusEnabled = signal(false);
+  readonly scoringBonusCode = signal('');
+  readonly scoringBonusThreshold = signal('4');
+  readonly scoringBonusPoints = signal('1');
+  readonly winBonusMargin = signal('');
+  readonly winBonusPoints = signal('1');
+  readonly lossBonusMargin = signal('7');
+  readonly lossBonusPoints = signal('1');
   readonly loading = signal(true);
   readonly busy = signal(false);
   readonly error = signal<string | null>(null);
@@ -941,10 +1059,28 @@ export class CompetitionSetupPage implements OnInit {
     return competition ? isPointsTable(competition) : false;
   });
 
+  squadSize(): number {
+    const competition = this.competition();
+    return competition ? squadSizeOf(competition) : 14;
+  }
+
   readonly scoringLocked = computed(() => {
     const competition = this.competition();
     return competition ? isScoringLocked(competition) : false;
   });
+
+  leaguePointsNote(): string {
+    const raw = this.competition()?.settings_json?.['league_points'];
+    if (!raw || typeof raw !== 'object') return '';
+    const points = raw as Record<string, number>;
+    const parts: string[] = [];
+    if (points['win'] != null) parts.push(`a win is ${points['win']}`);
+    if (points['draw'] != null) parts.push(`a draw is ${points['draw']}`);
+    if (points['loss'] != null) parts.push(`a loss is ${points['loss']}`);
+    if (points['extra_time_win'] != null) parts.push(`a win in extra time is ${points['extra_time_win']}`);
+    if (points['penalty_win'] != null) parts.push(`a win on penalties is ${points['penalty_win']}`);
+    return parts.length ? `This variant awards ${parts.join(', ')}. ` : '';
+  }
 
   readonly visibleProfiles = computed(() => {
     const query = this.profileQuery().trim().toLowerCase();
@@ -1010,6 +1146,7 @@ export class CompetitionSetupPage implements OnInit {
         this.participants.set(competition.participants);
         this.categories.set(competition.scoring_categories);
         this.policy.set(competition.points_policy);
+        this.readBonus(competition);
         if (this.isCombination() && this.section() === 'entrants') this.loadHorses();
         if (isPointsTable(competition) && this.section() === 'schedule') {
           this.section.set('entrants');
@@ -1653,6 +1790,81 @@ export class CompetitionSetupPage implements OnInit {
       ],
     });
     await alert.present();
+  }
+
+  private readBonus(competition: CompetitionDetail): void {
+    const bonus = tableBonusOf(competition);
+    const policy = competition.points_policy;
+    const enabled =
+      bonus && 'enabled' in bonus
+        ? !!bonus.enabled
+        : policy.bonus_win_margin != null || policy.bonus_loss_margin != null;
+    this.bonusEnabled.set(enabled);
+    this.scoringBonusCode.set(bonus?.scoring_code ?? '');
+    this.scoringBonusThreshold.set(bonus?.scoring_threshold != null ? String(bonus.scoring_threshold) : '4');
+    this.scoringBonusPoints.set(bonus?.scoring_points != null ? String(bonus.scoring_points) : '1');
+    const winMargin = bonus?.win_margin ?? policy.bonus_win_margin;
+    const lossMargin = bonus?.loss_margin ?? policy.bonus_loss_margin;
+    this.winBonusMargin.set(winMargin != null ? String(winMargin) : '');
+    this.winBonusPoints.set(
+      bonus?.win_points != null ? String(bonus.win_points) : this.trim(policy.bonus_win_points) || '1',
+    );
+    this.lossBonusMargin.set(lossMargin != null ? String(lossMargin) : enabled ? '7' : '');
+    this.lossBonusPoints.set(
+      bonus?.loss_points != null ? String(bonus.loss_points) : this.trim(policy.bonus_loss_points) || '1',
+    );
+  }
+
+  setBonusEnabled(enabled: boolean): void {
+    this.bonusEnabled.set(enabled);
+    if (enabled && !this.scoringBonusCode()) {
+      this.scoringBonusCode.set(this.categories()[0]?.code ?? '');
+    }
+    this.saveBonus();
+  }
+
+  saveBonus(): void {
+    if (this.scoringLocked()) return;
+    const competition = this.competition();
+    if (!competition) return;
+    const enabled = this.bonusEnabled();
+    const winMargin = Number(this.winBonusMargin()) || null;
+    const winPoints = Number(this.winBonusPoints() || 0);
+    const lossMargin = Number(this.lossBonusMargin()) || null;
+    const lossPoints = Number(this.lossBonusPoints() || 0);
+    const tableBonus = enabled
+      ? {
+          enabled: true,
+          scoring_threshold: Number(this.scoringBonusThreshold()) || null,
+          scoring_points: Number(this.scoringBonusPoints() || 0),
+          scoring_code: this.scoringBonusCode(),
+          win_margin: winMargin,
+          win_points: winPoints,
+          loss_margin: lossMargin,
+          loss_points: lossPoints,
+        }
+      : { enabled: false };
+    const settings = { ...(competition.settings_json ?? {}), table_bonus: tableBonus };
+    this.api.updateCompetition(this.competitionId, { settings_json: settings }).subscribe({
+      next: (updated) => {
+        const settingsJson =
+          updated.settings_json && Object.keys(updated.settings_json).length
+            ? updated.settings_json
+            : settings;
+        this.competition.update((current) =>
+          current ? { ...current, settings_json: settingsJson } : current,
+        );
+        this.patchPolicy({
+          bonus_win_margin: enabled ? winMargin : null,
+          bonus_win_points: String(enabled ? winPoints : 0),
+          bonus_loss_margin: enabled ? lossMargin : null,
+          bonus_loss_points: String(enabled ? lossPoints : 0),
+        });
+      },
+      error: async (err: unknown) => {
+        await this.toast(extractErrorMessage(err, 'Could not save bonus points.'), 'danger');
+      },
+    });
   }
 
   patchPolicy(patch: Partial<PointsPolicy>): void {

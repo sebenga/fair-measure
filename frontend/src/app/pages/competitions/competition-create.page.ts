@@ -48,6 +48,14 @@ interface ScoringDraft {
   code: string;
 }
 
+interface FamilyCard {
+  key: string;
+  label: string;
+  icon?: string;
+  caption: string;
+  presets: Preset[];
+}
+
 const WEEKDAYS = [
   { value: 0, label: 'Mon' },
   { value: 1, label: 'Tue' },
@@ -218,26 +226,45 @@ function presetKind(preset: Preset): PresetKind {
                     (click)="toggleGroup(group.key)"
                   >
                     <span>{{ group.label }}</span>
-                    <span class="count">{{ group.presets.length }}</span>
+                    <span class="count">{{ familyCards(group.presets).length }}</span>
                     <ion-icon name="chevron-forward-outline" aria-hidden="true" />
                   </button>
                 }
                 @if (focused() || groupOpen(group.key)) {
                   <div class="presets fm-stagger">
-                    @for (preset of group.presets; track preset.key) {
+                    @for (card of familyCards(group.presets); track card.key) {
                       <button
                         type="button"
                         class="preset"
-                        [class.selected]="focused() && selectedPreset() === preset.key"
-                        [attr.aria-pressed]="focused() && selectedPreset() === preset.key"
-                        (click)="tapPreset(preset.key)"
+                        [class.selected]="familySelected(card)"
+                        [attr.aria-pressed]="familySelected(card)"
+                        (click)="tapFamily(card)"
                       >
-                        <ion-icon [name]="presetIcon(preset)" aria-hidden="true" />
-                        <span>{{ preset.label }}</span>
-                        <small>{{ formatShort(preset.format) }}</small>
+                        <ion-icon [name]="presetIcon(card.presets[0])" aria-hidden="true" />
+                        <span>{{ card.label }}</span>
+                        <small>{{ card.caption }}</small>
                       </button>
-                    @if (focused() && selectedPreset() === preset.key) {
-                      <div class="inline-scoring"><ng-container *ngTemplateOutlet="scoringPanel" /></div>
+                    @if (familySelected(card)) {
+                      <div class="inline-scoring">
+                        @if (card.presets.length > 1) {
+                          <div class="variant-chips">
+                            @for (preset of card.presets; track preset.key) {
+                              <button
+                                type="button"
+                                class="chip"
+                                [class.selected]="selectedPreset() === preset.key"
+                                (click)="selectVariant(preset.key, $event)"
+                              >
+                                {{ preset.variant_label || preset.label }}
+                              </button>
+                            }
+                          </div>
+                          @if (activePreset()?.description; as summary) {
+                            <p class="variant-summary">{{ firstSentence(summary) }}</p>
+                          }
+                        }
+                        <ng-container *ngTemplateOutlet="scoringPanel" />
+                      </div>
                     }
                     }
                   </div>
@@ -524,6 +551,129 @@ function presetKind(preset: Preset): PresetKind {
                   </ion-item>
                 </ion-list>
 
+                <h3 class="fm-section-title">Bonus points</h3>
+                <p class="hint">
+                  Extra table points from how the match was scored, or from the winning or losing
+                  margin. Switch them off to keep the table as win, draw and loss only.
+                </p>
+                <div class="formats">
+                  <button
+                    type="button"
+                    class="format"
+                    [class.selected]="bonusEnabled()"
+                    (click)="setBonusEnabled(true)"
+                  >
+                    <ion-icon name="sparkles-outline" aria-hidden="true" />
+                    <div>
+                      <strong>Include bonus points</strong>
+                      <p>The table also adds bonus points from scoring and from close or wide results.</p>
+                    </div>
+                    @if (bonusEnabled()) {
+                      <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                    }
+                  </button>
+                  <button
+                    type="button"
+                    class="format"
+                    [class.selected]="!bonusEnabled()"
+                    (click)="setBonusEnabled(false)"
+                  >
+                    <ion-icon name="remove-circle-outline" aria-hidden="true" />
+                    <div>
+                      <strong>No bonus points</strong>
+                      <p>The table only uses the win, draw and loss points above.</p>
+                    </div>
+                    @if (!bonusEnabled()) {
+                      <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                    }
+                  </button>
+                </div>
+
+                @if (bonusEnabled()) {
+                  <ion-list inset="true">
+                    <ion-item>
+                      <ion-select
+                        label="Scoring bonus counts"
+                        labelPlacement="stacked"
+                        interface="action-sheet"
+                        [value]="scoringBonusCode()"
+                        (ionChange)="scoringBonusCode.set(stringValue($event))"
+                      >
+                        <ion-select-option value="">Match score</ion-select-option>
+                        @for (row of namedDrafts(); track row.key) {
+                          <ion-select-option [value]="row.code || row.name.trim()">
+                            {{ row.name.trim() }}
+                          </ion-select-option>
+                        }
+                      </ion-select>
+                    </ion-item>
+                    <ion-item>
+                      <ion-input
+                        label="Award when they reach"
+                        labelPlacement="stacked"
+                        type="number"
+                        inputmode="numeric"
+                        [value]="scoringBonusThreshold()"
+                        (ionInput)="scoringBonusThreshold.set(stringValue($event))"
+                      />
+                    </ion-item>
+                    <ion-item>
+                      <ion-input
+                        label="Scoring bonus points"
+                        labelPlacement="stacked"
+                        type="number"
+                        inputmode="decimal"
+                        [value]="scoringBonusPoints()"
+                        (ionInput)="scoringBonusPoints.set(stringValue($event))"
+                      />
+                    </ion-item>
+                    <ion-item>
+                      <ion-input
+                        label="Winning-margin bonus at"
+                        labelPlacement="stacked"
+                        type="number"
+                        inputmode="numeric"
+                        [value]="winBonusMargin()"
+                        (ionInput)="winBonusMargin.set(stringValue($event))"
+                      />
+                    </ion-item>
+                    <ion-item>
+                      <ion-input
+                        label="Winning-margin bonus points"
+                        labelPlacement="stacked"
+                        type="number"
+                        inputmode="decimal"
+                        [value]="winBonusPoints()"
+                        (ionInput)="winBonusPoints.set(stringValue($event))"
+                      />
+                    </ion-item>
+                    <ion-item>
+                      <ion-input
+                        label="Losing bonus within"
+                        labelPlacement="stacked"
+                        type="number"
+                        inputmode="numeric"
+                        [value]="lossBonusMargin()"
+                        (ionInput)="lossBonusMargin.set(stringValue($event))"
+                      />
+                    </ion-item>
+                    <ion-item>
+                      <ion-input
+                        label="Losing bonus points"
+                        labelPlacement="stacked"
+                        type="number"
+                        inputmode="decimal"
+                        [value]="lossBonusPoints()"
+                        (ionInput)="lossBonusPoints.set(stringValue($event))"
+                      />
+                    </ion-item>
+                  </ion-list>
+                  <p class="hint">
+                    Leave a threshold blank to skip that bonus. Scoring bonus uses the count of the
+                    chosen criterion, or the match total when “Match score” is selected.
+                  </p>
+                }
+
                 <h3 class="fm-section-title">Format</h3>
                 <div class="formats">
                   @for (option of versusFormats; track option.value) {
@@ -531,7 +681,7 @@ function presetKind(preset: Preset): PresetKind {
                       type="button"
                       class="format"
                       [class.selected]="form.controls.format.value === option.value"
-                      (click)="form.controls.format.setValue(option.value)"
+                      (click)="chooseFormat(option.value)"
                     >
                       <ion-icon [name]="option.icon" aria-hidden="true" />
                       <div>
@@ -544,6 +694,10 @@ function presetKind(preset: Preset): PresetKind {
                     </button>
                   }
                 </div>
+                <p class="hint">
+                  Each match keeps a timeline: who scored, who was booked, and at which minute.
+                  Yellow and red cards sit next to your scoring criteria. Rate players during the match.
+                </p>
               }
             } @else if (scoringLocked()) {
               <p class="hint">{{ lockedStructureHint() }}</p>
@@ -571,7 +725,7 @@ function presetKind(preset: Preset): PresetKind {
                     type="button"
                     class="format"
                     [class.selected]="form.controls.format.value === option.value"
-                    (click)="form.controls.format.setValue(option.value)"
+                    (click)="chooseFormat(option.value)"
                   >
                     <ion-icon [name]="option.icon" aria-hidden="true" />
                     <div>
@@ -750,6 +904,10 @@ function presetKind(preset: Preset): PresetKind {
                       Win {{ winPoints() || 0 }} · Draw {{ drawPoints() || 0 }} · Loss {{ lossPoints() || 0 }}
                     </dd>
                   </div>
+                  <div>
+                    <dt>Bonus points</dt>
+                    <dd>{{ bonusSummary() }}</dd>
+                  </div>
                 }
                 <div>
                   <dt>Visibility</dt>
@@ -853,6 +1011,14 @@ export class CompetitionCreatePage implements OnInit {
   readonly drawPoints = signal('1');
   readonly lossPoints = signal('0');
   readonly versusEntrants = signal<'team' | 'individual'>('team');
+  readonly bonusEnabled = signal(false);
+  readonly scoringBonusCode = signal('');
+  readonly scoringBonusThreshold = signal('4');
+  readonly scoringBonusPoints = signal('1');
+  readonly winBonusMargin = signal('');
+  readonly winBonusPoints = signal('1');
+  readonly lossBonusMargin = signal('7');
+  readonly lossBonusPoints = signal('1');
 
   readonly presets = signal<Preset[]>([]);
   readonly selectedPreset = signal<string>('custom');
@@ -881,7 +1047,9 @@ export class CompetitionCreatePage implements OnInit {
       return (
         preset.label.toLowerCase().includes(query) ||
         preset.sport.toLowerCase().includes(query) ||
-        (preset.group_label ?? '').toLowerCase().includes(query)
+        (preset.group_label ?? '').toLowerCase().includes(query) ||
+        (preset.family_label ?? '').toLowerCase().includes(query) ||
+        (preset.variant_label ?? '').toLowerCase().includes(query)
       );
     });
     const order = ['ball', 'racket', 'golf', 'target', 'board', 'equestrian', 'olympic', 'winter'];
@@ -1008,6 +1176,51 @@ export class CompetitionCreatePage implements OnInit {
     this.form.controls.match_weekdays.setValue([]);
   }
 
+  setBonusEnabled(enabled: boolean): void {
+    this.bonusEnabled.set(enabled);
+    if (!enabled) return;
+    if (!this.scoringBonusCode()) {
+      const first = this.namedDrafts()[0];
+      this.scoringBonusCode.set(first ? first.code || first.name.trim() : '');
+    }
+  }
+
+  bonusSummary(): string {
+    if (!this.bonusEnabled()) return 'Off';
+    const parts: string[] = [];
+    if (this.scoringBonusThreshold()) {
+      const of = this.scoringBonusLabel();
+      parts.push(`+${this.scoringBonusPoints() || 0} for ${this.scoringBonusThreshold()}+ ${of}`);
+    }
+    if (this.winBonusMargin()) {
+      parts.push(`+${this.winBonusPoints() || 0} winning by ${this.winBonusMargin()}`);
+    }
+    if (this.lossBonusMargin()) {
+      parts.push(`+${this.lossBonusPoints() || 0} losing by ${this.lossBonusMargin()}`);
+    }
+    return parts.length ? parts.join(' · ') : 'On, no thresholds set';
+  }
+
+  private scoringBonusLabel(): string {
+    const code = this.scoringBonusCode();
+    if (!code) return 'match score';
+    return this.namedDrafts().find((row) => (row.code || row.name.trim()) === code)?.name.trim() || code;
+  }
+
+  private tableBonusPayload(): Record<string, unknown> {
+    if (!this.bonusEnabled()) return { enabled: false };
+    return {
+      enabled: true,
+      scoring_threshold: Number(this.scoringBonusThreshold()) || null,
+      scoring_points: Number(this.scoringBonusPoints() || 0),
+      scoring_code: this.scoringBonusCode(),
+      win_margin: Number(this.winBonusMargin()) || null,
+      win_points: Number(this.winBonusPoints() || 0),
+      loss_margin: Number(this.lossBonusMargin()) || null,
+      loss_points: Number(this.lossBonusPoints() || 0),
+    };
+  }
+
   formatHint(): string {
     if (this.isCustom()) {
       return this.pointsTable()
@@ -1078,8 +1291,80 @@ export class CompetitionCreatePage implements OnInit {
     if (!this.focused()) return this.sportGroups();
     const chosen = this.sportPresets().find((preset) => preset.key === this.selectedPreset());
     if (!chosen) return [];
-    return [{ key: chosen.group || 'other', label: chosen.group_label || 'Other', presets: [chosen] }];
+    const members = chosen.family
+      ? this.sportPresets().filter((preset) => preset.family === chosen.family)
+      : [chosen];
+    return [{ key: chosen.group || 'other', label: chosen.group_label || 'Other', presets: members }];
   });
+
+  familyCards(presets: Preset[]): FamilyCard[] {
+    const families = new Map<string, Preset[]>();
+    const singles: Preset[] = [];
+    for (const preset of presets) {
+      if (preset.family) {
+        const members = families.get(preset.family) ?? [];
+        members.push(preset);
+        families.set(preset.family, members);
+      } else {
+        singles.push(preset);
+      }
+    }
+    const cards: FamilyCard[] = [];
+    for (const [family, members] of families) {
+      const head = this.familyHead(members);
+      cards.push({
+        key: family,
+        label: head.family_label || head.label,
+        icon: head.icon,
+        caption: members.length === 1 ? this.presetSide(head) : `${members.length} codes`,
+        presets: members,
+      });
+    }
+    for (const preset of singles) {
+      cards.push({
+        key: preset.key,
+        label: preset.label,
+        icon: preset.icon,
+        caption: this.presetSide(preset),
+        presets: [preset],
+      });
+    }
+    return cards;
+  }
+
+  familySelected(card: FamilyCard): boolean {
+    return this.focused() && card.presets.some((preset) => preset.key === this.selectedPreset());
+  }
+
+  tapFamily(card: FamilyCard): void {
+    if (this.familySelected(card)) {
+      this.focused.set(false);
+      return;
+    }
+    const current = card.presets.find((preset) => preset.key === this.selectedPreset());
+    this.selectPreset((current ?? this.familyHead(card.presets)).key);
+    this.focused.set(true);
+    void this.content()?.scrollToTop(250);
+  }
+
+  selectVariant(key: string, event: Event): void {
+    event.stopPropagation();
+    this.selectPreset(key);
+    this.focused.set(true);
+  }
+
+  firstSentence(text: string): string {
+    const match = text.match(/^[^.!?]+[.!?]?/);
+    return (match?.[0] ?? text).trim();
+  }
+
+  private familyHead(members: Preset[]): Preset {
+    return (
+      members.find((preset) =>
+        ['association', 'fifteens', 'thirteens'].includes(preset.variant ?? ''),
+      ) ?? members[0]
+    );
+  }
 
   tapPreset(key: string): void {
     if (this.focused() && key === this.selectedPreset()) {
@@ -1131,6 +1416,46 @@ export class CompetitionCreatePage implements OnInit {
 
   formatShort(format: string): string {
     return this.formats.find((option) => option.value === format)?.label ?? format;
+  }
+
+  presetSide(preset: Preset): string {
+    const starters = preset.team_sheet?.starters;
+    if (starters === 1) return '1 player';
+    if (starters && starters > 0) return `${starters}-a-side`;
+    return this.formatShort(preset.format);
+  }
+
+  chooseFormat(value: CompetitionFormat): void {
+    this.form.controls.format.setValue(value);
+    if (value !== 'freeform') {
+      this.ensureMatchEventDrafts();
+    }
+  }
+
+  /** VS matches record who scored or was booked, so those event types stay on the sheet. */
+  private ensureMatchEventDrafts(): void {
+    const have = new Set(
+      this.scoringDrafts().map((row) => (row.code || row.name).trim().toLowerCase()),
+    );
+    const extras: Array<Partial<ScoringDraft>> = [
+      {
+        name: 'Yellow card',
+        code: 'yellow-card',
+        points: '0',
+        affects_score: false,
+        description: 'A booking. Shown on the match timeline with the minute and the player.',
+      },
+      {
+        name: 'Red card',
+        code: 'red-card',
+        points: '0',
+        affects_score: false,
+        description: 'A sending-off. Shown on the match timeline with the minute and the player.',
+      },
+    ];
+    const add = extras.filter((row) => !have.has((row.code || row.name || '').toLowerCase()));
+    if (!add.length) return;
+    this.scoringDrafts.update((rows) => [...rows, ...add.map((row) => this.blankDraft(row))]);
   }
 
   private ensureCompatibleFormat(): void {
@@ -1262,6 +1587,9 @@ export class CompetitionCreatePage implements OnInit {
     const raw = this.form.getRawValue();
     const preset = this.selectedPreset();
     const locked = this.scoringLocked();
+    if (!this.pointsTable() && raw.format !== 'freeform') {
+      this.ensureMatchEventDrafts();
+    }
     const scoring_categories = this.namedDrafts().map((row) => ({
       name: row.name.trim(),
       description: row.description.trim(),
@@ -1286,6 +1614,7 @@ export class CompetitionCreatePage implements OnInit {
                 draw: Number(this.drawPoints() || 0),
                 loss: Number(this.lossPoints() || 0),
               },
+              table_bonus: this.tableBonusPayload(),
             }
           : {}),
         is_private: raw.is_private,

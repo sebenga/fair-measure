@@ -24,9 +24,10 @@ import {
 
 import { ApiService } from '../../../core/api.service';
 import { extractErrorMessage } from '../../../core/error-message';
-import type { CompetitionDetail, Fixture, FixtureHighlight } from '../../../core/models';
+import type { CompetitionDetail, Fixture, FixtureHighlight, MatchRating } from '../../../core/models';
 import { RealtimeService } from '../../../core/realtime.service';
 import { ResultsService } from '../../../core/results.service';
+import { KnockoutTreeComponent } from './knockout-tree.component';
 
 type Filter = 'upcoming' | 'results' | 'all';
 
@@ -49,6 +50,7 @@ interface FixtureGroup {
     IonSegment,
     IonSegmentButton,
     IonLabel,
+    KnockoutTreeComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -69,25 +71,10 @@ interface FixtureGroup {
       </ion-segment>
     </div>
 
-    @if (competition().format === 'knockout' && bracket().length) {
-      <section class="bracket">
-        <h3 class="fm-section-title">Bracket</h3>
-        @for (round of bracket(); track round.round) {
-          <div class="round">
-            <p class="round-label">Round {{ round.round }}</p>
-            @for (fixture of round.fixtures; track fixture.id) {
-              <button type="button" class="tie" (click)="openFixture(fixture)">
-                @for (side of fixture.sides; track side.id) {
-                  <span [class.winner]="side.outcome === 'win'">
-                    {{ side.participant.short_name || side.participant.name }}
-                    <strong>{{ trim(side.score) }}</strong>
-                  </span>
-                }
-              </button>
-            }
-          </div>
-        }
-      </section>
+    @if (structureLayout(); as layout) {
+      @if (fixtures().length) {
+        <fm-knockout-tree [fixtures]="fixtures()" [layout]="layout" (select)="openFixture($event)" />
+      }
     }
 
     @if (loading()) {
@@ -109,7 +96,7 @@ interface FixtureGroup {
         <p>{{ error() }}</p>
         <ion-button fill="clear" (click)="load()">Try again</ion-button>
       </div>
-    } @else if (groups().length === 0) {
+    } @else if (groups().length === 0 && !(structureLayout() && fixtures().length)) {
       <div class="fm-empty">
         <ion-icon name="calendar-outline" aria-hidden="true" />
         <h3>{{ emptyTitle() }}</h3>
@@ -206,6 +193,15 @@ interface FixtureGroup {
                   }
                 }
               }
+              @if (ratingsFor(fixture); as rates) {
+                @if (rates.length) {
+                  <p class="rates">
+                    @for (row of rates; track row.id) {
+                      <span>{{ row.player_name }} {{ row.rating }}</span>
+                    }
+                  </p>
+                }
+              }
             </div>
 
             <ion-icon name="chevron-forward-outline" class="chevron" aria-hidden="true" />
@@ -245,34 +241,6 @@ interface FixtureGroup {
 
       .filter {
         padding: 12px 16px 4px;
-      }
-
-      .bracket {
-        padding: 4px 16px 8px;
-      }
-
-      .round-label {
-        margin: 8px 0 4px;
-        color: var(--ion-color-medium);
-        font-size: 0.8rem;
-      }
-
-      .tie {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        width: 100%;
-        margin: 0 0 8px;
-        padding: 10px 12px;
-        border: 0;
-        border-radius: 12px;
-        background: var(--fm-surface, var(--ion-color-light));
-        color: inherit;
-        text-align: left;
-      }
-
-      .tie .winner {
-        font-weight: 700;
       }
 
       .skeleton-card {
@@ -472,6 +440,15 @@ interface FixtureGroup {
         color: var(--ion-color-medium);
       }
 
+      .rates {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+        margin: 4px 6px 0;
+        font-size: 0.72rem;
+        color: var(--ion-color-medium);
+      }
+
       @keyframes moment-in {
         from {
           background: rgba(var(--ion-color-success-rgb, 45, 211, 111), 0.35);
@@ -505,18 +482,17 @@ export class CompetitionFixturesComponent implements OnInit {
   private lastScores = new Map<string, string>();
   private bumpTimer: ReturnType<typeof setTimeout> | undefined;
 
-  readonly bracket = computed(() => {
-    const rounds = new Map<number, Fixture[]>();
-    for (const fixture of this.fixtures()) {
-      const round = fixture.round_number ?? 1;
-      const list = rounds.get(round) ?? [];
-      list.push(fixture);
-      rounds.set(round, list);
-    }
-    return [...rounds.entries()]
-      .sort((left, right) => left[0] - right[0])
-      .map(([round, fixtures]) => ({ round, fixtures }));
-  });
+  isKnockout(): boolean {
+    return this.competition().format === 'knockout';
+  }
+
+  structureLayout(): 'bracket' | 'rounds' | null {
+    if (this.resultType()) return null;
+    const format = this.competition().format;
+    if (format === 'knockout') return 'bracket';
+    if (format === 'league' || format === 'ladder' || format === 'group_knockout') return 'rounds';
+    return null;
+  }
 
   readonly groups = computed<FixtureGroup[]>(() => {
     const filtered = this.fixtures().filter((fixture) => this.matchesFilter(fixture));
@@ -544,6 +520,7 @@ export class CompetitionFixturesComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    if (this.isKnockout()) this.filter.set('all');
     this.load();
 
     this.realtime
@@ -647,6 +624,12 @@ export class CompetitionFixturesComponent implements OnInit {
 
   isGoal(moment: FixtureHighlight): boolean {
     return moment.kind === 'own_goal' || moment.label.trim().toLowerCase() === 'goal';
+  }
+
+  ratingsFor(fixture: Fixture): MatchRating[] {
+    return [...(fixture.ratings ?? [])]
+      .sort((left, right) => Number(right.rating) - Number(left.rating))
+      .slice(0, 3);
   }
 
   showScores(fixture: Fixture): boolean {

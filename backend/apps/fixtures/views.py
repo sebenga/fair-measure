@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.competitions.models import Competition, Membership, Stage
-from apps.competitions.serializers import MIN_TEAM_PLAYERS, team_entry_mode
+from apps.competitions.serializers import squad_size_for, team_entry_mode
 from apps.competitions.views import visible_competitions
 from apps.core.bus import (
     Queues,
@@ -173,7 +173,13 @@ class FixtureViewSet(viewsets.ModelViewSet):
         queryset = (
             Fixture.objects.filter(competition=self.get_competition())
             .select_related("stage")
-            .prefetch_related("sides__participant", "events__scoring_category")
+            .prefetch_related(
+                "sides__participant",
+                "sides__lineup__entries",
+                "referees",
+                "events__scoring_category",
+                "ratings__player",
+            )
         )
         params = self.request.query_params
         if participant_id := params.get("participant"):
@@ -276,15 +282,16 @@ class FixtureViewSet(viewsets.ModelViewSet):
             )
 
         if team_entry_mode(competition) in {"pick", "draft"}:
+            needed = squad_size_for(competition)
             short = [
                 participant.name
                 for participant in participants
-                if participant.roster.filter(is_active=True).count() < MIN_TEAM_PLAYERS
+                if participant.roster.filter(is_active=True).count() < needed
             ]
             if short:
                 names = ", ".join(short)
                 raise ValidationError(
-                    f"Each team needs {MIN_TEAM_PLAYERS} accepted players before a schedule. Still short: {names}."
+                    f"Each team needs {needed} accepted players before a schedule. Still short: {names}."
                 )
 
         stage = None
@@ -407,6 +414,14 @@ class FixtureViewSet(viewsets.ModelViewSet):
             from apps.social.live import publish_full_time
 
             publish_full_time(fixture)
+            from apps.competitions.season import maybe_finish_competition
+
+            if maybe_finish_competition(fixture.competition):
+                publish_event(
+                    "competition.updated",
+                    {"competition_id": str(fixture.competition_id)},
+                    [competition_room(fixture.competition_id)],
+                )
         return Response(FixtureDetailSerializer(fixture).data)
 
 

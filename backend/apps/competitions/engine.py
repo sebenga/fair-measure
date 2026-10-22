@@ -41,7 +41,7 @@ def expand_units(structure: list[dict] | None) -> list[dict]:
                     "minutes": block.get("minutes"),
                     "affects_total": bool(block.get("affects_total", True)),
                     "resolves_draw": bool(block.get("resolves_draw", False)),
-                    "extra": bool(block.get("extra", False)),
+                    "extra": _is_extra_block(block, name),
                     "golden": bool(block.get("golden", False)),
                     "first_to": block.get("first_to"),
                     "win_by": int(block.get("win_by") or 1),
@@ -56,6 +56,24 @@ def expand_units(structure: list[dict] | None) -> list[dict]:
                 }
             )
     return slots
+
+
+# Periods that decide a level game. Named from the structure, not a sport.
+_EXTRA_UNITS = frozenset(
+    {
+        "sudden_death",
+        "overtime",
+        "penalties",
+        "kicking",
+        "shootout",
+    }
+)
+
+
+def _is_extra_block(block: dict, name: str) -> bool:
+    if "extra" in block:
+        return bool(block.get("extra"))
+    return name.startswith("extra_") or name in _EXTRA_UNITS or bool(block.get("resolves_draw"))
 
 
 def score_rules(settings: dict | None) -> dict[str, dict]:

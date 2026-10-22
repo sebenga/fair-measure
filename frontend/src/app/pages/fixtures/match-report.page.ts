@@ -475,8 +475,14 @@ interface ReportDraft {
       .lineups,
       .pair-sections {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        grid-template-columns: minmax(0, 1fr);
         gap: 16px;
+      }
+      @media (min-width: 720px) {
+        .lineups,
+        .pair-sections {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
       }
       .lineups ol,
       .lineups ul,

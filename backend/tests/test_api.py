@@ -328,7 +328,14 @@ def test_a_team_is_named_then_a_player_accepts_the_pick(api, user, other_user):
     offered = api.post(picks_url, {"user": str(other_user.id)}, format="json")
     assert offered.status_code == 201
     assert offered.data["status"] == "pending"
+    assert offered.data["competition"] == competition_id
     assert team_roster(api, competition_id, team.data["id"]) == []
+
+    waiting_inbox = APIClient()
+    waiting_inbox.force_authenticate(user=other_user)
+    inbox = waiting_inbox.get("/api/v1/me/team-picks")
+    assert inbox.status_code == 200
+    assert [row["team_name"] for row in inbox.data] == ["Northside"]
 
     waiting = api.post(picks_url, {"user": str(second.id)}, format="json")
     assert waiting.status_code == 201
@@ -395,6 +402,7 @@ def test_a_team_is_named_then_a_player_accepts_the_pick(api, user, other_user):
     mine = member.get(f"/api/v1/competitions/{competition_id}/picks")
     assert mine.status_code == 200
     assert mine.data == []
+    assert member.get("/api/v1/me/team-picks").data == []
 
 
 def team_roster(api, competition_id, participant_id) -> list[str]:
@@ -527,6 +535,24 @@ def test_presets_include_kind_and_category_descriptions(anon_api):
     assert by_key["padel"]["match_structure"] == by_key["tennis"]["match_structure"]
     assert by_key["soccer"]["group"] == "ball"
     assert by_key["soccer"]["group_label"] == "Ball sports"
+    assert by_key["futsal"]["group"] == "ball"
+    assert by_key["futsal"]["family"] == "football"
+    assert by_key["futsal"]["variant"] == "futsal"
+    assert by_key["futsal"]["team_sheet"]["starters"] == 5
+    assert by_key["futsal"]["team_sheet"]["min_squad"] == 5
+    assert by_key["soccer"]["family"] == "football"
+    assert by_key["soccer"]["variant"] == "association"
+    assert by_key["soccer_women"]["category"] == "women"
+    assert by_key["rugby_union"]["family"] == "rugby_union"
+    assert by_key["rugby_union"]["variant"] == "fifteens"
+    assert by_key["rugby_union"]["league_points"]["win"] == 4
+    assert by_key["rugby_league"]["league_points"]["win"] == 2
+    assert by_key["rugby_sevens"]["family"] == "rugby_union"
+    assert by_key["beach_soccer"]["league_points"]["penalty_win"] == 1
+    assert by_key["walking_football"]["locked"] is False
+    assert by_key["arena_soccer"]["locked"] is False
+    assert by_key["freestyle_football"]["locked"] is False
+    assert by_key["freestyle_football"]["participant_type"] == "individual"
     assert by_key["swimming"]["group"] == "olympic"
     assert by_key["ice_hockey"]["group"] == "winter"
     assert by_key["tennis"]["group"] == "racket"
@@ -732,7 +758,7 @@ def test_a_custom_vs_competition_uses_the_win_draw_loss_points_it_sets(api):
     assert detail["points_policy"]["draw_points"] == "1.00"
     assert detail["points_policy"]["loss_points"] == "0.00"
 
-    leg = competition.scoring_categories.get()
+    leg = competition.scoring_categories.get(code="leg")
     home = Participant.objects.create(competition=competition, name="Ada")
     away = Participant.objects.create(competition=competition, name="Bo")
     fixture = Fixture.objects.create(competition=competition, status=Fixture.Status.COMPLETED)
@@ -745,6 +771,71 @@ def test_a_custom_vs_competition_uses_the_win_draw_loss_points_it_sets(api):
     table = api.get(f"/api/v1/competitions/{competition.id}/standings?refresh=true")
     points = {row["participant"]["name"]: Decimal(row["points"]) for row in table.data["rows"]}
     assert points == {"Ada": Decimal("2"), "Bo": Decimal("0")}
+
+    with_bonus = api.post(
+        "/api/v1/competitions",
+        {
+            "name": "Office rugby night",
+            "preset": "custom",
+            "scoring_basis": "results",
+            "format": "league",
+            "league_points": {"win": 4, "draw": 2, "loss": 0},
+            "table_bonus": {
+                "enabled": True,
+                "scoring_threshold": 4,
+                "scoring_points": 1,
+                "scoring_code": "Try",
+                "loss_margin": 7,
+                "loss_points": 1,
+            },
+            "scoring_categories": [{"name": "Try", "points": "5"}],
+        },
+        format="json",
+    )
+    assert with_bonus.status_code == 201, with_bonus.data
+    bonus_comp = Competition.objects.get(pk=with_bonus.data["id"])
+    assert bonus_comp.settings_json["table_bonus"]["enabled"] is True
+    assert bonus_comp.settings_json["table_bonus"]["scoring_code"] == "try"
+    assert bonus_comp.points_policy.bonus_loss_margin == 7
+    assert Decimal(str(bonus_comp.points_policy.bonus_loss_points)) == Decimal("1")
+
+    try_cat = bonus_comp.scoring_categories.get(code="try")
+    home = Participant.objects.create(competition=bonus_comp, name="Reds")
+    away = Participant.objects.create(competition=bonus_comp, name="Blues")
+    fixture = Fixture.objects.create(competition=bonus_comp, status=Fixture.Status.COMPLETED)
+    home_side = FixtureSide.objects.create(fixture=fixture, participant=home, position=0)
+    away_side = FixtureSide.objects.create(fixture=fixture, participant=away, position=1)
+    ScoreEvent.objects.create(fixture=fixture, side=home_side, scoring_category=try_cat, quantity=4)
+    ScoreEvent.objects.create(fixture=fixture, side=away_side, scoring_category=try_cat, quantity=3)
+    fixture.recalculate_scores()
+
+    bonus_table = api.get(f"/api/v1/competitions/{bonus_comp.id}/standings?refresh=true")
+    bonus_points = {
+        row["participant"]["name"]: (
+            Decimal(row["points"]),
+            Decimal(row["bonus_points"]),
+        )
+        for row in bonus_table.data["rows"]
+    }
+    # Reds: 4 for the win + 1 scoring bonus (4 tries). Blues: 1 losing bonus (lost by 5).
+    assert bonus_points["Reds"] == (Decimal("5"), Decimal("1"))
+    assert bonus_points["Blues"] == (Decimal("1"), Decimal("1"))
+
+    switched_off = api.post(
+        "/api/v1/competitions",
+        {
+            "name": "Office rugby, no bonus",
+            "preset": "custom",
+            "scoring_basis": "results",
+            "table_bonus": {"enabled": False, "scoring_threshold": 4, "scoring_points": 1},
+            "scoring_categories": [{"name": "Try", "points": "5"}],
+        },
+        format="json",
+    )
+    assert switched_off.status_code == 201, switched_off.data
+    off = Competition.objects.get(pk=switched_off.data["id"])
+    assert off.settings_json["table_bonus"]["enabled"] is False
+    assert off.points_policy.bonus_loss_margin is None
 
     singles = api.post(
         "/api/v1/competitions",
@@ -795,6 +886,160 @@ def test_a_custom_vs_competition_uses_the_win_draw_loss_points_it_sets(api):
     still = Competition.objects.get(pk=accumulation.data["id"])
     assert still.format == "freeform"
     assert still.settings_json["table_mode"] == "points"
+
+
+def test_custom_league_records_match_events_with_time_and_player(api):
+    from apps.competitions.models import Participant, RosterMember
+    from apps.fixtures.models import FixtureSide, PlayerMatchRating
+
+    created = api.post(
+        "/api/v1/competitions",
+        {
+            "name": "League night",
+            "preset": "custom",
+            "scoring_basis": "results",
+            "format": "league",
+            "scoring_categories": [{"name": "Test1", "points": "1"}],
+        },
+        format="json",
+    )
+    assert created.status_code == 201, created.data
+    competition_id = created.data["id"]
+    detail = api.get(f"/api/v1/competitions/{competition_id}").data
+    codes = {item["code"]: item for item in detail["scoring_categories"]}
+    assert "test1" in codes
+    assert "yellow-card" in codes
+    assert "red-card" in codes
+    assert detail["settings_json"]["time_limit_minutes"] == 90
+
+    home = Participant.objects.create(
+        competition_id=competition_id, name="Lions", kind="team"
+    )
+    away = Participant.objects.create(
+        competition_id=competition_id, name="Sharks", kind="team"
+    )
+    scorer = RosterMember.objects.create(participant=home, name="Lebo Maseko", number=9)
+    booked = RosterMember.objects.create(participant=away, name="Sipho Dlamini", number=11)
+    fixture = Fixture.objects.create(
+        competition_id=competition_id, status=Fixture.Status.LIVE, label="Round 1"
+    )
+    home_side = FixtureSide.objects.create(fixture=fixture, participant=home, position=0)
+    away_side = FixtureSide.objects.create(fixture=fixture, participant=away, position=1)
+
+    goal = api.post(
+        f"/api/v1/fixtures/{fixture.id}/events",
+        {
+            "side": str(home_side.id),
+            "scoring_category": codes["test1"]["id"],
+            "quantity": "1",
+            "player": str(scorer.id),
+            "minute": 12,
+        },
+        format="json",
+    )
+    assert goal.status_code == 201, goal.data
+    card = api.post(
+        f"/api/v1/fixtures/{fixture.id}/events",
+        {
+            "side": str(away_side.id),
+            "scoring_category": codes["yellow-card"]["id"],
+            "quantity": "1",
+            "player": str(booked.id),
+            "minute": 29,
+        },
+        format="json",
+    )
+    assert card.status_code == 201, card.data
+    PlayerMatchRating.objects.create(fixture=fixture, player=scorer, rating="8.1")
+
+    listed = api.get(f"/api/v1/competitions/{competition_id}/fixtures")
+    row = listed.data["results"][0]
+    kinds = {item["kind"] for item in row["highlights"]}
+    assert kinds == {"score", "yellow"}
+    by_minute = {item["minute"]: item for item in row["highlights"]}
+    assert by_minute[12]["player_name"] == "Lebo Maseko"
+    assert by_minute[29]["player_name"] == "Sipho Dlamini"
+    assert row["ratings"][0]["rating"] == "8.1"
+
+
+def test_custom_knockout_records_match_events_with_time_and_player(api):
+    from apps.competitions.models import Participant, RosterMember
+    from apps.fixtures.models import FixtureSide, PlayerMatchRating
+
+    created = api.post(
+        "/api/v1/competitions",
+        {
+            "name": "Cup night",
+            "preset": "custom",
+            "scoring_basis": "results",
+            "format": "knockout",
+            "scoring_categories": [{"name": "Test1", "points": "1"}],
+        },
+        format="json",
+    )
+    assert created.status_code == 201, created.data
+    competition_id = created.data["id"]
+    detail = api.get(f"/api/v1/competitions/{competition_id}").data
+    codes = {item["code"]: item for item in detail["scoring_categories"]}
+    assert "test1" in codes
+    assert "yellow-card" in codes
+    assert "red-card" in codes
+    assert detail["settings_json"]["time_limit_minutes"] == 90
+
+    home = Participant.objects.create(
+        competition_id=competition_id, name="Lions", kind="team"
+    )
+    away = Participant.objects.create(
+        competition_id=competition_id, name="Sharks", kind="team"
+    )
+    scorer = RosterMember.objects.create(participant=home, name="Sipho Dlamini", number=9)
+    booked = RosterMember.objects.create(participant=away, name="Thabo Nkosi", number=4)
+    fixture = Fixture.objects.create(
+        competition_id=competition_id, status=Fixture.Status.LIVE, label="Final"
+    )
+    home_side = FixtureSide.objects.create(fixture=fixture, participant=home, position=0)
+    away_side = FixtureSide.objects.create(fixture=fixture, participant=away, position=1)
+
+    goal = api.post(
+        f"/api/v1/fixtures/{fixture.id}/events",
+        {
+            "side": str(home_side.id),
+            "scoring_category": codes["test1"]["id"],
+            "quantity": "1",
+            "player": str(scorer.id),
+            "minute": 23,
+        },
+        format="json",
+    )
+    assert goal.status_code == 201, goal.data
+    assert goal.data["player_name"] == "Sipho Dlamini"
+    assert goal.data["minute"] == 23
+
+    card = api.post(
+        f"/api/v1/fixtures/{fixture.id}/events",
+        {
+            "side": str(away_side.id),
+            "scoring_category": codes["yellow-card"]["id"],
+            "quantity": "1",
+            "player": str(booked.id),
+            "minute": 41,
+        },
+        format="json",
+    )
+    assert card.status_code == 201, card.data
+
+    PlayerMatchRating.objects.create(fixture=fixture, player=scorer, rating="8.4")
+
+    listed = api.get(f"/api/v1/competitions/{competition_id}/fixtures")
+    row = listed.data["results"][0]
+    kinds = {item["kind"] for item in row["highlights"]}
+    assert kinds == {"score", "yellow"}
+    by_minute = {item["minute"]: item for item in row["highlights"]}
+    assert by_minute[23]["player_name"] == "Sipho Dlamini"
+    assert by_minute[23]["label"] == "Test1"
+    assert by_minute[41]["player_name"] == "Thabo Nkosi"
+    assert row["ratings"][0]["player_name"] == "Sipho Dlamini"
+    assert row["ratings"][0]["rating"] == "8.4"
 
 
 def test_individual_entrants_are_picked_from_profiles(api):
@@ -1174,7 +1419,7 @@ def test_an_event_cannot_reference_another_competitions_category(
 
 
 def test_a_game_needs_a_time_limit_and_a_referee_before_kickoff(api, other_user):
-    from apps.competitions.models import Participant
+    from apps.competitions.models import Participant, RosterMember
     from apps.fixtures.models import FixtureSide
     from rest_framework.test import APIClient
 
@@ -1192,13 +1437,17 @@ def test_a_game_needs_a_time_limit_and_a_referee_before_kickoff(api, other_user)
     home = Participant.objects.create(competition_id=competition_id, name="Home", kind="team")
     away = Participant.objects.create(competition_id=competition_id, name="Away", kind="team")
     fixture = Fixture.objects.create(competition_id=competition_id, label="Kickoff")
-    FixtureSide.objects.create(fixture=fixture, participant=home, position=0)
-    FixtureSide.objects.create(fixture=fixture, participant=away, position=1)
+    home_side = FixtureSide.objects.create(fixture=fixture, participant=home, position=0)
+    away_side = FixtureSide.objects.create(fixture=fixture, participant=away, position=1)
     assert fixture.duration_minutes == 90
     assert fixture.overtime_minutes == 30
 
     detail_url = f"/api/v1/competitions/{competition_id}/fixtures/{fixture.id}"
-    assert api.get(detail_url).data["kickoff_problems"] == ["Assign a referee before kickoff."]
+    assert api.get(detail_url).data["kickoff_problems"] == [
+        "Pick the match officials before kickoff.",
+        "Submit Home's team sheet before kickoff.",
+        "Submit Away's team sheet before kickoff.",
+    ]
     blocked = api.post(f"{detail_url}/set-status", {"status": "live"}, format="json")
     assert blocked.status_code == 400
 
@@ -1219,7 +1468,27 @@ def test_a_game_needs_a_time_limit_and_a_referee_before_kickoff(api, other_user)
     assert denied.status_code == 403
 
     assigned = api.post(f"{detail_url}/referees", {"user": str(other_user.id)}, format="json")
-    assert assigned.data["kickoff_problems"] == []
+    assert assigned.data["kickoff_problems"] == [
+        "Submit Home's team sheet before kickoff.",
+        "Submit Away's team sheet before kickoff.",
+    ]
+
+    def sheet(team):
+        members = [
+            RosterMember.objects.create(participant=team, name=f"{team.name} {index}", number=index)
+            for index in range(1, 12)
+        ]
+        return {
+            "formation": "4-4-2",
+            "captain": str(members[0].id),
+            "starters": [{"player": str(member.id), "slot": index} for index, member in enumerate(members)],
+        }
+
+    assert api.put(f"{detail_url}/team-sheets/{home_side.id}", sheet(home), format="json").status_code == 200
+    still_away = api.get(detail_url).data["kickoff_problems"]
+    assert still_away == ["Submit Away's team sheet before kickoff."]
+    assert api.put(f"{detail_url}/team-sheets/{away_side.id}", sheet(away), format="json").status_code == 200
+    assert api.get(detail_url).data["kickoff_problems"] == []
     started = scorer.post(f"{detail_url}/set-status", {"status": "live"}, format="json")
     assert started.status_code == 200
     assert started.data["status"] == "live"
@@ -1251,6 +1520,108 @@ def test_generating_a_round_robin_schedules_every_pairing(api, competition, part
 
     dates = {fixture["scheduled_at"][:10] for fixture in response.data}
     assert dates == {"2026-09-05", "2026-09-12", "2026-09-19"}
+
+
+def _finish_all(competition):
+    for fixture in competition.fixtures.exclude(status=Fixture.Status.COMPLETED):
+        fixture.status = Fixture.Status.COMPLETED
+        fixture.save(update_fields=["status", "updated_at"])
+        for side in fixture.sides.all():
+            if side.outcome == "pending":
+                side.outcome = "win" if side.is_home else "loss"
+                side.save(update_fields=["outcome", "updated_at"])
+
+
+def test_a_finished_season_can_schedule_the_next_one(api, competition, participants):
+    generated = api.post(
+        f"/api/v1/competitions/{competition.id}/fixtures/generate",
+        {"method": "round_robin", "starts_on": "2026-09-05", "weekdays": [5], "kickoff": "15:00:00"},
+        format="json",
+    )
+    assert generated.status_code == 201
+    too_soon = api.post(
+        f"/api/v1/competitions/{competition.id}/next-season",
+        {"kind": "season", "starts_on": "2027-01-09", "weekdays": [5], "kickoff": "15:00:00"},
+        format="json",
+    )
+    assert too_soon.status_code == 400
+
+    _finish_all(competition)
+    detail = api.get(f"/api/v1/competitions/{competition.id}")
+    assert detail.data["season_finished"] is True
+
+    nxt = api.post(
+        f"/api/v1/competitions/{competition.id}/next-season",
+        {"kind": "season", "starts_on": "2027-01-09", "weekdays": [5], "kickoff": "15:00:00"},
+        format="json",
+    )
+    assert nxt.status_code == 201, nxt.data
+    assert nxt.data["stage"]["name"] == "Season 2"
+    assert nxt.data["stage"]["kind"] == "league"
+    assert len(nxt.data["fixtures"]) == 6
+    competition.refresh_from_db()
+    assert competition.status == Competition.Status.ACTIVE
+    assert competition.fixtures.filter(stage_id=nxt.data["stage"]["id"]).count() == 6
+
+
+def test_a_finished_league_can_schedule_a_knockout(api, competition, participants):
+    generated = api.post(
+        f"/api/v1/competitions/{competition.id}/fixtures/generate",
+        {"method": "round_robin", "starts_on": "2026-09-05", "weekdays": [5], "kickoff": "15:00:00"},
+        format="json",
+    )
+    assert generated.status_code == 201
+    _finish_all(competition)
+
+    playoff = api.post(
+        f"/api/v1/competitions/{competition.id}/next-season",
+        {
+            "kind": "knockout",
+            "starts_on": "2026-12-05",
+            "weekdays": [5],
+            "kickoff": "15:00:00",
+            "advance": 4,
+        },
+        format="json",
+    )
+    assert playoff.status_code == 201, playoff.data
+    assert playoff.data["stage"]["name"] == "Play-offs"
+    assert playoff.data["stage"]["kind"] == "knockout"
+    competition.refresh_from_db()
+    assert competition.format == Competition.Format.GROUP_KNOCKOUT
+    assert competition.status == Competition.Status.ACTIVE
+    assert playoff.data["competition"]["season_finished"] is False
+
+
+def test_completing_the_last_fixture_marks_the_season_finished(
+    api, competition, participants
+):
+    generated = api.post(
+        f"/api/v1/competitions/{competition.id}/fixtures/generate",
+        {"method": "round_robin", "starts_on": "2026-09-05", "weekdays": [5], "kickoff": "15:00:00"},
+        format="json",
+    )
+    assert generated.status_code == 201
+    fixtures = list(competition.fixtures.order_by("round_number", "created_at"))
+    for fixture in fixtures[:-1]:
+        api.post(
+            f"/api/v1/competitions/{competition.id}/fixtures/{fixture.id}/set-status",
+            {"status": "completed"},
+            format="json",
+        )
+    competition.refresh_from_db()
+    assert competition.status == Competition.Status.ACTIVE
+
+    last = api.post(
+        f"/api/v1/competitions/{competition.id}/fixtures/{fixtures[-1].id}/set-status",
+        {"status": "completed"},
+        format="json",
+    )
+    assert last.status_code == 200
+    competition.refresh_from_db()
+    assert competition.status == Competition.Status.COMPLETED
+    detail = api.get(f"/api/v1/competitions/{competition.id}")
+    assert detail.data["season_finished"] is True
 
 
 def test_standings_endpoint_returns_an_ordered_table(

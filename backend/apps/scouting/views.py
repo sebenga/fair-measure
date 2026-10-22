@@ -1546,5 +1546,17 @@ class MyTeamMembershipsView(APIView):
                     "joined_at": entry.created_at,
                 }
             )
-        pending = TeamPick.objects.filter(user=request.user, status=TeamPick.Status.PENDING).count()
-        return Response({"teams": rows, "pending_invites": pending})
+        pending = list(
+            TeamPick.objects.filter(user=request.user, status=TeamPick.Status.PENDING)
+            .select_related("user", "participant__competition")
+            .order_by("-created_at")
+        )
+        from apps.competitions.serializers import TeamPickSerializer
+
+        return Response(
+            {
+                "teams": rows,
+                "pending_invites": len(pending),
+                "invites": TeamPickSerializer(pending, many=True).data,
+            }
+        )

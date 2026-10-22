@@ -20,11 +20,25 @@ import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type {
   FormationSlot,
+  LineupPlayer,
   MatchDay,
   MatchPlayer,
   SubstitutionRecord,
   TeamSheetSide,
 } from '../../core/models';
+
+const KITS: Array<[string, string]> = [
+  ['#c81e1e', '#fff'],
+  ['#1d4ed8', '#fff'],
+  ['#111827', '#fff'],
+  ['#f8fafc', '#111827'],
+  ['#15803d', '#fff'],
+  ['#eab308', '#111827'],
+  ['#7c3aed', '#fff'],
+  ['#ea580c', '#fff'],
+  ['#0f766e', '#fff'],
+  ['#be185d', '#fff'],
+];
 import { RealtimeService } from '../../core/realtime.service';
 
 interface Draft {
@@ -58,20 +72,30 @@ interface Draft {
               <div class="pitch-row">
                 @for (slot of row; track slot.index) {
                   @if (starterAt(side, slot.index); as player) {
-                    <div class="spot" [class.off]="player.subbed_off">
-                      <span class="shirt">{{ player.number ?? '' }}</span>
+                    <div
+                      class="shirt"
+                      [class.captain]="lineup.captain_id === player.player_id"
+                      [class.off]="player.subbed_off"
+                      [style.--kit]="kit(side.participant_id)[0]"
+                      [style.--kit-ink]="kit(side.participant_id)[1]"
+                    >
+                      @if (lineup.captain_id === player.player_id) {
+                        <i class="badge" aria-label="Captain">C</i>
+                      }
+                      <span class="kit">{{ player.number ?? '' }}</span>
                       <span class="who">
-                        {{ shortName(player.name) }}
-                        @if (lineup.captain_id === player.player_id) {
-                          <b class="captain" aria-label="Captain">C</b>
-                        }
+                        <b>{{ shortName(player.name) }}</b>
+                        <small>{{ minutesLabel(player) }} · {{ ratingLabel(player) }}</small>
                       </span>
                       @if (player.subbed_off) {
                         <ion-icon name="arrow-down-outline" class="sub-off" aria-label="Substituted" />
                       }
                     </div>
                   } @else {
-                    <div class="spot vacant"><span class="shirt">–</span><span class="who">{{ slot.label }}</span></div>
+                    <div class="empty">
+                      <span class="kit hollow">–</span>
+                      <small>{{ slot.label }}</small>
+                    </div>
                   }
                 }
               </div>
@@ -86,24 +110,33 @@ interface Draft {
                 @if (lineup.captain_id === player.player_id) {
                   <b class="captain">C</b>
                 }
+                <small>{{ minutesLabel(player) }} · {{ ratingLabel(player) }}</small>
               </li>
             }
           </ul>
         }
         <p class="hint">Bench</p>
-        <ul class="list bench">
+        <div class="bench-row">
           @for (player of lineup.bench; track player.player_id) {
-            <li [class.used]="player.on_field || player.subbed_off">
-              <span class="num">{{ player.number ?? '' }}</span>
-              {{ player.name }}
+            <div
+              class="shirt bench-shirt"
+              [class.used]="player.on_field || player.subbed_off"
+              [style.--kit]="kit(side.participant_id)[0]"
+              [style.--kit-ink]="kit(side.participant_id)[1]"
+            >
+              <span class="kit slim">{{ player.number ?? '' }}</span>
+              <span class="who">
+                <b>{{ shortName(player.name) }}</b>
+                <small>{{ minutesLabel(player) }} · {{ ratingLabel(player) }}</small>
+              </span>
               @if (player.on_field) {
                 <ion-icon name="arrow-up-outline" class="sub-on" aria-label="Came on" />
               }
-            </li>
+            </div>
           } @empty {
-            <li class="muted">No substitutes named.</li>
+            <p class="muted">No substitutes named.</p>
           }
-        </ul>
+        </div>
       } @else {
         <p class="muted">{{ side.name }} have not picked their team yet.</p>
       }
@@ -122,6 +155,10 @@ interface Draft {
 
     @if (day()?.enabled && sides().length && part() !== 'subs') {
       <h3 class="fm-section-title">Team sheets</h3>
+      <p class="hint">
+        Both teams must submit a team sheet of at least {{ sheetMinimum() }} before kickoff. Officials
+        must be picked on Setup.
+      </p>
       <div class="fm-team-columns" [class.many]="sides().length > 2" [class.editing]="!!draft()">
         @for (side of sides(); track side.side_id) {
           <div class="fm-card sheet" [class.edit]="draft()?.sideId === side.side_id">
@@ -176,8 +213,8 @@ interface Draft {
         } @else {
           <p class="hint">
             Starters
-            @if (config()?.starters; as limit) {
-              ({{ d.starters.length }} of {{ limit }})
+            @if (sheetMinimum(); as needed) {
+              ({{ d.starters.length }} of {{ needed }})
             }
           </p>
           <div class="chips">
@@ -386,9 +423,24 @@ interface Draft {
         letter-spacing: 0;
         color: var(--ion-color-medium);
       }
-      @media (max-width: 719px) {
-        .fm-team-columns.editing {
-          grid-template-columns: minmax(0, 1fr);
+      @media (max-width: 419px) {
+        .pitch {
+          gap: 10px;
+          padding: 12px 4px 14px;
+        }
+        .kit {
+          width: 40px;
+          height: 44px;
+        }
+        .kit.slim {
+          width: 36px;
+          height: 40px;
+        }
+        .who b {
+          font-size: 0.62rem;
+        }
+        .who small {
+          font-size: 0.54rem;
         }
       }
       .record {
@@ -413,58 +465,117 @@ interface Draft {
       .pitch {
         display: flex;
         flex-direction: column;
-        gap: 10px;
-        padding: 12px 4px;
-        border-radius: 14px;
+        gap: 14px;
+        padding: 16px 6px 18px;
+        border-radius: 16px;
         background:
-          repeating-linear-gradient(0deg, rgb(255 255 255 / 0.05) 0 28px, transparent 28px 56px),
+          radial-gradient(circle at 50% 8%, rgb(255 255 255 / 0.14), transparent 28%),
+          repeating-linear-gradient(0deg, rgb(255 255 255 / 0.06) 0 28px, transparent 28px 56px),
           linear-gradient(180deg, #15803d, #166534);
         color: #fff;
       }
       .pitch-row {
         display: flex;
         justify-content: space-evenly;
-        gap: 6px;
+        align-items: flex-start;
+        gap: 4px;
       }
-      .spot {
+      .shirt {
         display: grid;
         justify-items: center;
-        gap: 3px;
+        gap: 4px;
+        position: relative;
         min-width: 0;
         flex: 1 1 0;
-        max-width: 84px;
-        position: relative;
-        text-align: center;
+        max-width: 92px;
       }
-      .spot .shirt {
+      .kit {
         display: grid;
         place-items: center;
-        width: 26px;
-        height: 26px;
-        border-radius: 50%;
-        background: #fff;
-        color: #14532d;
+        width: 48px;
+        height: 52px;
+        border-radius: 10px 10px 14px 14px;
+        background: var(--kit, #1d4ed8);
+        color: var(--kit-ink, #fff);
         font-weight: 800;
-        font-size: 0.8rem;
+        box-shadow: 0 6px 14px rgb(0 0 0 / 25%);
       }
-      .spot .who {
-        font-size: 0.7rem;
-        font-weight: 600;
-        line-height: 1.15;
-        overflow-wrap: anywhere;
+      .kit.slim {
+        width: 40px;
+        height: 44px;
       }
-      .spot.off {
+      .kit.hollow {
+        background: transparent;
+        color: #fff;
+        border: 2px dashed rgb(255 255 255 / 70%);
+        box-shadow: none;
+      }
+      .who {
+        display: grid;
+        width: 100%;
+        padding: 4px 4px 5px;
+        border-radius: 8px;
+        background: rgb(15 23 42 / 82%);
+        color: #fff;
+        text-align: center;
+      }
+      .who b {
+        font-size: 0.68rem;
+        line-height: 1.2;
+      }
+      .who small {
+        font-size: 0.58rem;
+        opacity: 0.88;
+      }
+      .badge {
+        position: absolute;
+        top: -4px;
+        right: 8px;
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        background: #f5c400;
+        color: #111;
+        font-size: 0.62rem;
+        font-weight: 800;
+        font-style: normal;
+        display: grid;
+        place-items: center;
+      }
+      .shirt.off {
         opacity: 0.55;
       }
-      .spot.vacant .shirt {
-        background: rgb(255 255 255 / 0.3);
-        color: #fff;
+      .empty {
+        display: grid;
+        justify-items: center;
+        gap: 6px;
+        flex: 1 1 0;
+        max-width: 92px;
+        color: rgb(255 255 255 / 85%);
+        text-align: center;
       }
-      .sub-off {
+      .empty small {
+        font-size: 0.62rem;
+      }
+      .bench-row {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding: 4px 0 8px;
+      }
+      .bench-shirt {
+        flex: 0 0 88px;
+        max-width: 88px;
+      }
+      .sub-off,
+      .sub-on {
         position: absolute;
         top: -2px;
-        right: 8px;
+        left: 6px;
         color: #fca5a5;
+      }
+      .sub-on {
+        color: #86efac;
       }
       .captain {
         display: inline-grid;
@@ -707,6 +818,9 @@ export class MatchDayComponent implements OnInit {
 
   readonly sides = computed(() => this.day()?.sides ?? []);
   readonly config = computed(() => this.day()?.config);
+  readonly sheetMinimum = computed(
+    () => this.config()?.min_personnel ?? this.config()?.starters ?? 11,
+  );
   readonly subs = computed(() => this.day()?.substitutions ?? []);
   readonly formationKeys = computed(() => this.config()?.formations ?? []);
   readonly draftSlots = computed<FormationSlot[]>(() => {
@@ -755,6 +869,20 @@ export class MatchDayComponent implements OnInit {
   shortName(name: string): string {
     const parts = name.trim().split(/\s+/);
     return parts.length > 1 ? parts.slice(1).join(' ') : name;
+  }
+
+  kit(teamId: string): [string, string] {
+    let hash = 0;
+    for (let i = 0; i < teamId.length; i += 1) hash = (hash * 31 + teamId.charCodeAt(i)) >>> 0;
+    return KITS[hash % KITS.length];
+  }
+
+  minutesLabel(player: LineupPlayer): string {
+    return player.minutes == null ? '–' : `${player.minutes}'`;
+  }
+
+  ratingLabel(player: LineupPlayer): string {
+    return player.rating ? player.rating : '–';
   }
 
   rows(slots: FormationSlot[]): FormationSlot[][] {
@@ -961,6 +1089,11 @@ export class MatchDayComponent implements OnInit {
           .filter(([, id]) => id)
           .map(([slot, id]) => ({ player: id, slot: Number(slot), number: number(id) }))
       : draft.starters.map((id) => ({ player: id, number: number(id) }));
+    const needed = this.sheetMinimum();
+    if (starters.length < needed) {
+      void this.toast(`Name at least ${needed} players on the team sheet.`);
+      return;
+    }
     const body = {
       formation: draft.formation,
       captain: draft.captain || null,

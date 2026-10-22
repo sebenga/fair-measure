@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import time
+
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
@@ -23,6 +25,7 @@ from .models import (
     ScoringCategory,
     Stage,
 )
+from .catalog import RED_CARD, YELLOW_CARD
 from .presets import (
     PRESETS,
     SCORING_LOCKED_MESSAGE,
@@ -31,6 +34,101 @@ from .presets import (
     scoring_is_locked,
     unit_count_choices,
 )
+
+MATCH_EVENT_CATEGORIES = (YELLOW_CARD, RED_CARD)
+HEAD_TO_HEAD_FORMATS = {"league", "knockout", "group_knockout", "ladder"}
+
+
+def _ensure_match_events(competition) -> None:
+    """VS matches keep a timeline: scoring plus yellow and red cards."""
+
+    if competition.format not in HEAD_TO_HEAD_FORMATS:
+        return
+    have = set(competition.scoring_categories.values_list("code", flat=True))
+    order = competition.scoring_categories.count()
+    rows = []
+    for item in MATCH_EVENT_CATEGORIES:
+        if item["key"] in have:
+            continue
+        rows.append(
+            ScoringCategory(
+                competition=competition,
+                name=item["label"],
+                code=item["key"],
+                description=item.get("description") or "",
+                points=item.get("value") or 0,
+                affects_score=item.get("affects_score", False),
+                display_order=order,
+            )
+        )
+        order += 1
+    if rows:
+        ScoringCategory.objects.bulk_create(rows)
+    settings = dict(competition.settings_json or {})
+    changed = False
+    if not settings.get("time_limit_minutes"):
+        settings["time_limit_minutes"] = 90
+        changed = True
+    if "overtime_minutes" not in settings:
+        settings["overtime_minutes"] = 0
+        changed = True
+    if changed:
+        competition.settings_json = settings
+        competition.save(update_fields=["settings_json", "updated_at"])
+
+TABLE_BONUS_KEYS = {
+    "enabled",
+    "scoring_threshold",
+    "scoring_points",
+    "scoring_code",
+    "win_margin",
+    "win_points",
+    "loss_margin",
+    "loss_points",
+}
+
+
+def _optional_int(value):
+    if value in (None, "", False):
+        return None
+    try:
+        number = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _bonus_points(value, enabled: bool) -> float:
+    if not enabled or value in (None, ""):
+        return 0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _normalize_table_bonus(raw: dict) -> dict:
+    enabled = bool(raw.get("enabled"))
+    return {
+        "enabled": enabled,
+        "scoring_threshold": _optional_int(raw.get("scoring_threshold")) if enabled else None,
+        "scoring_points": _bonus_points(raw.get("scoring_points"), enabled),
+        "scoring_code": str(raw.get("scoring_code") or "").strip() if enabled else "",
+        "win_margin": _optional_int(raw.get("win_margin")) if enabled else None,
+        "win_points": _bonus_points(raw.get("win_points"), enabled),
+        "loss_margin": _optional_int(raw.get("loss_margin")) if enabled else None,
+        "loss_points": _bonus_points(raw.get("loss_points"), enabled),
+    }
+
+
+def _resolve_bonus_scoring_code(competition: Competition, code: str) -> str:
+    if not code:
+        return ""
+    needle = code.strip().lower()
+    for category in competition.scoring_categories.all():
+        if category.code.lower() == needle or category.name.strip().lower() == needle:
+            return category.code
+    return code
 
 
 def _validate_game_time(settings: dict, instance) -> None:
@@ -282,6 +380,28 @@ def add_profile_to_team(
 MIN_TEAM_PLAYERS = 14
 
 
+def squad_size_for(competition) -> int:
+    """Fewest accepted players a team needs. Comes from the preset's team sheet."""
+
+    settings = getattr(competition, "settings_json", None) or {}
+    sheet = settings.get("team_sheet") or {}
+    try:
+        minimum = int(sheet.get("min_squad") or 0)
+    except (TypeError, ValueError):
+        minimum = 0
+    if minimum > 0:
+        return minimum
+    try:
+        starters = int(sheet.get("starters") or 0)
+    except (TypeError, ValueError):
+        starters = 0
+    if starters >= 11:
+        return MIN_TEAM_PLAYERS
+    if starters > 0:
+        return starters
+    return MIN_TEAM_PLAYERS
+
+
 def team_entry_mode(competition) -> str | None:
     """How a team competition fills its squads. Unset leaves the older open flow."""
     settings = getattr(competition, "settings_json", None) or {}
@@ -305,19 +425,19 @@ def draft_teams(competition) -> list[Participant]:
     )
 
 
-def next_draft_team(teams: list[Participant]) -> Participant | None:
-    """Snake order. A team that already has 14 players (accepted or waiting) is skipped."""
+def next_draft_team(teams: list[Participant], size: int = MIN_TEAM_PLAYERS) -> Participant | None:
+    """Snake order. A team that already has a full squad (accepted or waiting) is skipped."""
     if not teams:
         return None
     totals = [sum(squad_counts(team)) for team in teams]
-    if all(total >= MIN_TEAM_PLAYERS for total in totals):
+    if all(total >= size for total in totals):
         return None
     count = len(teams)
     made = sum(totals)
-    for step in range(made, made + count * MIN_TEAM_PLAYERS):
+    for step in range(made, made + count * size):
         round_no, index = divmod(step, count)
         slot = index if round_no % 2 == 0 else count - 1 - index
-        if totals[slot] < MIN_TEAM_PLAYERS:
+        if totals[slot] < size:
             return teams[slot]
     return None
 
@@ -336,9 +456,10 @@ def draft_payload(competition) -> dict:
                 "total": accepted + pending,
             }
         )
-    clock = next_draft_team(teams)
+    size = squad_size_for(competition)
+    clock = next_draft_team(teams, size)
     return {
-        "squad_size": MIN_TEAM_PLAYERS,
+        "squad_size": size,
         "on_the_clock": None if clock is None else {"id": str(clock.id), "name": clock.name},
         "teams": rows,
         "complete": bool(teams) and clock is None,
@@ -387,10 +508,32 @@ def offer_team_pick(participant: Participant, user, actor) -> TeamPick:
             {"user": "That profile already has a pick waiting in this league."}
         )
 
-    return TeamPick.objects.create(
+    pick = TeamPick.objects.create(
         participant=participant,
         user=user,
         invited_by=actor if getattr(actor, "is_authenticated", False) else None,
+    )
+    _notify_team_invite(pick, actor)
+    return pick
+
+
+def _notify_team_invite(pick: TeamPick, actor) -> None:
+    from apps.notifications.services import notify_users
+
+    team = pick.participant
+    invited_by = actor.get_full_name() if getattr(actor, "is_authenticated", False) else "A team"
+    notify_users(
+        [pick.user],
+        kind="team-invite",
+        title=f"{team.name} picked you",
+        body=f"{invited_by} invited you to join {team.name} in {team.competition.name}. Accept to play.",
+        competition=team.competition,
+        category="announcements",
+        data={
+            "competition_id": str(team.competition_id),
+            "pick_id": str(pick.id),
+            "path": f"/tabs/competitions/{team.competition_id}",
+        },
     )
 
 
@@ -427,6 +570,8 @@ class TeamPickSerializer(serializers.ModelSerializer):
     user_display_name = serializers.SerializerMethodField()
     user_email = serializers.EmailField(source="user.email", read_only=True)
     team_name = serializers.CharField(source="participant.name", read_only=True)
+    competition = serializers.UUIDField(source="participant.competition_id", read_only=True)
+    competition_name = serializers.CharField(source="participant.competition.name", read_only=True)
 
     class Meta:
         model = TeamPick
@@ -434,6 +579,8 @@ class TeamPickSerializer(serializers.ModelSerializer):
             "id",
             "participant",
             "team_name",
+            "competition",
+            "competition_name",
             "user",
             "user_display_name",
             "user_email",
@@ -445,6 +592,8 @@ class TeamPickSerializer(serializers.ModelSerializer):
             "id",
             "participant",
             "team_name",
+            "competition",
+            "competition_name",
             "user_display_name",
             "user_email",
             "status",
@@ -568,9 +717,10 @@ class ParticipantSerializer(serializers.ModelSerializer):
             mode = team_entry_mode(self.context.get("competition"))
             member_ids = list(dict.fromkeys(attrs.get("member_ids") or []))
             if mode == "pick" and creating_team:
-                if len(member_ids) < MIN_TEAM_PLAYERS:
+                needed = squad_size_for(self.context.get("competition"))
+                if len(member_ids) < needed:
                     raise serializers.ValidationError(
-                        {"member_ids": (f"A team needs at least {MIN_TEAM_PLAYERS} players.")}
+                        {"member_ids": (f"A team needs at least {needed} players.")}
                     )
                 attrs["member_ids"] = member_ids
             elif mode == "draft" and member_ids:
@@ -742,12 +892,16 @@ class CompetitionDetailSerializer(CompetitionListSerializer):
     scouting_eligible = serializers.SerializerMethodField(
         help_text="Whether this is a sport that can be opened to scouts."
     )
+    season_finished = serializers.SerializerMethodField(
+        help_text="True when every remaining fixture is finished and a new season can be scheduled."
+    )
 
     class Meta(CompetitionListSerializer.Meta):
         fields = [
             *CompetitionListSerializer.Meta.fields,
             "can_post",
             "scouting_eligible",
+            "season_finished",
             "timezone",
             "match_weekdays",
             "settings_json",
@@ -769,6 +923,11 @@ class CompetitionDetailSerializer(CompetitionListSerializer):
         from apps.scouting.catalog import sport_for_competition
 
         return sport_for_competition(obj.sport) is not None
+
+    def get_season_finished(self, obj: Competition) -> bool:
+        from .season import season_is_finished
+
+        return season_is_finished(obj)
 
 
 class CompetitionWriteSerializer(serializers.ModelSerializer):
@@ -802,6 +961,14 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         write_only=True,
         help_text="Custom VS competitions only: table points for a win, draw and loss.",
     )
+    table_bonus = serializers.DictField(
+        required=False,
+        write_only=True,
+        help_text=(
+            "Custom VS competitions only: extra table points from scoring or "
+            "from the winning or losing margin. Set enabled to false to switch them off."
+        ),
+    )
 
     participant_type = serializers.ChoiceField(
         choices=["team", "individual"],
@@ -820,6 +987,14 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         if unknown:
             raise serializers.ValidationError("Use win, draw and loss.")
         return value
+
+    def validate_table_bonus(self, value: dict) -> dict:
+        unknown = set(value) - TABLE_BONUS_KEYS
+        if unknown:
+            raise serializers.ValidationError(
+                f"Unknown keys: {', '.join(sorted(unknown))}. Use {', '.join(sorted(TABLE_BONUS_KEYS))}."
+            )
+        return _normalize_table_bonus(value)
 
     class Meta:
         model = Competition
@@ -844,6 +1019,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
             "scoring_categories",
             "scoring_basis",
             "league_points",
+            "table_bonus",
             "participant_type",
             "unit_count",
         ]
@@ -978,6 +1154,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         custom_categories = validated_data.pop("scoring_categories", None)
         scoring_basis = validated_data.pop("scoring_basis", None)
         league_points = validated_data.pop("league_points", None)
+        table_bonus = validated_data.pop("table_bonus", None)
         participant_type = validated_data.pop("participant_type", None)
         unit_count = validated_data.pop("unit_count", None)
         user = self.context["request"].user
@@ -1043,16 +1220,34 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
                     settings["profile_entrants"] = True
                 settings["league_points"] = {key: float(value) for key, value in points.items()}
                 settings["formats_allowed"] = ["league", "knockout", "groups_knockout", "ladder"]
+                if table_bonus is not None:
+                    table_bonus["scoring_code"] = _resolve_bonus_scoring_code(
+                        competition, table_bonus.get("scoring_code") or ""
+                    )
+                    settings["table_bonus"] = table_bonus
+                policy_defaults = {
+                    "win_points": points["win"],
+                    "draw_points": points["draw"],
+                    "loss_points": points["loss"],
+                }
+                if table_bonus is not None:
+                    policy_defaults.update(
+                        {
+                            "bonus_win_margin": table_bonus.get("win_margin"),
+                            "bonus_win_points": table_bonus.get("win_points") or 0,
+                            "bonus_loss_margin": table_bonus.get("loss_margin"),
+                            "bonus_loss_points": table_bonus.get("loss_points") or 0,
+                        }
+                    )
                 PointsPolicy.objects.update_or_create(
                     competition=competition,
-                    defaults={
-                        "win_points": points["win"],
-                        "draw_points": points["draw"],
-                        "loss_points": points["loss"],
-                    },
+                    defaults=policy_defaults,
                 )
             competition.settings_json = settings
             competition.save(update_fields=["settings_json", "updated_at"])
+
+        if versus:
+            _ensure_match_events(competition)
 
         return competition
 
@@ -1067,3 +1262,23 @@ class ApplyPresetSerializer(serializers.Serializer):
 
 class TransferOwnershipSerializer(serializers.Serializer):
     user_id = serializers.UUIDField()
+
+
+class NextSeasonSerializer(serializers.Serializer):
+    """Schedule the next season or a knockout after the current one has finished."""
+
+    kind = serializers.ChoiceField(choices=["season", "knockout"])
+    starts_on = serializers.DateField()
+    kickoff = serializers.TimeField(default=time(hour=15))
+    weekdays = serializers.ListField(
+        child=serializers.IntegerField(min_value=0, max_value=6),
+        required=False,
+    )
+    minutes_between_fixtures = serializers.IntegerField(default=0, min_value=0, max_value=1440)
+    double_round = serializers.BooleanField(default=False)
+    location = serializers.CharField(required=False, allow_blank=True, default="")
+    advance = serializers.IntegerField(
+        required=False,
+        min_value=2,
+        help_text="How many sides from the table go into a knockout. Defaults to everyone.",
+    )

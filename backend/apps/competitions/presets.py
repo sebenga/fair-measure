@@ -46,6 +46,13 @@ class Preset(TypedDict, total=False):
     local_body: str
     # Match-day team sheet: starters, bench, substitutions and formations.
     team_sheet: dict
+    # Setup screen: variants of one sport share a family card.
+    family: str
+    variant: str
+    family_label: str
+    variant_label: str
+    table_bonus: dict
+    category: str
 
 
 POINTS_TABLE = "points"
@@ -131,8 +138,8 @@ SOCCER: Preset = {
     ],
     "match_structure": [
         {"unit": "half", "count": 2, "minutes": 45, "affects_total": True},
-        {"unit": "extra_time", "count": 2, "minutes": 15, "affects_total": True},
-        {"unit": "penalties", "count": 1, "affects_total": False, "resolves_draw": True},
+        {"unit": "extra_time", "count": 2, "minutes": 15, "affects_total": True, "extra": True},
+        {"unit": "penalties", "count": 1, "affects_total": False, "resolves_draw": True, "extra": True},
     ],
     "win_condition": "highest_total",
     "draw_allowed": True,
@@ -140,8 +147,14 @@ SOCCER: Preset = {
     "league_points": {"win": 3, "draw": 1, "loss": 0},
     "tiebreakers": ["points", "score_difference", "score_for", "head_to_head"],
     "locked": True,
-    "team_sheet": {
-        "starters": 11,
+        "family": "football",
+        "variant": "association",
+        "family_label": "Football",
+        "variant_label": "11-a-side",
+        "team_sheet": {
+            "starters": 11,
+        "min_on_field": 7,
+        "min_squad": 14,
         "bench_max": 12,
         "max_substitutions": 5,
         "rolling_substitutions": False,
@@ -246,11 +259,15 @@ from .catalog import CATALOG
 from .equestrian_presets import EQUESTRIAN_PRESETS
 from .olympic_presets import GOVERNANCE, OLYMPIC_PRESETS
 from .preset_groups import group_for, group_label
+from .rugby_presets import RUGBY_VARIANTS
+from .soccer_presets import SOCCER_VARIANTS
 
 PRESETS: dict[str, Preset] = {
     "soccer": SOCCER,
     "golf_stroke": GOLF_STROKE,
     **CATALOG,
+    **SOCCER_VARIANTS,
+    **RUGBY_VARIANTS,
     **OLYMPIC_PRESETS,
     **EQUESTRIAN_PRESETS,
     "custom": CUSTOM,
@@ -342,6 +359,13 @@ def public_preset(key: str, preset: Preset) -> dict:
         "result_type": preset.get("result_type"),
         "official_results": bool(preset.get("official_results")),
         "unit_count_options": dict(preset.get("unit_count_options") or {}),
+        "team_sheet": dict(preset.get("team_sheet") or {}),
+        "category": preset.get("category") or "",
+        "family": preset.get("family") or "",
+        "variant": preset.get("variant") or "",
+        "family_label": preset.get("family_label") or "",
+        "variant_label": preset.get("variant_label") or "",
+        "table_bonus": dict(preset.get("table_bonus") or {}),
         **governance(preset),
     }
 
@@ -498,6 +522,10 @@ def apply_preset(competition, preset_key: str, *, unit_count: int | None = None)
             "roster_numbers": list(preset.get("roster_numbers") or []),
             "team_sheet": dict(preset.get("team_sheet") or {}),
             "unit_count": preset.get("unit_count"),
+            "category": preset.get("category") or "",
+            "family": preset.get("family") or "",
+            "variant": preset.get("variant") or "",
+            "table_bonus": dict(preset.get("table_bonus") or {}),
             **governance(preset),
             "category_better": {
                 item["key"]: item["better"]

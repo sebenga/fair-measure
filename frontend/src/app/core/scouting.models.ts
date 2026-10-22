@@ -447,9 +447,19 @@ export interface TeamMembership {
   joined_at: string;
 }
 
+export interface TeamInvite {
+  id: string;
+  participant: string;
+  team_name: string;
+  competition: string;
+  competition_name: string;
+  status: 'pending' | 'accepted' | 'declined';
+}
+
 export interface TeamMemberships {
   teams: TeamMembership[];
   pending_invites: number;
+  invites?: TeamInvite[];
 }
 
 export type IdentityDocumentKind = 'passport' | 'national_id';

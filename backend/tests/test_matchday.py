@@ -6,7 +6,14 @@ from rest_framework.test import APIClient
 
 from apps.competitions.models import Competition, Membership, Participant, RosterMember
 from apps.core.permissions import Role
-from apps.fixtures.models import Fixture, FixtureReferee, FixtureSide, PlayerAppearance
+from apps.fixtures.models import (
+    Fixture,
+    FixtureLineup,
+    FixtureReferee,
+    FixtureSide,
+    LineupEntry,
+    PlayerAppearance,
+)
 
 User = get_user_model()
 
@@ -57,6 +64,7 @@ def test_team_sheet_uses_the_preset_formations_and_limits(api, league):
     day = api.get(_url(fixture, "team-sheets")).data
     assert day["enabled"] is True
     assert day["config"]["starters"] == 11
+    assert day["config"]["min_personnel"] == 11
     assert day["config"]["max_substitutions"] == 5
     four_four_two = next(item for item in day["formations"] if item["key"] == "4-4-2")
     assert [slot["label"] for slot in four_four_two["slots"]] == ["GK"] + ["DEF"] * 4 + ["MID"] * 4 + ["FWD"] * 2
@@ -76,6 +84,12 @@ def test_team_sheet_uses_the_preset_formations_and_limits(api, league):
     too_many = _sheet(sides[0])
     too_many["starters"].append({"player": too_many["bench"].pop()["player"]})
     assert api.put(_url(fixture, f"team-sheets/{sides[0].id}"), too_many, format="json").status_code == 400
+
+    too_few = _sheet(sides[0])
+    too_few["starters"] = too_few["starters"][:10]
+    short = api.put(_url(fixture, f"team-sheets/{sides[0].id}"), too_few, format="json")
+    assert short.status_code == 400
+    assert "at least 11" in str(short.data)
 
     stranger = _sheet(sides[0])
     stranger["bench"].append({"player": str(_squad(sides[1])[0].id)})
@@ -240,3 +254,59 @@ def test_post_match_report_is_written_by_officials_after_the_result(api, league,
     assert minutes[squad[9].id] == 75
     assert minutes[squad[12].id] == 15
     assert squad[13].id not in minutes
+
+
+def test_lineup_includes_minutes_and_updated_ratings(api, league):
+    from decimal import Decimal
+
+    from apps.fixtures.models import PlayerMatchRating
+
+    _, fixture, sides = league
+    saved = api.put(_url(fixture, f"team-sheets/{sides[0].id}"), _sheet(sides[0]), format="json")
+    assert saved.status_code == 200, saved.data
+    player = _squad(sides[0])[0]
+    blank = next(row for row in saved.data["sides"][0]["lineup"]["starters"] if row["player_id"] == str(player.id))
+    assert blank["minutes"] is None
+    assert blank["rating"] is None
+
+    PlayerAppearance.objects.create(fixture=fixture, player=player, minutes=67)
+    PlayerMatchRating.objects.create(fixture=fixture, player=player, rating=Decimal("7.2"))
+    day = api.get(_url(fixture, "team-sheets")).data
+    starter = next(row for row in day["sides"][0]["lineup"]["starters"] if row["player_id"] == str(player.id))
+    assert starter["minutes"] == 67
+    assert starter["rating"] == "7.2"
+
+
+def test_kickoff_needs_both_team_sheets_of_eleven_and_officials(api, league, other_user):
+    competition, fixture, sides = league
+    detail = f"/api/v1/competitions/{competition.id}/fixtures/{fixture.id}"
+    problems = api.get(detail).data["kickoff_problems"]
+    assert "Pick the match officials before kickoff." in problems
+    assert "Submit Home XI's team sheet before kickoff." in problems
+    assert "Submit Away XI's team sheet before kickoff." in problems
+    assert api.post(_url(fixture, "set-status"), {"status": "live"}, format="json").status_code == 400
+
+    Membership.objects.create(competition=competition, user=other_user, role=Role.MEMBER)
+    FixtureReferee.objects.create(fixture=fixture, user=other_user)
+    officials_only = api.get(detail).data["kickoff_problems"]
+    assert "Pick the match officials before kickoff." not in officials_only
+    assert api.post(_url(fixture, "set-status"), {"status": "live"}, format="json").status_code == 400
+
+    api.put(_url(fixture, f"team-sheets/{sides[0].id}"), _sheet(sides[0]), format="json")
+    assert api.get(detail).data["kickoff_problems"] == [
+        "Submit Away XI's team sheet before kickoff."
+    ]
+
+    lineup = FixtureLineup.objects.create(fixture=fixture, side=sides[1])
+    for index, member in enumerate(_squad(sides[1])[:10]):
+        LineupEntry.objects.create(
+            lineup=lineup, player=member, role=LineupEntry.Role.STARTER, order=index
+        )
+    short = fixture.kickoff_problems()
+    assert "Away XI's team sheet needs at least 11 named players." in short
+    lineup.delete()
+
+    api.put(_url(fixture, f"team-sheets/{sides[1].id}"), _sheet(sides[1]), format="json")
+    started = api.post(_url(fixture, "set-status"), {"status": "live"}, format="json")
+    assert started.status_code == 200, started.data
+    assert started.data["status"] == "live"

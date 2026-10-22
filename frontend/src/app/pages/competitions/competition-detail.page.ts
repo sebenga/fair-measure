@@ -22,7 +22,6 @@ import {
   IonSegmentButton,
   IonLabel,
   IonSpinner,
-  IonTitle,
   IonToolbar,
   ToastController,
 } from '@ionic/angular/standalone';
@@ -47,7 +46,6 @@ type Tab = 'feed' | 'fixtures' | 'standings' | 'fantasy';
   imports: [
     IonHeader,
     IonToolbar,
-    IonTitle,
     IonButtons,
     IonBackButton,
     IonButton,
@@ -69,11 +67,13 @@ type Tab = 'feed' | 'fixtures' | 'standings' | 'fantasy';
         <ion-buttons slot="start">
           <ion-back-button defaultHref="/tabs/competitions" />
         </ion-buttons>
-        <ion-title>{{ competition()?.name ?? 'Competition' }}</ion-title>
-        <ion-buttons slot="end">
+        <div class="title-cluster" slot="start">
+          <span class="name">{{ competition()?.name ?? 'Competition' }}</span>
           @if (realtime.connected()) {
             <span class="fm-live" title="Live updates on">Live</span>
           }
+        </div>
+        <ion-buttons slot="end">
           @if (canScore()) {
             @if (pointsLeague()) {
               <ion-button (click)="openScore()">
@@ -170,6 +170,23 @@ type Tab = 'feed' | 'fixtures' | 'standings' | 'fantasy';
               <ion-icon name="chevron-forward-outline" aria-hidden="true" />
             </button>
           }
+          @if (canScheduleNext()) {
+            <section class="next-season fm-card fm-enter">
+              <ion-icon name="calendar-outline" aria-hidden="true" />
+              <div>
+                <strong>This season is finished</strong>
+                <p>Schedule a new season, or a knockout from the table.</p>
+                <div class="actions">
+                  <ion-button size="small" [disabled]="scheduling()" (click)="scheduleNext('season')">
+                    New season
+                  </ion-button>
+                  <ion-button size="small" fill="outline" [disabled]="scheduling()" (click)="scheduleNext('knockout')">
+                    Knockout
+                  </ion-button>
+                </div>
+              </div>
+            </section>
+          }
           @if (comp.rules.length) {
             <details class="rules fm-card fm-enter">
               <summary>
@@ -216,6 +233,36 @@ type Tab = 'feed' | 'fixtures' | 'standings' | 'fantasy';
   `,
   styles: [
     `
+      .title-cluster {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        max-width: min(52vw, 240px);
+        padding-inline-end: 6px;
+      }
+
+      .title-cluster .name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 1.05rem;
+        font-weight: 600;
+      }
+
+      @media (max-width: 479px) {
+        .title-cluster {
+          max-width: min(44vw, 168px);
+        }
+
+        .title-cluster .fm-live {
+          font-size: 0;
+          letter-spacing: 0;
+          gap: 0;
+        }
+      }
+
       .centered {
         display: grid;
         place-items: center;
@@ -354,6 +401,36 @@ type Tab = 'feed' | 'fixtures' | 'standings' | 'fantasy';
         line-height: 1.45;
       }
 
+      .next-season {
+        display: flex;
+        gap: 12px;
+        margin: 12px 16px 0;
+        padding: 14px 16px;
+
+        > ion-icon {
+          flex: 0 0 auto;
+          font-size: 1.4rem;
+          color: var(--ion-color-primary);
+        }
+
+        div {
+          min-width: 0;
+        }
+
+        p {
+          margin: 4px 0 10px;
+          color: var(--ion-color-medium);
+          font-size: 0.9rem;
+          line-height: 1.45;
+        }
+
+        .actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+      }
+
       .pick-banner {
         margin: 12px 16px 0;
         padding: 12px;
@@ -392,6 +469,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   readonly responding = signal(false);
   readonly error = signal<string | null>(null);
   readonly tab = signal<Tab>('feed');
+  readonly scheduling = signal(false);
 
   ngOnInit(): void {
     this.competitionId = this.route.snapshot.paramMap.get('id') ?? '';
@@ -536,6 +614,94 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   canManage(): boolean {
     const role = this.competition()?.my_role;
     return role === 'owner' || role === 'admin';
+  }
+
+  canScheduleNext(): boolean {
+    const competition = this.competition();
+    return !!competition?.season_finished && this.canManage() && this.showsFixtures();
+  }
+
+  async scheduleNext(kind: 'season' | 'knockout'): Promise<void> {
+    const competition = this.competition();
+    if (!competition || this.scheduling()) return;
+
+    const start = new Date();
+    start.setDate(start.getDate() + 7);
+    const startsOn = start.toISOString().slice(0, 10);
+    const sides = competition.participants.length;
+    const inputs: Array<{
+      name: string;
+      type: 'date' | 'time' | 'number';
+      value?: string | number;
+      placeholder?: string;
+      min?: number;
+      max?: number;
+    }> = [
+      { name: 'starts_on', type: 'date', value: startsOn },
+      { name: 'kickoff', type: 'time', value: '15:00' },
+    ];
+    if (kind === 'knockout' && sides > 2) {
+      const suggested = sides >= 8 ? 8 : sides >= 4 ? 4 : sides;
+      inputs.push({
+        name: 'advance',
+        type: 'number',
+        value: suggested,
+        placeholder: 'Sides that advance',
+        min: 2,
+        max: sides,
+      });
+    }
+
+    const alert = await this.alerts.create({
+      header: kind === 'knockout' ? 'Schedule a knockout' : 'Schedule a new season',
+      message:
+        kind === 'knockout'
+          ? 'The table order is the seed. Leave the number blank to include every side.'
+          : 'Everyone plays everyone again. Completed matches stay in the record.',
+      inputs,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Schedule', role: 'confirm' },
+      ],
+    });
+    await alert.present();
+    const { role, data } = await alert.onDidDismiss();
+    if (role !== 'confirm') return;
+
+    const values = (data?.values ?? {}) as { starts_on?: string; kickoff?: string; advance?: string };
+    const starts = values.starts_on || startsOn;
+    const rawKickoff = values.kickoff || '15:00';
+    const kickoff = rawKickoff.length === 5 ? `${rawKickoff}:00` : rawKickoff;
+    const advance = Number(values.advance);
+    this.scheduling.set(true);
+    this.api
+      .scheduleNextSeason(this.competitionId, {
+        kind,
+        starts_on: starts,
+        kickoff,
+        weekdays: competition.match_weekdays,
+        ...(kind === 'knockout' && advance >= 2 ? { advance } : {}),
+      })
+      .subscribe({
+        next: (result) => {
+          this.scheduling.set(false);
+          this.competition.set(result.competition);
+          this.selectTab('fixtures');
+          void this.toast(
+            kind === 'knockout'
+              ? `${result.stage.name} is scheduled.`
+              : `${result.stage.name} is scheduled.`,
+            'success',
+          );
+        },
+        error: (err: unknown) => {
+          this.scheduling.set(false);
+          void this.toast(
+            extractErrorMessage(err, 'Could not schedule the next season.'),
+            'danger',
+          );
+        },
+      });
   }
 
   isOwner(): boolean {

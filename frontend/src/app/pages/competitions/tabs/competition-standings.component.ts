@@ -9,6 +9,7 @@ import {
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { debounceTime } from 'rxjs';
 import {
   AlertController,
@@ -24,10 +25,12 @@ import { extractErrorMessage } from '../../../core/error-message';
 import type {
   CompetitionDetail,
   CriterionBreakdown,
+  Fixture,
   PlayerStatsTable,
   StandingRow,
 } from '../../../core/models';
-import { isPointsTable } from '../../../core/models';
+import { isPointsTable, tableBonusEnabled, tableBonusOf } from '../../../core/models';
+import { KnockoutTreeComponent } from './knockout-tree.component';
 import { RealtimeService } from '../../../core/realtime.service';
 import type { CombinationStatRow } from '../../../core/results.models';
 import { ResultsService } from '../../../core/results.service';
@@ -35,7 +38,7 @@ import { ResultsService } from '../../../core/results.service';
 @Component({
   selector: 'fm-competition-standings',
   standalone: true,
-  imports: [IonIcon, IonButton, IonSelect, IonSelectOption],
+  imports: [IonIcon, IonButton, IonSelect, IonSelectOption, KnockoutTreeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (pointsTable() && scoringGuide().length) {
@@ -72,11 +75,7 @@ import { ResultsService } from '../../../core/results.service';
     }
 
     @if (competition().format === 'knockout') {
-      <div class="fm-empty">
-        <ion-icon name="git-network-outline" aria-hidden="true" />
-        <h3>No league table</h3>
-        <p>The winner of each fixture advances until a champion is decided.</p>
-      </div>
+      <fm-knockout-tree [competitionId]="competition().id" (select)="openFixture($event)" />
     } @else if (loading()) {
       <div class="table-wrap fm-card" aria-busy="true" aria-label="Loading the table">
         @for (n of skeletonRows; track n) {
@@ -123,6 +122,9 @@ import { ResultsService } from '../../../core/results.service';
                 <th>+/-</th>
                 @if (headStartTable()) {
                   <th title="Goal difference without handicap goals">Net</th>
+                }
+                @if (showsBonus()) {
+                  <th title="Bonus points">B</th>
                 }
               }
               <th class="pts">Pts</th>
@@ -177,6 +179,9 @@ import { ResultsService } from '../../../core/results.service';
                   </td>
                   @if (headStartTable()) {
                     <td [class.negative]="isNegative(netDifference(row))">{{ signed(netDifference(row)) }}</td>
+                  }
+                  @if (showsBonus()) {
+                    <td>{{ trim(row.bonus_points) }}</td>
                   }
                 }
                 <td class="pts">
@@ -308,9 +313,23 @@ import { ResultsService } from '../../../core/results.service';
         } @else if (pointsTable()) {
           Tap a name to see each scoring criterion, what the points mean, and how they were accumulated.
         } @else {
+          @if (leagueGuide(); as league) {
+            League: {{ league }}.
+          }
           Tie-breakers in order: {{ tiebreakerLabels() }}.
+          @if (bonusGuide(); as bonus) {
+            Bonus: {{ bonus }}.
+          }
         }
       </p>
+    }
+
+    @if (showsRounds()) {
+      <fm-knockout-tree
+        [competitionId]="competition().id"
+        layout="rounds"
+        (select)="openFixture($event)"
+      />
     }
   `,
   styles: [
@@ -592,6 +611,7 @@ import { ResultsService } from '../../../core/results.service';
 })
 export class CompetitionStandingsComponent implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly router = inject(Router);
   private readonly realtime = inject(RealtimeService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly results = inject(ResultsService);
@@ -603,6 +623,10 @@ export class CompetitionStandingsComponent implements OnInit {
   canScore(): boolean {
     const role = this.competition().my_role;
     return role === 'owner' || role === 'admin' || role === 'scorer';
+  }
+
+  openFixture(fixture: Fixture): void {
+    void this.router.navigate(['/tabs/competitions', this.competition().id, 'fixtures', fixture.id]);
   }
 
   /** Delete one logged entry after a confirmation; the table is worked out again. */
@@ -751,6 +775,50 @@ export class CompetitionStandingsComponent implements OnInit {
 
   pointsTable(): boolean {
     return !this.seriesTable() && isPointsTable(this.competition());
+  }
+
+  showsRounds(): boolean {
+    if (this.pointsTable() || this.seriesTable()) return false;
+    const format = this.competition().format;
+    return format === 'league' || format === 'ladder' || format === 'group_knockout';
+  }
+
+  showsBonus(): boolean {
+    return tableBonusEnabled(this.competition()) || this.rows().some((row) => Number(row.bonus_points) !== 0);
+  }
+
+  leagueGuide(): string {
+    const raw = this.competition().settings_json?.['league_points'];
+    if (!raw || typeof raw !== 'object') return '';
+    const points = raw as Record<string, number>;
+    const parts: string[] = [];
+    if (points['win'] != null) parts.push(`win ${points['win']}`);
+    if (points['draw'] != null) parts.push(`draw ${points['draw']}`);
+    if (points['loss'] != null) parts.push(`loss ${points['loss']}`);
+    if (points['extra_time_win'] != null) parts.push(`extra-time win ${points['extra_time_win']}`);
+    if (points['penalty_win'] != null) parts.push(`penalty win ${points['penalty_win']}`);
+    return parts.join(', ');
+  }
+
+  bonusGuide(): string {
+    const bonus = tableBonusOf(this.competition());
+    if (!bonus?.enabled) return '';
+    const parts: string[] = [];
+    if (bonus.scoring_threshold) {
+      const codes = bonus.scoring_codes?.length ? bonus.scoring_codes : bonus.scoring_code ? [bonus.scoring_code] : [];
+      const names = codes
+        .map((code) => this.competition().scoring_categories.find((item) => item.code === code)?.name || code)
+        .filter(Boolean);
+      const of = names.join(' / ') || 'match score';
+      parts.push(`+${bonus.scoring_points ?? 0} for ${bonus.scoring_threshold}+ ${of}`);
+    }
+    if (bonus.win_margin) {
+      parts.push(`+${bonus.win_points ?? 0} for winning by ${bonus.win_margin}`);
+    }
+    if (bonus.loss_margin) {
+      parts.push(`+${bonus.loss_points ?? 0} for losing by ${bonus.loss_margin} or fewer`);
+    }
+    return parts.join(', ');
   }
 
   /** Competitions ranked per event (races, classes, rides) show a series table. */

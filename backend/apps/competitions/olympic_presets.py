@@ -362,11 +362,17 @@ OLYMPIC_PRESETS: dict[str, dict] = {
         label="Rugby sevens",
         icon="american-football-outline",
         sport="rugby sevens",
+        family="rugby_union",
+        variant="sevens",
+        family_label="Rugby union",
+        variant_label="Sevens",
         governing_body="World Rugby",
         rulebook="World Rugby Laws of the Game (Sevens variations)",
         description=(
-            "A try is 5, a conversion 2, a penalty or drop goal 3. Two halves of 7 "
-            "minutes. A level knockout game goes to sudden-death extra time."
+            "A try is 5, a conversion 2 (drop-kicked), a penalty or drop goal 3. "
+            "Two halves of 7 minutes; finals are 2 × 10. Pool points are win 3, "
+            "draw 2, loss 1. A level knockout goes to sudden-death extra time in "
+            "5-minute periods. Usually run as pools, then cup, plate and bowl."
         ),
         score_types=[
             {"key": "try", "label": "Try", "value": 5, "affects_score": True},
@@ -378,12 +384,36 @@ OLYMPIC_PRESETS: dict[str, dict] = {
             RED_CARD,
         ],
         match_structure=[
-            {"unit": "half", "count": 2, "minutes": 7},
-            {"unit": "sudden_death", "count": 1, "minutes": 5, "repeat": True},
+            {"unit": "half", "count": 2, "minutes": 7, "clock": "running"},
+            {"unit": "sudden_death", "count": 1, "minutes": 5, "repeat": True, "extra": True},
         ],
         draw_resolution="sudden_death",
+        league_points={"win": 3, "draw": 2, "loss": 1},
         tiebreakers=["points", "score_difference", "category:try", "head_to_head"],
         formats_allowed=["league", "knockout", "groups_knockout", "round_robin"],
+        team_sheet={
+            "starters": 7,
+            "min_on_field": 5,
+            "min_squad": 7,
+            "bench_max": 5,
+            "max_substitutions": 5,
+            "rolling_substitutions": True,
+        },
+        rules=[
+            {
+                "name": "League points",
+                "description": "In a pool, a win is 3, a draw is 2, a loss is 1.",
+            },
+            {"name": "Players", "description": "7 start, with 5 on the bench. Substitutions are rolling."},
+            {
+                "name": "Format",
+                "description": "Pools, then cup, plate and bowl knockout brackets.",
+            },
+            {
+                "name": "Knockout",
+                "description": "A level game goes to sudden-death extra time in 5-minute periods.",
+            },
+        ],
     ),
     "flag_football": _match(
         label="Flag football",

@@ -280,9 +280,9 @@ interface Celebration {
             </div>
           </form>
 
-          <h3 class="fm-section-title">Referee</h3>
+          <h3 class="fm-section-title">Officials</h3>
           <p class="hint">
-            Every game needs a referee before kickoff. The referee scores this game; an admin can still score it too.
+            Pick the match officials before kickoff. Officials score this game; an admin can still score it too.
           </p>
           <div class="referees">
             @for (referee of fx.referees; track referee.id) {
@@ -292,7 +292,7 @@ interface Celebration {
               </div>
             }
             <label>
-              Add a referee
+              Add an official
               <input
                 placeholder="Search profiles"
                 [value]="refereeQuery()"
@@ -330,7 +330,13 @@ interface Celebration {
               <p>No scoring categories are configured for this competition yet.</p>
             </div>
           } @else {
-            <p class="hint">Add a goal or card on the player. Player stats are recorded on the Raters tab.</p>
+            <p class="hint">
+              @if (recordsMatchEvents()) {
+                Record who scored or was booked, and when. The match clock stamps the minute. Player ratings are on the Raters tab.
+              } @else {
+                Add a goal or card on the player. Player stats are recorded on the Raters tab.
+              }
+            </p>
             <div class="fm-team-columns" [class.many]="fx.sides.length > 2">
             @for (side of fx.sides; track side.id) {
               <div class="fm-card scorer">
@@ -972,10 +978,26 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     );
   }
 
+  isKnockout(): boolean {
+    const format = this.competition()?.format;
+    return format === 'knockout' || format === 'group_knockout';
+  }
+
+  /** League, cup and ladder matches keep a named, timed timeline and ratings. */
+  recordsMatchEvents(): boolean {
+    const competition = this.competition();
+    if (!competition) return false;
+    const format = competition.format;
+    if (format !== 'league' && format !== 'knockout' && format !== 'group_knockout' && format !== 'ladder') {
+      return false;
+    }
+    return (competition.settings_json?.['table_mode'] as string | undefined) !== 'points';
+  }
+
   requiresProfile(category: ScoringCategory): boolean {
     const code = category.code.trim().toLowerCase();
     const name = category.name.trim().toLowerCase();
-    return (
+    if (
       code === 'goal' ||
       code === 'own-goal' ||
       code === 'yellow-card' ||
@@ -996,7 +1018,16 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       name === 'safety' ||
       name === 'returned conversion' ||
       name === 'home run'
-    );
+    ) {
+      return true;
+    }
+    return this.recordsMatchEvents() && this.tracksMatchEvents(category);
+  }
+
+  /** Scoring and cards belong on the match timeline with a name and a minute. */
+  tracksMatchEvents(category: ScoringCategory): boolean {
+    if (this.noPlayer(category) || this.statCodes().has(category.code)) return false;
+    return this.isCard(category) || category.affects_score;
   }
 
   statsFor(sideId: string) {
@@ -1108,14 +1139,19 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     if (this.saving()) return;
     const awarded = this.noPlayer(category);
     const roster = awarded ? [] : this.rosterFor(side);
+    let named = '';
     if (!awarded && this.requiresProfile(category) && !playerId) {
-      await this.showToast(
-        roster.length
-          ? 'Choose the profile this applies to.'
-          : 'Add a profile to this team first.',
-        'danger',
-      );
-      return;
+      if (roster.length) {
+        await this.showToast('Choose the profile this applies to.', 'danger');
+        return;
+      }
+      if (this.recordsMatchEvents()) {
+        named = await this.askPlayerName(category);
+        if (!named) return;
+      } else {
+        await this.showToast('Add a profile to this team first.', 'danger');
+        return;
+      }
     }
     if (this.statCodes().has(category.code)) {
       await this.showToast('Player stats are recorded on the Raters tab.', 'danger');
@@ -1132,6 +1168,8 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       body['player'] = playerId;
       const member = roster.find((item) => item.id === playerId);
       if (member) body['player_name'] = member.name;
+    } else if (named) {
+      body['player_name'] = named;
     }
     if (this.units().length) {
       body['unit_index'] = this.unitIndex();
@@ -1152,6 +1190,22 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
           await this.showToast(extractErrorMessage(err, 'Could not record that.'), 'danger');
         },
       });
+  }
+
+  private async askPlayerName(category: ScoringCategory): Promise<string> {
+    const alert = await this.alerts.create({
+      header: category.name,
+      message: 'Who was this? The match timeline shows the name and the minute.',
+      inputs: [{ name: 'player', type: 'text', placeholder: 'Player name' }],
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Record', role: 'confirm' },
+      ],
+    });
+    await alert.present();
+    const { role, data } = await alert.onDidDismiss<{ values?: { player?: string } }>();
+    if (role !== 'confirm') return '';
+    return String(data?.values?.player ?? '').trim();
   }
 
   /** Delete a recorded score after a confirmation; a counted official result also asks why. */
@@ -1314,28 +1368,7 @@ function writeMatchClock(fixtureId: string, clock: MatchClock): void {
 function followsMatchClock(category: ScoringCategory): boolean {
   const code = category.code.trim().toLowerCase();
   const name = category.name.trim().toLowerCase();
-  return (
-    code === 'goal' ||
-    code === 'own-goal' ||
-    code === 'yellow-card' ||
-    code === 'red-card' ||
-    code === 'touchdown' ||
-    code === 'extra-point' ||
-    code === 'two-point' ||
-    code === 'safety' ||
-    code === 'defensive-conversion' ||
-    code === 'penalty' ||
-    name === 'goal' ||
-    name === 'own goal' ||
-    name === 'yellow card' ||
-    name === 'red card' ||
-    name === 'touchdown' ||
-    name === 'extra point' ||
-    name === 'two-point conversion' ||
-    name === 'safety' ||
-    name === 'returned conversion' ||
-    name === 'penalty'
-  );
+  return category.affects_score || code.endsWith('-card') || name.endsWith(' card');
 }
 
 function formatClock(elapsedMs: number): string {

@@ -16,6 +16,8 @@ import type {
   MatchDay,
   MatchRaters,
   MatchReportData,
+  NextSeasonRequest,
+  NextSeasonResponse,
   PlayerStatsTable,
   MediaAsset,
   Membership,
@@ -100,6 +102,10 @@ export class ApiService {
 
   leaveCompetition(id: string) {
     return this.http.post(`${this.base}/competitions/${id}/leave`, {});
+  }
+
+  scheduleNextSeason(id: string, body: NextSeasonRequest) {
+    return this.http.post<NextSeasonResponse>(`${this.base}/competitions/${id}/next-season`, body);
   }
 
   // --- Scoring configuration ------------------------------------------------
@@ -332,6 +338,10 @@ export class ApiService {
       `${this.base}/competitions/${competitionId}/participants/${participantId}/picks`,
       { user: userId },
     );
+  }
+
+  myPendingTeamPicks(): Observable<TeamPick[]> {
+    return this.http.get<TeamPick[]>(`${this.base}/me/team-picks`);
   }
 
   myTeamPicks(competitionId: string): Observable<TeamPick[]> {

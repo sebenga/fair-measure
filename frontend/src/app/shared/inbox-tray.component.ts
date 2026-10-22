@@ -202,6 +202,7 @@ export class InboxTrayComponent {
     if (kind.includes('contact')) return 'Scout';
     if (kind.includes('guardian')) return 'Guardian';
     if (kind.includes('search')) return 'Alert';
+    if (kind.includes('invite') || kind.includes('pick')) return 'Team';
     if (kind.includes('squad') || kind.includes('league')) return 'League';
     if (kind.includes('score') || kind.includes('fixture')) return 'Match';
     if (kind.includes('feed') || kind.includes('announce')) return 'News';

@@ -18,7 +18,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.core.bus import Queues, competition_room, enqueue_job, publish_event
-from apps.fixtures.models import PlayerMatchRating, ScoreEvent
+from apps.fixtures.models import Fixture, PlayerMatchRating, ScoreEvent
 from apps.core.permissions import (
     IsCompetitionAdminOrReadOnly,
     Role,
@@ -38,6 +38,7 @@ from .models import (
 )
 from .presets import PRESETS, SCORING_LOCKED_MESSAGE, apply_preset, public_preset, scoring_is_locked
 from .serializers import (
+    squad_size_for,
     ApplyPresetSerializer,
     CompetitionDetailSerializer,
     CompetitionListSerializer,
@@ -57,6 +58,7 @@ from .serializers import (
     ScoringCategorySerializer,
     StageSerializer,
     TransferOwnershipSerializer,
+    NextSeasonSerializer,
 )
 
 User = get_user_model()
@@ -298,6 +300,69 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         return Response(
             MembershipSerializer(membership).data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @extend_schema(
+        tags=["Competitions"],
+        summary="Schedule the next season or a knockout after the current one finishes",
+        request=NextSeasonSerializer,
+        responses={201: dict},
+    )
+    @action(detail=True, methods=["post"], url_path="next-season")
+    def next_season(self, request: Request, pk: str | None = None) -> Response:
+        competition = self.get_object()
+        if not has_at_least(competition, request.user, Role.ADMIN):
+            raise PermissionDenied("Only competition admins can schedule the next season.")
+
+        serializer = NextSeasonSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        from .season import schedule_next
+
+        stage, created = schedule_next(
+            competition,
+            kind=data["kind"],
+            starts_on=data["starts_on"],
+            kickoff=data["kickoff"],
+            weekdays=data.get("weekdays"),
+            minutes_between_fixtures=data["minutes_between_fixtures"],
+            double_round=data["double_round"],
+            location=data.get("location", ""),
+            advance=data.get("advance"),
+        )
+        competition.refresh_from_db()
+        publish_event(
+            "fixtures.generated",
+            {"competition_id": str(competition.id), "count": len(created), "stage_id": str(stage.id)},
+            [competition_room(competition.id)],
+        )
+        publish_event(
+            "competition.updated",
+            {"competition_id": str(competition.id)},
+            [competition_room(competition.id)],
+        )
+        enqueue_job(
+            Queues.NOTIFICATIONS,
+            "fixtures-published",
+            {"competition_id": str(competition.id), "count": len(created)},
+        )
+        from apps.fixtures.serializers import FixtureListSerializer
+
+        queryset = (
+            Fixture.objects.filter(id__in=[item.id for item in created])
+            .prefetch_related("sides__participant")
+            .order_by("scheduled_at", "round_number")
+        )
+        return Response(
+            {
+                "stage": StageSerializer(stage).data,
+                "fixtures": FixtureListSerializer(queryset, many=True).data,
+                "competition": CompetitionDetailSerializer(
+                    competition, context=self.get_serializer_context()
+                ).data,
+            },
+            status=status.HTTP_201_CREATED,
         )
 
     @extend_schema(tags=["Competitions"], summary="Leave a competition", request=None)
@@ -733,7 +798,7 @@ class TeamPickListCreateView(APIView):
         participant = get_object_or_404(Participant, pk=participant_pk, competition=competition)
         picks = (
             TeamPick.objects.filter(participant=participant)
-            .select_related("user", "participant")
+            .select_related("user", "participant__competition")
             .order_by("-created_at")
         )
         return Response(TeamPickSerializer(picks, many=True).data)
@@ -751,33 +816,46 @@ class TeamPickListCreateView(APIView):
         return Response(TeamPickSerializer(pick).data, status=status.HTTP_201_CREATED)
 
 
+def _pending_picks_for(user, competition=None):
+    picks = TeamPick.objects.filter(user=user, status=TeamPick.Status.PENDING).select_related(
+        "user", "participant__competition"
+    )
+    if competition is not None:
+        picks = picks.filter(participant__competition=competition)
+    return picks.order_by("-created_at")
+
+
+def _own_team_pick(user, competition_pk, pick_pk) -> TeamPick:
+    """The invited player can always answer their own pick, even on a private league."""
+
+    return get_object_or_404(
+        TeamPick.objects.select_related("participant__competition", "user"),
+        pk=pick_pk,
+        participant__competition_id=competition_pk,
+        user=user,
+    )
+
+
+class MyPendingTeamPickListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request):
+        return Response(TeamPickSerializer(_pending_picks_for(request.user), many=True).data)
+
+
 class MyTeamPickListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request: Request, competition_pk):
         competition = _visible_competition(request, competition_pk)
-        picks = (
-            TeamPick.objects.filter(
-                participant__competition=competition,
-                user=request.user,
-                status=TeamPick.Status.PENDING,
-            )
-            .select_related("user", "participant")
-            .order_by("-created_at")
-        )
-        return Response(TeamPickSerializer(picks, many=True).data)
+        return Response(TeamPickSerializer(_pending_picks_for(request.user, competition), many=True).data)
 
 
 class TeamPickAcceptView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request: Request, competition_pk, pick_pk):
-        competition = _visible_competition(request, competition_pk)
-        pick = get_object_or_404(
-            TeamPick.objects.select_related("participant", "user"),
-            pk=pick_pk,
-            participant__competition=competition,
-        )
+        pick = _own_team_pick(request.user, competition_pk, pick_pk)
         accept_team_pick(pick, request.user)
         pick.refresh_from_db()
         return Response(TeamPickSerializer(pick).data)
@@ -787,20 +865,22 @@ class TeamPickDeclineView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request: Request, competition_pk, pick_pk):
-        competition = _visible_competition(request, competition_pk)
-        pick = get_object_or_404(
-            TeamPick.objects.select_related("participant", "user"),
-            pk=pick_pk,
-            participant__competition=competition,
-        )
+        pick = TeamPick.objects.select_related("participant__competition", "user").filter(
+            pk=pick_pk, participant__competition_id=competition_pk
+        ).first()
+        if pick is None:
+            raise PermissionDenied("You cannot see this competition.")
         if pick.user_id == request.user.id:
             decline_team_pick(pick, request.user)
         elif _can_manage_team(request, pick.participant):
+            _visible_competition(request, competition_pk)
             if pick.status != TeamPick.Status.PENDING:
                 raise ValidationError({"status": "This pick is already settled."})
             pick.status = TeamPick.Status.DECLINED
             pick.responded_at = timezone.now()
             pick.save(update_fields=["status", "responded_at", "updated_at"])
+        else:
+            raise PermissionDenied("Only the picked profile can decline.")
         pick.refresh_from_db()
         return Response(TeamPickSerializer(pick).data)
 
@@ -823,15 +903,17 @@ class TeamDraftView(APIView):
         user_id = request.data.get("user")
         if not user_id:
             raise ValidationError({"user": "Choose a profile to draft."})
+        needed = squad_size_for(competition)
         team = next_draft_team(
             list(
                 competition.participants.filter(kind=Participant.Kind.TEAM, is_active=True).order_by(
                     "name"
                 )
-            )
+            ),
+            needed,
         )
         if team is None:
-            raise ValidationError({"user": "Every team already has 14 players."})
+            raise ValidationError({"user": f"Every team already has {needed} players."})
         user = get_object_or_404(get_user_model(), pk=user_id)
         pick = offer_team_pick(team, user, request.user)
         return Response(

@@ -419,6 +419,87 @@ def is_criteria_league(competition: Competition) -> bool:
     return scoring_basis(competition) == "criteria"
 
 
+def table_bonus_enabled(settings: dict, policy: PointsPolicy | None = None) -> bool:
+    """Whether the table adds bonus points on top of win, draw and loss.
+
+    An explicit `table_bonus.enabled` flag wins. Older competitions with no
+    flag still award the margin bonuses stored on the points policy.
+    """
+
+    bonus = settings.get("table_bonus")
+    if isinstance(bonus, dict) and "enabled" in bonus:
+        return bool(bonus.get("enabled"))
+    if policy is None:
+        return False
+    return policy.bonus_win_margin is not None or policy.bonus_loss_margin is not None
+
+
+def _scoring_bonus_progress(side, fixture, bonus: dict) -> Decimal:
+    """How far a side is toward a scoring bonus: match score, or a criterion count."""
+
+    codes = [str(item) for item in (bonus.get("scoring_codes") or []) if item]
+    code = str(bonus.get("scoring_code") or "")
+    if code and code not in codes:
+        codes.append(code)
+    if not codes:
+        return side.score
+    wanted = set(codes)
+    total = ZERO
+    for event in fixture.events.all():
+        if event.side_id != side.id or event.scoring_category is None:
+            continue
+        if event.scoring_category.code in wanted:
+            total += Decimal(event.quantity)
+    return total
+
+
+def _award_table_bonuses(row: Row, side, sides, fixture, settings: dict, policy: PointsPolicy) -> None:
+    """Add optional table bonuses from scoring and from the winning or losing margin."""
+
+    if not table_bonus_enabled(settings, policy):
+        return
+
+    bonus = settings.get("table_bonus") if isinstance(settings.get("table_bonus"), dict) else {}
+    if bonus.get("enabled"):
+        win_margin = bonus.get("win_margin")
+        win_points = Decimal(str(bonus.get("win_points") or 0))
+        loss_margin = bonus.get("loss_margin")
+        loss_points = Decimal(str(bonus.get("loss_points") or 0))
+    else:
+        win_margin = policy.bonus_win_margin
+        win_points = policy.bonus_win_points
+        loss_margin = policy.bonus_loss_margin
+        loss_points = policy.bonus_loss_points
+
+    best_other = max((other.score for other in sides if other.id != side.id), default=ZERO)
+    margin = side.score - best_other
+
+    if win_margin is not None and side.outcome == FixtureSide.Outcome.WIN and margin >= Decimal(
+        str(win_margin)
+    ):
+        row.bonus_points += win_points
+        row.points += win_points
+
+    if (
+        loss_margin is not None
+        and side.outcome == FixtureSide.Outcome.LOSS
+        and -margin <= Decimal(str(loss_margin))
+    ):
+        row.bonus_points += loss_points
+        row.points += loss_points
+
+    if not bonus.get("enabled"):
+        return
+    threshold = bonus.get("scoring_threshold")
+    award = Decimal(str(bonus.get("scoring_points") or 0))
+    if not threshold or award == ZERO:
+        return
+    progress = _scoring_bonus_progress(side, fixture, bonus)
+    if progress >= Decimal(str(threshold)):
+        row.bonus_points += award
+        row.points += award
+
+
 def criteria_breakdown(competition: Competition) -> dict[str, list[dict]]:
     """Per participant, the criteria that make up their accumulated points.
 
@@ -473,31 +554,64 @@ def criteria_breakdown(competition: Competition) -> dict[str, list[dict]]:
     }
 
 
-def _decided_after_regulation(fixtures, settings: dict) -> set:
-    """Fixtures level at the end of regulation and won in extra blocks (overtime,
-    shoot-out), when the preset scores those results differently."""
+def _phase_points(phase: str | None, league_points: dict, policy: PointsPolicy, *, won: bool) -> Decimal:
+    """League points for a win or loss, using extra-time or penalty values when set."""
+
+    if won:
+        if phase == "penalties" and "penalty_win" in league_points:
+            return Decimal(str(league_points["penalty_win"]))
+        if phase and "extra_time_win" in league_points:
+            return Decimal(str(league_points["extra_time_win"]))
+        return policy.win_points
+    if phase == "penalties" and "penalty_loss" in league_points:
+        return Decimal(str(league_points["penalty_loss"]))
+    if phase and "extra_time_loss" in league_points:
+        return Decimal(str(league_points["extra_time_loss"]))
+    return policy.loss_points
+
+
+def _decided_after_regulation(fixtures, settings: dict) -> dict:
+    """How a level regulation game was won: extra_time or penalties.
+
+    Used when the preset scores those results differently. A fixture is omitted
+    when it was decided in regulation, or when the preset does not split points.
+    """
 
     league_points = settings.get("league_points") or {}
-    if "extra_time_win" not in league_points or not fixtures:
-        return set()
+    if not fixtures or (
+        "extra_time_win" not in league_points and "penalty_win" not in league_points
+    ):
+        return {}
     from apps.competitions.engine import expand_units
 
     slots = expand_units(settings.get("match_structure") or [])
     regulation = {slot["index"] for slot in slots if not slot["extra"]}
+    extra_scoring = {
+        slot["index"]
+        for slot in slots
+        if slot["extra"] and slot["affects_total"] and not slot["resolves_draw"]
+    }
     fixtures = list(fixtures)
-    totals: dict = defaultdict(lambda: ZERO)
+    regulation_totals: dict = defaultdict(lambda: ZERO)
+    extra_totals: dict = defaultdict(lambda: ZERO)
     for event in ScoreEvent.objects.filter(
         fixture__in=fixtures, scoring_category__affects_score=True
     ):
         if event.unit_index is None or event.unit_index in regulation:
-            totals[(event.fixture_id, event.side_id)] += event.points
-    decided = set()
+            regulation_totals[(event.fixture_id, event.side_id)] += event.points
+        elif event.unit_index in extra_scoring:
+            extra_totals[(event.fixture_id, event.side_id)] += event.points
+    decided: dict = {}
     for fixture in fixtures:
         sides = list(fixture.sides.all())
         if len(sides) != 2 or not any(side.outcome == FixtureSide.Outcome.WIN for side in sides):
             continue
-        if totals[(fixture.id, sides[0].id)] == totals[(fixture.id, sides[1].id)]:
-            decided.add(fixture.id)
+        if regulation_totals[(fixture.id, sides[0].id)] != regulation_totals[(fixture.id, sides[1].id)]:
+            continue
+        if extra_totals[(fixture.id, sides[0].id)] != extra_totals[(fixture.id, sides[1].id)]:
+            decided[fixture.id] = "extra_time"
+        else:
+            decided[fixture.id] = "penalties"
     return decided
 
 
@@ -520,7 +634,7 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
             competition=competition,
             status__in=[Fixture.Status.COMPLETED, Fixture.Status.FORFEIT],
         )
-        .prefetch_related("sides__participant")
+        .prefetch_related("sides__participant", "events__scoring_category")
         .order_by("scheduled_at", "created_at")
     )
     if stage is not None:
@@ -630,10 +744,8 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
 
             if side.outcome == FixtureSide.Outcome.WIN:
                 row.wins += 1
-                row.points += (
-                    Decimal(str(league_points["extra_time_win"]))
-                    if fixture.id in after_regulation
-                    else policy.win_points
+                row.points += _phase_points(
+                    after_regulation.get(fixture.id), league_points, policy, won=True
                 )
                 form_by_participant[participant_id].append("W")
                 for other in sides:
@@ -648,33 +760,12 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
                         row.drawn.add(str(other.participant_id))
             else:
                 row.losses += 1
-                row.points += (
-                    Decimal(str(league_points["extra_time_loss"]))
-                    if fixture.id in after_regulation
-                    else policy.loss_points
+                row.points += _phase_points(
+                    after_regulation.get(fixture.id), league_points, policy, won=False
                 )
                 form_by_participant[participant_id].append("L")
 
-            # Optional margin bonus. Margin is measured against the best
-            # of the other sides, which also works for multi-way fixtures.
-            best_other = max((other.score for other in sides if other.id != side.id), default=ZERO)
-            margin = side.score - best_other
-
-            if (
-                policy.bonus_win_margin is not None
-                and side.outcome == FixtureSide.Outcome.WIN
-                and margin >= policy.bonus_win_margin
-            ):
-                row.bonus_points += policy.bonus_win_points
-                row.points += policy.bonus_win_points
-
-            if (
-                policy.bonus_loss_margin is not None
-                and side.outcome == FixtureSide.Outcome.LOSS
-                and -margin <= policy.bonus_loss_margin
-            ):
-                row.bonus_points += policy.bonus_loss_points
-                row.points += policy.bonus_loss_points
+            _award_table_bonuses(row, side, sides, fixture, settings, policy)
 
     for participant_id, results in form_by_participant.items():
         if participant_id in rows:

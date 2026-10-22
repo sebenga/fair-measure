@@ -65,6 +65,53 @@ def test_win_draw_loss_points_follow_the_policy(
     assert rows["Real United"].points == Decimal("2")
 
 
+def test_table_bonus_can_be_switched_off(
+    competition, rugby_scoring, points_policy, participants
+):
+    competition.settings_json = {**(competition.settings_json or {}), "table_bonus": {"enabled": False}}
+    competition.save(update_fields=["settings_json"])
+
+    a, b = participants[0], participants[1]
+    play(competition, a, b, 18, 12, rugby_scoring["penalty"])
+
+    rows = {row.name: row for row in compute_standings(competition)}
+    assert rows["Real United"].bonus_points == Decimal("0")
+    assert rows["Real United"].points == Decimal("0")
+    assert rows["Tank United"].points == Decimal("4")
+
+
+def test_scoring_bonus_accumulates_from_a_criterion(
+    competition, rugby_scoring, points_policy, participants
+):
+    competition.settings_json = {
+        **(competition.settings_json or {}),
+        "table_bonus": {
+            "enabled": True,
+            "scoring_threshold": 4,
+            "scoring_points": 1,
+            "scoring_code": "try",
+            "win_margin": None,
+            "win_points": 0,
+            "loss_margin": None,
+            "loss_points": 0,
+        },
+    }
+    competition.save(update_fields=["settings_json"])
+    points_policy.bonus_loss_margin = None
+    points_policy.bonus_loss_points = Decimal("0")
+    points_policy.save()
+
+    a, b = participants[0], participants[1]
+    try_score = rugby_scoring["try"]
+    play(competition, a, b, 20, 5, try_score)  # 4 tries to 1
+
+    rows = {row.name: row for row in compute_standings(competition)}
+    assert rows["Tank United"].bonus_points == Decimal("1")
+    assert rows["Tank United"].points == Decimal("5")  # 4 for the win + 1 scoring bonus
+    assert rows["Real United"].bonus_points == Decimal("0")
+    assert rows["Real United"].points == Decimal("0")
+
+
 def test_losing_bonus_point_is_awarded_within_the_margin(
     competition, rugby_scoring, points_policy, participants
 ):
