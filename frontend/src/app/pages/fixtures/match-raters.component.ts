@@ -95,12 +95,15 @@ import { RealtimeService } from '../../core/realtime.service';
             <div class="fm-card team">
               <span class="fm-team-head">{{ team.team }}</span>
               @for (player of team.players; track player.player_id) {
-                <div class="player" [class.rated]="hasMark(player)">
+                <div class="player" [class.rated]="hasMark(player)" [class.off]="player.sent_off">
                   <span class="name">
                     @if (player.number !== null) {
                       <span class="num">{{ player.number }}</span>
                     }
                     {{ player.name }}
+                    @if (player.sent_off) {
+                      <em>Sent off</em>
+                    }
                   </span>
                   <span class="avg" [class.pending]="!player.average">
                     @if (player.average) {
@@ -112,7 +115,13 @@ import { RealtimeService } from '../../core/realtime.service';
                   @if (context(player); as note) {
                     <p class="context">{{ note }}</p>
                   }
-                  <p class="basis">Record player stats, then rate from them</p>
+                  <p class="basis">
+                    @if (player.rating_locked) {
+                      Sent off. Rating stopped.
+                    } @else {
+                      Record player stats, then rate from them
+                    }
+                  </p>
                   <dl class="sheet">
                     @for (stat of player.stats; track stat.code) {
                       @if (stat.kind === 'minutes' && d.can_record_stats) {
@@ -123,7 +132,7 @@ import { RealtimeService } from '../../core/realtime.service';
                             max="300"
                             inputmode="numeric"
                             [value]="stat.count"
-                            [disabled]="busy()"
+                            [disabled]="busy() || player.rating_locked"
                             (change)="setMinutes(player.player_id, $any($event.target).value)"
                           />
                           <span>{{ stat.label }}</span>
@@ -142,7 +151,7 @@ import { RealtimeService } from '../../core/realtime.service';
                           <span>{{ stat.label }}</span>
                           <button
                             type="button"
-                            [disabled]="busy()"
+                            [disabled]="busy() || player.rating_locked"
                             [attr.aria-label]="'Add one ' + stat.label + ' for ' + player.name"
                             (click)="adjust(player.player_id, stat.code, 1)"
                           >
@@ -166,7 +175,7 @@ import { RealtimeService } from '../../core/realtime.service';
                         role="radio"
                         [class.on]="isMark(player, mark)"
                         [attr.aria-checked]="isMark(player, mark)"
-                        [disabled]="busy() || !canMark(d)"
+                        [disabled]="busy() || !canMark(d) || !!player.rating_locked"
                         (click)="rate(player.player_id, mark)"
                       >
                         {{ mark }}
@@ -289,6 +298,18 @@ import { RealtimeService } from '../../core/realtime.service';
       }
       .player:last-child {
         border-bottom: 0;
+      }
+      .player.off {
+        opacity: 0.7;
+      }
+      .player .name em {
+        margin-left: 6px;
+        font-style: normal;
+        font-size: 0.72rem;
+        font-weight: 750;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: var(--ion-color-danger);
       }
       .context,
       .basis,

@@ -486,6 +486,9 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
             _assert_ready_for_kickoff(fixture)
         with transaction.atomic():
             serializer.save(fixture=fixture, recorded_by=self.request.user)
+            from .cards import reconcile_cards
+
+            reconcile_cards(fixture, serializer.instance.player_id)
             if fixture.status == Fixture.Status.SCHEDULED:
                 fixture.status = Fixture.Status.LIVE
                 if fixture.started_at is None:
@@ -511,6 +514,9 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
         before = _scores(fixture) if reason else {}
         with transaction.atomic():
             serializer.save()
+            from .cards import reconcile_cards
+
+            reconcile_cards(fixture, serializer.instance.player_id)
             fixture.recalculate_scores()
             if reason:
                 _log_amendment(fixture, self.request, reason, before)
@@ -524,7 +530,11 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
         before = _scores(fixture) if reason else {}
         event_id = str(instance.id)
         with transaction.atomic():
+            player_id = instance.player_id
             instance.delete()
+            from .cards import reconcile_cards
+
+            reconcile_cards(fixture, player_id)
             fixture.recalculate_scores()
             if reason:
                 _log_amendment(fixture, self.request, reason, before)
@@ -565,6 +575,10 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
             created = ScoreEvent.objects.bulk_create(rows)
             for event, minutes in pending_minutes:
                 save_minutes(event, minutes)
+            from .cards import reconcile_cards
+
+            for event in created:
+                reconcile_cards(fixture, event.player_id)
             fixture.recalculate_scores()
             if reason:
                 _log_amendment(fixture, request, reason, before)

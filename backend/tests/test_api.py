@@ -327,26 +327,18 @@ def test_a_team_is_named_then_a_player_accepts_the_pick(api, user, other_user):
 
     offered = api.post(picks_url, {"user": str(other_user.id)}, format="json")
     assert offered.status_code == 201
-    assert offered.data["status"] == "pending"
+    assert offered.data["status"] == "accepted"
     assert offered.data["competition"] == competition_id
-    assert team_roster(api, competition_id, team.data["id"]) == []
-
-    waiting_inbox = APIClient()
-    waiting_inbox.force_authenticate(user=other_user)
-    inbox = waiting_inbox.get("/api/v1/me/team-picks")
-    assert inbox.status_code == 200
-    assert [row["team_name"] for row in inbox.data] == ["Northside"]
-
-    waiting = api.post(picks_url, {"user": str(second.id)}, format="json")
-    assert waiting.status_code == 201
+    assert "Member" in team_roster(api, competition_id, team.data["id"])
 
     member = APIClient()
     member.force_authenticate(user=other_user)
-    accepted = member.post(
-        f"/api/v1/competitions/{competition_id}/picks/{offered.data['id']}/accept"
-    )
-    assert accepted.status_code == 200
-    assert "Member" in team_roster(api, competition_id, team.data["id"])
+    assert member.get("/api/v1/me/team-picks").data == []
+
+    waiting = api.post(picks_url, {"user": str(second.id)}, format="json")
+    assert waiting.status_code == 201
+    assert waiting.data["status"] == "accepted"
+    assert "Second" in team_roster(api, competition_id, team.data["id"])
 
     rival = api.post(participants_url, {"name": "Owners", "kind": "team"}, format="json")
     assert rival.status_code == 201
@@ -364,19 +356,6 @@ def test_a_team_is_named_then_a_player_accepts_the_pick(api, user, other_user):
     )
     assert reserved.status_code == 400
 
-    declined = APIClient()
-    declined.force_authenticate(user=second)
-    answer = declined.post(
-        f"/api/v1/competitions/{competition_id}/picks/{waiting.data['id']}/decline"
-    )
-    assert answer.status_code == 200
-    freed = api.post(
-        f"{participants_url}/{rival.data['id']}/picks",
-        {"user": str(second.id)},
-        format="json",
-    )
-    assert freed.status_code == 201
-
     admin = User.objects.create_user(
         email="coach@example.com", password="s3cret-password", display_name="Coach"
     )
@@ -392,11 +371,7 @@ def test_a_team_is_named_then_a_player_accepts_the_pick(api, user, other_user):
         format="json",
     )
     assert self_pick.status_code == 201
-    assert team_roster(api, competition_id, rival.data["id"]) == []
-    joined = coach.post(
-        f"/api/v1/competitions/{competition_id}/picks/{self_pick.data['id']}/accept"
-    )
-    assert joined.status_code == 200
+    assert self_pick.data["status"] == "accepted"
     assert "Coach" in team_roster(api, competition_id, rival.data["id"])
 
     mine = member.get(f"/api/v1/competitions/{competition_id}/picks")
@@ -448,8 +423,8 @@ def test_teams_are_picked_or_drafted_with_fourteen_players(api, other_user):
         format="json",
     )
     assert full.status_code == 201
-    assert full.data["roster"] == []
-    assert full.data["pending_count"] == 14
+    assert len(full.data["roster"]) == 14
+    assert full.data["pending_count"] == 0
 
     removed = api.delete(f"{participants_url}/{full.data['id']}")
     assert removed.status_code == 204

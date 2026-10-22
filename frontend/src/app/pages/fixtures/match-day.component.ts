@@ -14,7 +14,13 @@ import { NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AlertController, IonIcon, ToastController } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
-import { arrowDownOutline, arrowUpOutline, swapHorizontalOutline, trashOutline } from 'ionicons/icons';
+import {
+  arrowDownOutline,
+  arrowUpOutline,
+  ribbonOutline,
+  swapHorizontalOutline,
+  trashOutline,
+} from 'ionicons/icons';
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
@@ -75,21 +81,20 @@ interface Draft {
                     <div
                       class="shirt"
                       [class.captain]="lineup.captain_id === player.player_id"
-                      [class.off]="player.subbed_off"
+                      [class.off]="player.subbed_off || player.sent_off"
                       [style.--kit]="kit(side.participant_id)[0]"
                       [style.--kit-ink]="kit(side.participant_id)[1]"
                     >
-                      @if (lineup.captain_id === player.player_id) {
-                        <i class="badge" aria-label="Captain">C</i>
-                      }
                       <span class="kit">{{ player.number ?? '' }}</span>
                       <span class="who">
                         <b>{{ shortName(player.name) }}</b>
-                        <small>{{ minutesLabel(player) }} · {{ ratingLabel(player) }}</small>
+                        @if (lineup.captain_id === player.player_id) {
+                          <ion-icon name="ribbon-outline" class="mark" aria-label="Captain" />
+                        }
+                        @if (sheetMeta(player); as meta) {
+                          <small>{{ meta }}</small>
+                        }
                       </span>
-                      @if (player.subbed_off) {
-                        <ion-icon name="arrow-down-outline" class="sub-off" aria-label="Substituted" />
-                      }
                     </div>
                   } @else {
                     <div class="empty">
@@ -106,11 +111,15 @@ interface Draft {
             @for (player of lineup.starters; track player.player_id) {
               <li [class.off]="player.subbed_off">
                 <span class="num">{{ player.number ?? '' }}</span>
-                {{ player.name }}
+                <span class="who">
+                  <b>{{ player.name }}</b>
+                  @if (sheetMeta(player); as meta) {
+                    <small>{{ meta }}</small>
+                  }
+                </span>
                 @if (lineup.captain_id === player.player_id) {
-                  <b class="captain">C</b>
+                  <ion-icon name="ribbon-outline" class="mark" aria-label="Captain" />
                 }
-                <small>{{ minutesLabel(player) }} · {{ ratingLabel(player) }}</small>
               </li>
             }
           </ul>
@@ -127,11 +136,10 @@ interface Draft {
               <span class="kit slim">{{ player.number ?? '' }}</span>
               <span class="who">
                 <b>{{ shortName(player.name) }}</b>
-                <small>{{ minutesLabel(player) }} · {{ ratingLabel(player) }}</small>
+                @if (sheetMeta(player); as meta) {
+                  <small>{{ meta }}</small>
+                }
               </span>
-              @if (player.on_field) {
-                <ion-icon name="arrow-up-outline" class="sub-on" aria-label="Came on" />
-              }
             </div>
           } @empty {
             <p class="muted">No substitutes named.</p>
@@ -425,22 +433,17 @@ interface Draft {
       }
       @media (max-width: 419px) {
         .pitch {
-          gap: 10px;
-          padding: 12px 4px 14px;
+          gap: 12px;
+          padding: 12px 8px 14px;
         }
         .kit {
-          width: 40px;
-          height: 44px;
-        }
-        .kit.slim {
           width: 36px;
           height: 40px;
+          font-size: 0.85rem;
         }
-        .who b {
-          font-size: 0.62rem;
-        }
-        .who small {
-          font-size: 0.54rem;
+        .kit.slim {
+          width: 32px;
+          height: 36px;
         }
       }
       .record {
@@ -466,7 +469,7 @@ interface Draft {
         display: flex;
         flex-direction: column;
         gap: 14px;
-        padding: 16px 6px 18px;
+        padding: 16px 10px 18px;
         border-radius: 16px;
         background:
           radial-gradient(circle at 50% 8%, rgb(255 255 255 / 0.14), transparent 28%),
@@ -476,33 +479,40 @@ interface Draft {
       }
       .pitch-row {
         display: flex;
-        justify-content: space-evenly;
+        justify-content: center;
         align-items: flex-start;
-        gap: 4px;
+        gap: 8px;
       }
       .shirt {
-        display: grid;
-        justify-items: center;
-        gap: 4px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
         position: relative;
         min-width: 0;
         flex: 1 1 0;
-        max-width: 92px;
+        max-width: 76px;
+        overflow: hidden;
       }
       .kit {
+        position: relative;
         display: grid;
         place-items: center;
-        width: 48px;
-        height: 52px;
+        flex: 0 0 auto;
+        width: 42px;
+        height: 46px;
         border-radius: 10px 10px 14px 14px;
         background: var(--kit, #1d4ed8);
         color: var(--kit-ink, #fff);
+        font-size: 0.95rem;
         font-weight: 800;
+        line-height: 1;
         box-shadow: 0 6px 14px rgb(0 0 0 / 25%);
       }
       .kit.slim {
-        width: 40px;
-        height: 44px;
+        width: 36px;
+        height: 40px;
+        font-size: 0.85rem;
       }
       .kit.hollow {
         background: transparent;
@@ -511,36 +521,43 @@ interface Draft {
         box-shadow: none;
       }
       .who {
-        display: grid;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
         width: 100%;
-        padding: 4px 4px 5px;
-        border-radius: 8px;
-        background: rgb(15 23 42 / 82%);
+        min-width: 0;
+        padding: 5px 4px 6px;
+        border-radius: 7px;
+        background: rgb(15 23 42 / 88%);
         color: #fff;
         text-align: center;
       }
+      .who b,
+      .who small {
+        display: block;
+        min-width: 0;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       .who b {
         font-size: 0.68rem;
-        line-height: 1.2;
+        line-height: 1.15;
       }
       .who small {
         font-size: 0.58rem;
-        opacity: 0.88;
+        font-weight: 650;
+        letter-spacing: 0.01em;
+        opacity: 0.9;
       }
-      .badge {
-        position: absolute;
-        top: -4px;
-        right: 8px;
-        width: 18px;
-        height: 18px;
-        border-radius: 999px;
-        background: #f5c400;
-        color: #111;
-        font-size: 0.62rem;
-        font-weight: 800;
-        font-style: normal;
-        display: grid;
-        place-items: center;
+      .mark {
+        flex: 0 0 auto;
+        width: 14px;
+        height: 14px;
+        font-size: 14px;
+        color: #facc15;
       }
       .shirt.off {
         opacity: 0.55;
@@ -550,7 +567,8 @@ interface Draft {
         justify-items: center;
         gap: 6px;
         flex: 1 1 0;
-        max-width: 92px;
+        min-width: 0;
+        max-width: 76px;
         color: rgb(255 255 255 / 85%);
         text-align: center;
       }
@@ -564,29 +582,12 @@ interface Draft {
         padding: 4px 0 8px;
       }
       .bench-shirt {
-        flex: 0 0 88px;
-        max-width: 88px;
+        flex: 0 0 72px;
+        max-width: 72px;
+        overflow: hidden;
       }
-      .sub-off,
-      .sub-on {
-        position: absolute;
-        top: -2px;
-        left: 6px;
-        color: #fca5a5;
-      }
-      .sub-on {
-        color: #86efac;
-      }
-      .captain {
-        display: inline-grid;
-        place-items: center;
-        width: 15px;
-        height: 15px;
-        margin-left: 3px;
-        border-radius: 50%;
-        background: #facc15;
-        color: #422006;
-        font-size: 0.6rem;
+      .list .mark {
+        color: var(--ion-color-warning, #facc15);
       }
       .pitch.editing .slot {
         display: grid;
@@ -725,6 +726,20 @@ interface Draft {
         align-items: center;
         gap: 8px;
       }
+      .list .who {
+        flex: 1 1 auto;
+        padding: 0;
+        background: none;
+        color: inherit;
+        text-align: left;
+      }
+      .list .who b {
+        font-size: 0.88rem;
+      }
+      .list .who small {
+        font-size: 0.72rem;
+        color: var(--ion-color-medium);
+      }
       .list li.off,
       .list li.used {
         color: var(--ion-color-medium);
@@ -837,7 +852,13 @@ export class MatchDayComponent implements OnInit {
   );
 
   constructor() {
-    addIcons({ arrowDownOutline, arrowUpOutline, swapHorizontalOutline, trashOutline });
+    addIcons({
+      arrowDownOutline,
+      arrowUpOutline,
+      ribbonOutline,
+      swapHorizontalOutline,
+      trashOutline,
+    });
     effect(() => {
       const minute = this.minute();
       if (!this.minuteTouched) this.subMinute.set(minute === null ? '' : String(minute));
@@ -878,11 +899,15 @@ export class MatchDayComponent implements OnInit {
   }
 
   minutesLabel(player: LineupPlayer): string {
-    return player.minutes == null ? '–' : `${player.minutes}'`;
+    return player.minutes == null ? '' : `${player.minutes}'`;
   }
 
   ratingLabel(player: LineupPlayer): string {
-    return player.rating ? player.rating : '–';
+    return player.rating ? player.rating : '';
+  }
+
+  sheetMeta(player: LineupPlayer): string {
+    return [this.minutesLabel(player), this.ratingLabel(player)].filter(Boolean).join(' · ');
   }
 
   rows(slots: FormationSlot[]): FormationSlot[][] {

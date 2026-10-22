@@ -303,6 +303,8 @@ export interface MatchRaters {
       role: string;
       position: string;
       captain: boolean;
+      sent_off?: boolean;
+      rating_locked?: boolean;
       average: string | null;
       count: number;
       mine: string | null;
@@ -339,6 +341,7 @@ export interface LineupPlayer extends MatchPlayer {
   position: string;
   on_field: boolean;
   subbed_off: boolean;
+  sent_off?: boolean;
   minutes?: number | null;
   rating?: string | null;
 }

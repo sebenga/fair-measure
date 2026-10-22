@@ -232,6 +232,8 @@ def payload(fixture: Fixture, user, query: str = "") -> dict:
         rated_counts[score.rater_id] = rated_counts.get(score.rater_id, 0) + 1
 
     facts = _lineup_facts(fixture)
+    from .cards import is_sent_off
+
     teams = []
     for group in _players(fixture):
         players = []
@@ -247,6 +249,7 @@ def payload(fixture: Fixture, user, query: str = "") -> dict:
                 )
             own = next((mark for mark in marks if mine and mark.rater_id == mine.id), None)
             fact = facts.get(member.id) or {}
+            dismissed = is_sent_off(fixture, member.id)
             players.append(
                 {
                     "player_id": str(member.id),
@@ -256,6 +259,8 @@ def payload(fixture: Fixture, user, query: str = "") -> dict:
                     "role": fact.get("role") or "",
                     "position": fact.get("position") or "",
                     "captain": bool(fact.get("captain")),
+                    "sent_off": dismissed,
+                    "rating_locked": dismissed,
                     "average": average,
                     "count": len(marks),
                     "mine": format(own.rating, "f") if own else None,
@@ -405,8 +410,14 @@ class RaterScoresView(_FixtureView):
                 raise ValidationError({"ratings": "Ratings are from 0 to 10."})
             changes.append((allowed[player_id], rating))
 
+        from .cards import is_sent_off
+
         with transaction.atomic():
             for player, rating in changes:
+                if is_sent_off(fixture, player.id):
+                    raise ValidationError(
+                        {"ratings": f"{player.name}'s rating stopped when they were sent off."}
+                    )
                 if rating is None:
                     RaterScore.objects.filter(rater=rater, player=player).delete()
                 else:
@@ -440,6 +451,10 @@ class RaterPlayerStatsView(_FixtureView):
         side = FixtureSide.objects.filter(fixture=fixture, participant_id=player.participant_id).first()
         if side is None:
             raise ValidationError({"player": "That player is not in this match."})
+        from .cards import is_sent_off
+
+        if is_sent_off(fixture, player.id):
+            raise ValidationError({"player": "That player was sent off. Their stats have stopped."})
 
         if "minutes" in request.data:
             try:

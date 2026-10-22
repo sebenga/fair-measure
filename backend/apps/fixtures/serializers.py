@@ -193,6 +193,10 @@ class ScoreEventSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"player": "That player is not on this side's roster."}
             )
+        if self.instance is None and player is not None and category is not None:
+            from .cards import assert_can_record_card
+
+            assert_can_record_card(fixture, player.id, category)
         if player is not None and not (attrs.get("player_name") or "").strip():
             attrs["player_name"] = player.name
         if "rating" in getattr(self, "initial_data", {}):

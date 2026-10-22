@@ -467,7 +467,7 @@ def draft_payload(competition) -> dict:
 
 
 def offer_team_pick(participant: Participant, user, actor) -> TeamPick:
-    """Invite a profile onto a team. They are not on the roster until they accept."""
+    """Put a profile on a team. The team accepts as soon as they are picked."""
     if participant.kind != Participant.Kind.TEAM:
         raise serializers.ValidationError({"user": "Pick profiles onto a team."})
 
@@ -503,7 +503,7 @@ def offer_team_pick(participant: Participant, user, actor) -> TeamPick:
     ).first()
     if pending is not None:
         if pending.participant_id == participant.id:
-            return pending
+            return confirm_team_pick(pending, actor)
         raise serializers.ValidationError(
             {"user": "That profile already has a pick waiting in this league."}
         )
@@ -513,20 +513,28 @@ def offer_team_pick(participant: Participant, user, actor) -> TeamPick:
         user=user,
         invited_by=actor if getattr(actor, "is_authenticated", False) else None,
     )
-    _notify_team_invite(pick, actor)
-    return pick
+    return confirm_team_pick(pick, actor)
 
 
-def _notify_team_invite(pick: TeamPick, actor) -> None:
+def _notify_team_invite(pick: TeamPick, actor, *, accepted: bool) -> None:
     from apps.notifications.services import notify_users
 
     team = pick.participant
     invited_by = actor.get_full_name() if getattr(actor, "is_authenticated", False) else "A team"
+    if accepted:
+        title = f"You joined {team.name}"
+        body = f"{invited_by} added you to {team.name} in {team.competition.name}."
+    else:
+        title = f"{team.name} picked you"
+        body = (
+            f"{invited_by} invited you to join {team.name} in {team.competition.name}. "
+            "Accept to play."
+        )
     notify_users(
         [pick.user],
         kind="team-invite",
-        title=f"{team.name} picked you",
-        body=f"{invited_by} invited you to join {team.name} in {team.competition.name}. Accept to play.",
+        title=title,
+        body=body,
         competition=team.competition,
         category="announcements",
         data={
@@ -537,12 +545,12 @@ def _notify_team_invite(pick: TeamPick, actor) -> None:
     )
 
 
-def accept_team_pick(pick: TeamPick, actor) -> TeamPick:
-    if pick.user_id != getattr(actor, "id", None):
-        raise PermissionDenied("Only the picked profile can accept.")
+def confirm_team_pick(pick: TeamPick, actor=None) -> TeamPick:
+    """Move a pending pick onto the roster. Used when a team auto-accepts."""
+
     if pick.status != TeamPick.Status.PENDING:
         raise serializers.ValidationError({"status": "This pick is already settled."})
-    add_profile_to_team(pick.participant, pick.user, actor, field="user")
+    add_profile_to_team(pick.participant, pick.user, actor or pick.user, field="user")
     now = timezone.now()
     pick.status = TeamPick.Status.ACCEPTED
     pick.responded_at = now
@@ -552,7 +560,15 @@ def accept_team_pick(pick: TeamPick, actor) -> TeamPick:
         user_id=pick.user_id,
         status=TeamPick.Status.PENDING,
     ).update(status=TeamPick.Status.DECLINED, responded_at=now)
+    if actor is not None:
+        _notify_team_invite(pick, actor, accepted=True)
     return pick
+
+
+def accept_team_pick(pick: TeamPick, actor) -> TeamPick:
+    if pick.user_id != getattr(actor, "id", None):
+        raise PermissionDenied("Only the picked profile can accept.")
+    return confirm_team_pick(pick, actor)
 
 
 def decline_team_pick(pick: TeamPick, actor) -> TeamPick:

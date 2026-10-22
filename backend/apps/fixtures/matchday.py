@@ -191,7 +191,9 @@ def _member(member: RosterMember | None, number=None) -> dict | None:
     }
 
 
-def _field_state(lineup: FixtureLineup | None, subs: list[Substitution]) -> tuple[set, set, set]:
+def _field_state(
+    lineup: FixtureLineup | None, subs: list[Substitution], sent_off: set | None = None
+) -> tuple[set, set, set]:
     """Who is on, who can still come on, and who has gone off, after these substitutions."""
 
     if lineup is None:
@@ -205,6 +207,11 @@ def _field_state(lineup: FixtureLineup | None, subs: list[Substitution]) -> tupl
         off.add(sub.player_off_id)
         bench.discard(sub.player_on_id)
         on.add(sub.player_on_id)
+    for player_id in sent_off or ():
+        if player_id in on or player_id in bench:
+            on.discard(player_id)
+            bench.discard(player_id)
+            off.add(player_id)
     return on, bench, off
 
 
@@ -225,7 +232,10 @@ def _side_payload(
 ) -> dict:
     lineup = getattr(side, "lineup", None)
     side_subs = [sub for sub in subs if sub.side_id == side.id]
-    on, bench_left, off = _field_state(lineup, side_subs)
+    from .cards import sent_off_ids
+
+    dismissed = sent_off_ids(fixture)
+    on, bench_left, off = _field_state(lineup, side_subs, dismissed)
     entries = list(lineup.entries.select_related("player").all()) if lineup else []
     squad = [
         {
@@ -245,6 +255,7 @@ def _side_payload(
             "position": entry.position,
             "on_field": entry.player_id in on,
             "subbed_off": entry.player_id in off,
+            "sent_off": entry.player_id in dismissed,
             "minutes": minutes.get(entry.player_id),
             "rating": ratings.get(entry.player_id),
         }

@@ -250,7 +250,7 @@ import { squadSizeOf } from '../../core/models';
               </ion-button>
             </form>
             <ion-note class="footnote">
-              They join the league and accept the pick before they are on the team.
+              They join the team as soon as you pick them.
             </ion-note>
           }
         }
