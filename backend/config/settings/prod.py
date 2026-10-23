@@ -1,12 +1,15 @@
 """Production settings. Fails loudly rather than starting up insecure."""
 
 from .base import *  # noqa: F403
+from pathlib import Path
+
 from .base import (
     ALLOWED_HOSTS,
     CORS_ALLOWED_ORIGINS,
     CSRF_TRUSTED_ORIGINS,
     REST_FRAMEWORK,
     SECRET_KEY,
+    SPA_DIR,
     env,
     env_bool,
     env_int,
@@ -35,6 +38,9 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 
 CORS_ALLOW_ALL_ORIGINS = False
+
+if Path(SPA_DIR).is_dir():
+    WHITENOISE_ROOT = Path(SPA_DIR)
 
 # Django's Redis cache backend is not required for request handling. Keep
 # cache in-process so a Key Value blip cannot 500 the API. The realtime bus

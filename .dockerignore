@@ -1,0 +1,15 @@
+.git
+.ruff_cache
+**/.venv
+**/node_modules
+**/__pycache__
+**/*.sqlite3
+backend/staticfiles
+backend/mediafiles
+backend/private_media
+frontend/www
+frontend/.angular
+realtime/node_modules
+realtime/dist
+.env
+.env.*

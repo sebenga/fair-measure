@@ -7,10 +7,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const apiBaseUrl =
-  process.env.FRONTEND_API_BASE_URL || "https://fairmeasure-v2-api.onrender.com/api/v1";
-const realtimeUrl =
-  process.env.FRONTEND_REALTIME_URL || "https://fairmeasure-v2-realtime.onrender.com";
+const apiBaseUrl = process.env.FRONTEND_API_BASE_URL || "/api/v1";
+const realtimeUrl = process.env.FRONTEND_REALTIME_URL || "";
 
 const source = `export const environment = {
   production: true,

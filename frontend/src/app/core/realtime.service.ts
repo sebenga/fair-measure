@@ -53,7 +53,7 @@ export class RealtimeService {
     if (this.socket?.connected) return;
 
     const token = this.auth.getAccessToken();
-    if (!token) return;
+    if (!token || !environment.realtimeUrl) return;
 
     this.socket = io(environment.realtimeUrl, {
       transports: ['websocket'],
