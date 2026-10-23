@@ -33,11 +33,9 @@ services:
     runtime: python
     plan: free
     region: frankfurt
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
-    preDeployCommand: python manage.py migrate --noinput
-    initialDeployHook: python manage.py seed_demo
-    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
+    buildCommand: bash scripts/render-api-build.sh
+    preDeployCommand: bash scripts/render-api-release.sh
+    startCommand: bash scripts/render-api-start.sh
     healthCheckPath: /healthz
     envVars:
       - fromGroup: fairmeasure-v2-secrets
