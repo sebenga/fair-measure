@@ -10,6 +10,7 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from apps.core.spa import spa_index
 from apps.core.views import health_check
 
 api_v1 = [
@@ -43,6 +44,7 @@ urlpatterns = [
         name="swagger-ui",
     ),
     path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
+    path("", spa_index, name="spa"),
 ]
 
 if settings.DEBUG:

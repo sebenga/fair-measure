@@ -11,6 +11,13 @@ from django.http import FileResponse, HttpRequest, HttpResponse
 _API_PREFIXES = ("/api/", "/admin/", "/internal/", "/healthz", "/static/", "/media/")
 
 
+def spa_index(request: HttpRequest) -> HttpResponse:
+    index = Path(settings.SPA_DIR) / "index.html"
+    if not index.is_file():
+        return HttpResponse("Fair Measure API is up. The web app is still building.", status=503)
+    return FileResponse(index.open("rb"), content_type="text/html")
+
+
 class SpaFallbackMiddleware:
     """Turn unmatched GET routes into index.html so Ionic client routes work."""
 
