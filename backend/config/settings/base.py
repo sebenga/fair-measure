@@ -108,7 +108,13 @@ TEMPLATES = [
 
 DATABASE_URL = env("DATABASE_URL")
 if DATABASE_URL:
-    DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)}
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            ssl_require=bool(env("RENDER")),
+        )
+    }
 else:
     DATABASES = {
         "default": {

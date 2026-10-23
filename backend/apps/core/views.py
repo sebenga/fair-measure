@@ -37,12 +37,15 @@ def health_check(request: Request) -> Response:
     except redis.RedisError as exc:
         checks["redis"] = f"error: {exc.__class__.__name__}"
 
-    healthy = all(value == "ok" for value in checks.values())
+    # Redis is best-effort (live scores, jobs). A miss must not take the
+    # web process out of Render's load balancer.
+    database_ok = checks["database"] == "ok"
+    healthy = database_ok and checks["redis"] == "ok"
     return Response(
         {
-            "status": "ok" if healthy else "degraded",
+            "status": "ok" if healthy else ("degraded" if database_ok else "error"),
             "checks": checks,
             "debug": settings.DEBUG,
         },
-        status=status.HTTP_200_OK if healthy else status.HTTP_503_SERVICE_UNAVAILABLE,
+        status=status.HTTP_200_OK if database_ok else status.HTTP_503_SERVICE_UNAVAILABLE,
     )

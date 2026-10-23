@@ -29,7 +29,7 @@ function list(name: string, fallback: string): string[] {
 }
 
 export const config = {
-  port: Number(optional('REALTIME_PORT', '4000')),
+  port: Number(optional('PORT', optional('REALTIME_PORT', '4000'))),
   logLevel: optional('LOG_LEVEL', 'info').toLowerCase(),
 
   redisUrl: optional('REDIS_URL', 'redis://localhost:6379/0'),

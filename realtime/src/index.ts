@@ -161,6 +161,14 @@ httpServer.listen(config.port, () => {
   logger.info({ port: config.port }, 'Realtime gateway listening');
 });
 
+// Free Render web services have no worker plan. Run the BullMQ consumer in
+// this same process so standings still recompute after a score.
+if (process.env.RUN_WORKER === '1') {
+  void import('./worker.js').then(() => {
+    logger.info('BullMQ worker started in the gateway process');
+  });
+}
+
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutting down the realtime gateway');
   io.close();
