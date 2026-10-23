@@ -57,6 +57,10 @@ services:
         value: "false"
       - key: SECURE_SSL_REDIRECT
         value: "false"
+      - key: PYTHON_VERSION
+        value: "3.11.11"
+      - key: PYTHONPATH
+        value: backend
       - key: DATABASE_URL
         fromDatabase:
           name: fairmeasure-v2-db
@@ -78,6 +82,8 @@ services:
     healthCheckPath: /healthz
     envVars:
       - fromGroup: fairmeasure-v2-secrets
+      - key: NODE_VERSION
+        value: "22.16.0"
       - key: NODE_ENV
         value: production
       - key: RUN_WORKER
@@ -111,6 +117,8 @@ services:
         name: X-Content-Type-Options
         value: nosniff
     envVars:
+      - key: NODE_VERSION
+        value: "22.16.0"
       - key: NODE_OPTIONS
         value: --max-old-space-size=2048
       - key: FRONTEND_API_BASE_URL
