@@ -791,9 +791,10 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
           @case ('officials') {
             <h3 class="fm-section-title">Game time</h3>
             <p class="hint">
-              Every game needs a time limit and a referee before kickoff. Overtime is optional: set it to 0
-              or remove it. Saving applies to every game that has not started; an admin can still change one
-              game on its match page.
+              Every game needs a time limit and a referee before kickoff. Prescribed time is split into two
+              halves; a half must end after it overruns by 10% of the prescribed time. Overtime is optional:
+              set it to 0 or remove it. Saving applies to every game that has not started; an admin can still
+              change one game on its match page.
             </p>
             <form class="add-row" (submit)="saveTimeLimits($event)">
               <ion-input

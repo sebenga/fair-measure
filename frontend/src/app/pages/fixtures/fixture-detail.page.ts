@@ -47,6 +47,7 @@ import { FixtureOverviewComponent } from './fixture-overview.component';
 import { FixtureTimelineComponent } from './fixture-timeline.component';
 import { MatchDayComponent } from './match-day.component';
 import { MatchRatersComponent } from './match-raters.component';
+import { ScrabbleScorerComponent } from './scrabble-scorer.component';
 
 type FixtureTab = 'overview' | 'lineups' | 'live' | 'stats' | 'raters' | 'setup';
 const FIXTURE_TABS: FixtureTab[] = ['overview', 'lineups', 'live', 'stats', 'raters', 'setup'];
@@ -64,6 +65,7 @@ interface Celebration {
     MatchAwardsComponent,
     MatchDayComponent,
     MatchRatersComponent,
+    ScrabbleScorerComponent,
     FixtureOverviewComponent,
     FixtureTimelineComponent,
     IonSegment,
@@ -159,13 +161,14 @@ interface Celebration {
             @if (showClock()) {
               <div class="match-clock">
                 <span class="readout">{{ clockLabel() }}</span>
-                @if (inOvertime()) {
-                  <span class="chip">Overtime</span>
-                }
+                <span class="chip">{{ periodLabel() }}</span>
                 @if (canScore()) {
-                  <button type="button" [disabled]="kickoffBlocked()" (click)="startOrPause()">
+                  <button type="button" [disabled]="kickoffBlocked() || !canToggleClock()" (click)="startOrPause()">
                     {{ clockButtonLabel() }}
                   </button>
+                  @if (canEndHalf()) {
+                    <button type="button" class="end-game" (click)="endHalf()">End half</button>
+                  }
                   @if (canEndGame()) {
                     <button type="button" class="end-game" (click)="endGame()">End game</button>
                   }
@@ -248,7 +251,8 @@ interface Celebration {
         @if (tab() === 'setup' && canManage()) {
           <h3 class="fm-section-title">Game time</h3>
           <p class="hint">
-            A time limit is required before kickoff. Overtime is optional; remove it for a game that ends at full time.
+            Prescribed time is split into two halves. A half must end after it overruns by 10% of the
+            prescribed time. Overtime is optional; remove it for a game that ends at full time.
           </p>
           <form class="game-time" (submit)="saveGameTime($event)">
             <label>
@@ -307,7 +311,18 @@ interface Celebration {
           </div>
         }
 
-        @if (tab() === 'live' && canScore() && fx.status !== 'completed' && fx.status !== 'cancelled') {
+        @if (tab() === 'live' && wordScorer()) {
+          <fm-scrabble-scorer
+            [competitionId]="competitionKey()"
+            [fixtureId]="fx.id"
+            [sides]="fx.sides"
+            [canScore]="canScore()"
+            [kickoffBlocked]="kickoffBlocked()"
+            (changed)="reloadFixture()"
+          />
+        }
+
+        @if (tab() === 'live' && canScore() && !wordScorer() && fx.status !== 'completed' && fx.status !== 'cancelled') {
           <h3 class="fm-section-title">Record a score</h3>
 
           @if (units().length) {
@@ -332,9 +347,9 @@ interface Celebration {
           } @else {
             <p class="hint">
               @if (recordsMatchEvents()) {
-                Record who scored or was booked, and when. The match clock stamps the minute. Player ratings are on the Raters tab.
+                Tap a goal or card to confirm it. The match clock stamps the minute. Player ratings are on the Raters tab.
               } @else {
-                Add a goal or card on the player. Player stats are recorded on the Raters tab.
+                Tap a goal or card on the player to confirm it. Player stats are recorded on the Raters tab.
               }
             </p>
             <div class="fm-team-columns" [class.many]="fx.sides.length > 2">
@@ -346,22 +361,36 @@ interface Celebration {
                     <span class="name">Team</span>
                     <dl class="sheet">
                       @for (category of rosterFor(side).length ? awardedScoreCategories() : scoreCategories(); track category.id) {
-                        <div class="step" [class.hot]="scoreCount(side, category) > 0" [class.card]="isCard(category)">
-                          <button
-                            type="button"
-                            [disabled]="saving() || kickoffBlocked() || scoreCount(side, category) === 0"
-                            [attr.aria-label]="'Remove one ' + category.name + ' from ' + (side.participant.short_name || side.participant.name)"
-                            (click)="adjustScore(side, category, '', -1)"
-                          >−</button>
-                          <strong>{{ scoreCount(side, category) }}</strong>
-                          <span>{{ category.name }}@if (countsForOtherSide(category)) { · other side }</span>
-                          <button
-                            type="button"
-                            [disabled]="saving() || kickoffBlocked()"
-                            [attr.aria-label]="'Add one ' + category.name + ' for ' + (side.participant.short_name || side.participant.name)"
-                            (click)="adjustScore(side, category, '', 1)"
-                          >+</button>
-                        </div>
+                        @if (confirmOnRecord(category)) {
+                          <div class="step tap" [class.hot]="scoreCount(side, category) > 0" [class.card]="isCard(category)">
+                            <button
+                              type="button"
+                              [disabled]="saving() || kickoffBlocked()"
+                              [attr.aria-label]="'Record ' + category.name + ' for ' + (side.participant.short_name || side.participant.name)"
+                              (click)="confirmRecord(side, category, '', side.participant.short_name || side.participant.name)"
+                            >
+                              <strong>{{ scoreCount(side, category) }}</strong>
+                              <span>{{ category.name }}@if (countsForOtherSide(category)) { · other side }</span>
+                            </button>
+                          </div>
+                        } @else {
+                          <div class="step" [class.hot]="scoreCount(side, category) > 0" [class.card]="isCard(category)">
+                            <button
+                              type="button"
+                              [disabled]="saving() || kickoffBlocked() || scoreCount(side, category) === 0"
+                              [attr.aria-label]="'Remove one ' + category.name + ' from ' + (side.participant.short_name || side.participant.name)"
+                              (click)="adjustScore(side, category, '', -1)"
+                            >−</button>
+                            <strong>{{ scoreCount(side, category) }}</strong>
+                            <span>{{ category.name }}@if (countsForOtherSide(category)) { · other side }</span>
+                            <button
+                              type="button"
+                              [disabled]="saving() || kickoffBlocked()"
+                              [attr.aria-label]="'Add one ' + category.name + ' for ' + (side.participant.short_name || side.participant.name)"
+                              (click)="adjustScore(side, category, '', 1)"
+                            >+</button>
+                          </div>
+                        }
                       }
                     </dl>
                   </div>
@@ -376,22 +405,36 @@ interface Celebration {
                     </span>
                     <dl class="sheet">
                       @for (category of playerScoreCategories(); track category.id) {
-                        <div class="step" [class.hot]="scoreCount(side, category, member.id) > 0" [class.card]="isCard(category)">
-                          <button
-                            type="button"
-                            [disabled]="saving() || kickoffBlocked() || scoreCount(side, category, member.id) === 0"
-                            [attr.aria-label]="'Remove one ' + category.name + ' from ' + member.name"
-                            (click)="adjustScore(side, category, member.id, -1)"
-                          >−</button>
-                          <strong>{{ scoreCount(side, category, member.id) }}</strong>
-                          <span>{{ category.name }}@if (countsForOtherSide(category)) { · other side }</span>
-                          <button
-                            type="button"
-                            [disabled]="saving() || kickoffBlocked()"
-                            [attr.aria-label]="'Add one ' + category.name + ' for ' + member.name"
-                            (click)="adjustScore(side, category, member.id, 1)"
-                          >+</button>
-                        </div>
+                        @if (confirmOnRecord(category)) {
+                          <div class="step tap" [class.hot]="scoreCount(side, category, member.id) > 0" [class.card]="isCard(category)">
+                            <button
+                              type="button"
+                              [disabled]="saving() || kickoffBlocked()"
+                              [attr.aria-label]="'Record ' + category.name + ' for ' + member.name"
+                              (click)="confirmRecord(side, category, member.id, member.name)"
+                            >
+                              <strong>{{ scoreCount(side, category, member.id) }}</strong>
+                              <span>{{ category.name }}@if (countsForOtherSide(category)) { · other side }</span>
+                            </button>
+                          </div>
+                        } @else {
+                          <div class="step" [class.hot]="scoreCount(side, category, member.id) > 0" [class.card]="isCard(category)">
+                            <button
+                              type="button"
+                              [disabled]="saving() || kickoffBlocked() || scoreCount(side, category, member.id) === 0"
+                              [attr.aria-label]="'Remove one ' + category.name + ' from ' + member.name"
+                              (click)="adjustScore(side, category, member.id, -1)"
+                            >−</button>
+                            <strong>{{ scoreCount(side, category, member.id) }}</strong>
+                            <span>{{ category.name }}@if (countsForOtherSide(category)) { · other side }</span>
+                            <button
+                              type="button"
+                              [disabled]="saving() || kickoffBlocked()"
+                              [attr.aria-label]="'Add one ' + category.name + ' for ' + member.name"
+                              (click)="adjustScore(side, category, member.id, 1)"
+                            >+</button>
+                          </div>
+                        }
                       }
                     </dl>
                   </div>
@@ -477,7 +520,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   readonly error = signal<string | null>(null);
   /** Ticks so the clock appears at kickoff and the readout advances. */
   readonly now = signal(Date.now());
-  readonly clock = signal<MatchClock>({ running: false, elapsedMs: 0, runStartedAt: null });
+  readonly clock = signal<MatchClock>(emptyClock());
   readonly unitIndex = signal(0);
   /** Sides whose score just changed, so the number can pop. */
   readonly bumped = signal<Set<string>>(new Set());
@@ -514,7 +557,10 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     }
 
     this.clock.set(readMatchClock(this.fixtureId));
-    this.tickHandle = setInterval(() => this.now.set(Date.now()), 1000);
+    this.tickHandle = setInterval(() => {
+      this.now.set(Date.now());
+      this.enforcePeriodCap();
+    }, 1000);
 
     this.load();
     this.realtime.subscribe(fixtureRoom(this.fixtureId));
@@ -581,9 +627,10 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   gameTimeLabel(): string {
     const limits = this.timeLimits();
     if (!limits) return 'No time limit set';
-    return limits.overtime > 0
-      ? `${limits.regulation} min + ${limits.overtime} overtime`
-      : `${limits.regulation} min · no overtime`;
+    const half = formatDurationMinutes(halfMinutes(limits.regulation));
+    const added = formatDurationMinutes(halfOverrunMinutes(limits.regulation));
+    const halves = `2 × ${half} min · half ends at +${added}`;
+    return limits.overtime > 0 ? `${halves} · ${limits.overtime} overtime` : halves;
   }
 
   saveGameTime(event: Event): void {
@@ -621,23 +668,55 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     });
   }
 
-  inOvertime(): boolean {
+  periodLabel(): string {
     this.now();
-    const limits = this.timeLimits();
-    if (!limits || !this.showClock()) return false;
-    const elapsed = this.displayedElapsed();
-    return elapsed >= limits.regulation * 60_000 && elapsed < (limits.regulation + limits.overtime) * 60_000;
+    const clock = this.clock();
+    if (clock.overtime) return clock.overtimeEnded ? 'Overtime ended' : 'Overtime';
+    if (clock.half === 1) return clock.halfEnded ? 'Half-time' : 'First half';
+    return clock.halfEnded ? 'Full time' : 'Second half';
+  }
+
+  private clockPeriodName(): string {
+    const clock = this.clock();
+    if (clock.overtime) return 'Overtime';
+    return clock.half === 1 ? 'First half' : 'Second half';
   }
 
   canEndGame(): boolean {
     const fixture = this.fixture();
     if (!fixture || !this.canScore()) return false;
-    return fixture.status === 'live' || this.displayedElapsed() > 0 || this.clockRunning();
+    const clock = this.clock();
+    return (
+      fixture.status === 'live' ||
+      clock.half === 2 ||
+      clock.overtime ||
+      this.displayedElapsed() > 0 ||
+      this.clockRunning()
+    );
+  }
+
+  canEndHalf(): boolean {
+    if (!this.canScore() || this.kickoffBlocked()) return false;
+    const clock = this.clock();
+    if (clock.overtime || clock.halfEnded) return false;
+    return this.clockRunning() || this.displayedElapsed() > 0;
+  }
+
+  canToggleClock(): boolean {
+    if (this.clockRunning()) return true;
+    const clock = this.clock();
+    if (clock.overtimeEnded) return false;
+    if (clock.halfEnded && clock.half === 2 && !(this.hasOvertime() && !clock.overtime)) return false;
+    return true;
   }
 
   endGame(): void {
     this.pauseClock();
     this.setStatus('completed');
+  }
+
+  endHalf(): void {
+    this.endCurrentHalf();
   }
 
   clockRunning(): boolean {
@@ -646,7 +725,13 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
 
   clockButtonLabel(): string {
     if (this.clockRunning()) return 'Pause';
-    if (this.fixture()?.status === 'live' || this.displayedElapsed() > 0) return 'Resume';
+    const clock = this.clock();
+    if (clock.halfEnded && clock.half === 1 && !clock.overtime) return 'Start second half';
+    if (clock.halfEnded && clock.half === 2 && this.hasOvertime() && !clock.overtime) return 'Start overtime';
+    if (clock.overtimeEnded || (clock.halfEnded && clock.half === 2)) return 'Ended';
+    if (this.fixture()?.status === 'live' || this.displayedElapsed() > 0 || clock.half === 2 || clock.overtime) {
+      return 'Resume';
+    }
     return 'Start';
   }
 
@@ -684,19 +769,32 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
 
   readonly matchMinute = computed(() =>
     this.fixture()?.status === 'live' && this.showClock()
-      ? Math.floor(this.displayedElapsed() / 60_000)
+      ? Math.floor(this.matchElapsedMs() / 60_000)
       : null,
   );
 
   /** Goals and cards take the minute showing on the match clock. */
   private clockMinute(category: ScoringCategory): number | null {
     if (!this.showClock() || !followsMatchClock(category)) return null;
-    return Math.floor(this.displayedElapsed() / 60_000);
+    return Math.floor(this.matchElapsedMs() / 60_000);
   }
 
   startOrPause(): void {
     if (this.clockRunning()) {
       this.pauseClock();
+      return;
+    }
+    const clock = this.clock();
+    if (clock.halfEnded && clock.half === 1 && !clock.overtime) {
+      this.beginPeriod(2);
+      return;
+    }
+    if (clock.halfEnded && clock.half === 2 && this.hasOvertime() && !clock.overtime) {
+      this.beginPeriod(2, true);
+      return;
+    }
+    if (this.periodIsCapped()) {
+      this.endCurrentHalf();
       return;
     }
     this.startClock();
@@ -705,25 +803,46 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   private startClock(): void {
     const clock = this.clock();
     const next: MatchClock = {
+      ...clock,
       running: true,
       elapsedMs: clock.elapsedMs,
       runStartedAt: Date.now(),
+      halfEnded: false,
     };
     this.clock.set(next);
     writeMatchClock(this.fixtureId, next);
+    this.syncUnitIndex();
+    if (this.fixture()?.status === 'scheduled') {
+      this.setStatus('live');
+    }
+  }
+
+  private beginPeriod(half: 1 | 2, overtime = false): void {
+    const next: MatchClock = {
+      running: true,
+      elapsedMs: 0,
+      runStartedAt: Date.now(),
+      half,
+      halfEnded: false,
+      overtime,
+      overtimeEnded: false,
+    };
+    this.clock.set(next);
+    writeMatchClock(this.fixtureId, next);
+    this.syncUnitIndex();
     if (this.fixture()?.status === 'scheduled') {
       this.setStatus('live');
     }
   }
 
   private resetClock(): void {
-    const empty: MatchClock = { running: false, elapsedMs: 0, runStartedAt: null };
-    this.clock.set(empty);
+    this.clock.set(emptyClock());
     localStorage.removeItem(clockKey(this.fixtureId));
   }
 
   private pauseClock(): void {
     const next: MatchClock = {
+      ...this.clock(),
       running: false,
       elapsedMs: this.displayedElapsed(),
       runStartedAt: null,
@@ -732,10 +851,78 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     writeMatchClock(this.fixtureId, next);
   }
 
+  private endCurrentHalf(): void {
+    const clock = this.clock();
+    if (clock.overtime ? clock.overtimeEnded : clock.halfEnded) return;
+    const max = this.periodMaxMs();
+    const elapsed = max === null ? this.uncappedElapsed() : Math.min(this.uncappedElapsed(), max);
+    const next: MatchClock = {
+      ...clock,
+      running: false,
+      elapsedMs: elapsed,
+      runStartedAt: null,
+      halfEnded: !clock.overtime,
+      overtimeEnded: clock.overtime,
+    };
+    this.clock.set(next);
+    writeMatchClock(this.fixtureId, next);
+    this.syncUnitIndex();
+    const label = clock.overtime ? 'Overtime ended.' : clock.half === 1 ? 'First half ended.' : 'Second half ended.';
+    void this.showToast(label, 'success');
+  }
+
+  private enforcePeriodCap(): void {
+    if (!this.clock().running || !this.periodIsCapped()) return;
+    this.endCurrentHalf();
+  }
+
+  private hasOvertime(): boolean {
+    return (this.timeLimits()?.overtime ?? 0) > 0;
+  }
+
+  private periodMaxMs(): number | null {
+    const limits = this.timeLimits();
+    if (!limits) return null;
+    if (this.clock().overtime) return limits.overtime * 60_000;
+    return halfMaxMinutes(limits.regulation) * 60_000;
+  }
+
+  private periodIsCapped(): boolean {
+    const max = this.periodMaxMs();
+    return max !== null && this.uncappedElapsed() >= max;
+  }
+
   private displayedElapsed(): number {
+    const max = this.periodMaxMs();
+    const elapsed = this.uncappedElapsed();
+    return max === null ? elapsed : Math.min(elapsed, max);
+  }
+
+  private uncappedElapsed(): number {
     const clock = this.clock();
     if (!clock.running || clock.runStartedAt === null) return clock.elapsedMs;
     return clock.elapsedMs + Math.max(0, this.now() - clock.runStartedAt);
+  }
+
+  /** Match minute: first half from 0, second half from half length, overtime from full time. */
+  private matchElapsedMs(): number {
+    const limits = this.timeLimits();
+    const clock = this.clock();
+    const current = this.displayedElapsed();
+    if (clock.overtime) return (limits?.regulation ?? 0) * 60_000 + current;
+    if (clock.half === 2) return (limits ? halfMinutes(limits.regulation) : 0) * 60_000 + current;
+    return current;
+  }
+
+  private syncUnitIndex(): void {
+    const slots = this.units();
+    if (!slots.length) return;
+    const clock = this.clock();
+    if (clock.overtime) {
+      this.unitIndex.set(slots.length - 1);
+      return;
+    }
+    this.unitIndex.set(Math.min(clock.half - 1, slots.length - 1));
   }
 
   load(): void {
@@ -745,6 +932,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     this.api.getCompetition(this.competitionId).subscribe({
       next: (competition) => {
         this.competition.set(competition);
+        this.syncUnitIndex();
         if (this.canManage()) this.ensureProfiles();
       },
       error: () => undefined,
@@ -788,6 +976,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       if (rose.length && next.status !== 'completed') this.celebrate(next, rose[0]);
     }
     this.fixture.set(next);
+    this.syncUnitIndex();
   }
 
   private celebrate(next: FixtureDetail, sideId: string): void {
@@ -835,6 +1024,11 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     );
   }
 
+  wordScorer(): boolean {
+    const settings = this.competition()?.settings_json ?? {};
+    return !!settings['tile_set'] || settings['preset'] === 'scrabble';
+  }
+
   scoreCategories(): ScoringCategory[] {
     const stats = this.statCodes();
     return this.categories().filter((category) => !stats.has(category.code));
@@ -850,6 +1044,22 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
 
   isCard(category: ScoringCategory): boolean {
     return category.code.toLowerCase().includes('card');
+  }
+
+  /** Goals and cards are recorded with one tap and a confirmation, not +/−. */
+  confirmOnRecord(category: ScoringCategory): boolean {
+    const code = category.code.trim().toLowerCase();
+    const name = category.name.trim().toLowerCase();
+    return (
+      code === 'goal' ||
+      code === 'own-goal' ||
+      code === 'yellow-card' ||
+      code === 'red-card' ||
+      name === 'goal' ||
+      name === 'own goal' ||
+      name === 'yellow card' ||
+      name === 'red card'
+    );
   }
 
   scoreCount(side: FixtureSide, category: ScoringCategory, playerId = ''): number {
@@ -1113,6 +1323,29 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     );
   }
 
+  async confirmRecord(
+    side: FixtureSide,
+    category: ScoringCategory,
+    playerId: string,
+    who: string,
+  ): Promise<void> {
+    if (this.saving() || this.kickoffBlocked()) return;
+    const minute = this.clockMinute(category);
+    const when = minute !== null ? ` at ${minute}'` : '';
+    const alert = await this.alerts.create({
+      header: category.name,
+      message: `Record ${category.name.toLowerCase()} for ${who}${when}?`,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Record', role: 'confirm' },
+      ],
+    });
+    await alert.present();
+    const { role } = await alert.onDidDismiss();
+    if (role !== 'confirm') return;
+    await this.record(side, category, playerId);
+  }
+
   async adjustScore(
     side: FixtureSide,
     category: ScoringCategory,
@@ -1174,6 +1407,9 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     if (this.units().length) {
       body['unit_index'] = this.unitIndex();
       body['period'] = this.unitLabel({ unit_index: this.unitIndex() } as ScoreEvent);
+    } else {
+      body['unit_index'] = this.clock().overtime ? 2 : this.clock().half - 1;
+      body['period'] = this.clockPeriodName();
     }
     const minute = this.clockMinute(category);
     if (minute !== null) body['minute'] = minute;
@@ -1339,6 +1575,41 @@ interface MatchClock {
   running: boolean;
   elapsedMs: number;
   runStartedAt: number | null;
+  half: 1 | 2;
+  halfEnded: boolean;
+  overtime: boolean;
+  overtimeEnded: boolean;
+}
+
+const HALF_OVERRUN_RATIO = 0.1;
+
+function emptyClock(): MatchClock {
+  return {
+    running: false,
+    elapsedMs: 0,
+    runStartedAt: null,
+    half: 1,
+    halfEnded: false,
+    overtime: false,
+    overtimeEnded: false,
+  };
+}
+
+function halfMinutes(regulation: number): number {
+  return regulation / 2;
+}
+
+function halfOverrunMinutes(regulation: number): number {
+  return regulation * HALF_OVERRUN_RATIO;
+}
+
+function halfMaxMinutes(regulation: number): number {
+  return halfMinutes(regulation) + halfOverrunMinutes(regulation);
+}
+
+function formatDurationMinutes(value: number): string {
+  if (Number.isInteger(value)) return String(value);
+  return String(Math.round(value * 10) / 10);
 }
 
 function clockKey(fixtureId: string): string {
@@ -1346,7 +1617,7 @@ function clockKey(fixtureId: string): string {
 }
 
 function readMatchClock(fixtureId: string): MatchClock {
-  const empty: MatchClock = { running: false, elapsedMs: 0, runStartedAt: null };
+  const empty = emptyClock();
   try {
     const raw = localStorage.getItem(clockKey(fixtureId));
     if (!raw) return empty;
@@ -1355,6 +1626,10 @@ function readMatchClock(fixtureId: string): MatchClock {
       running: parsed.running === true,
       elapsedMs: typeof parsed.elapsedMs === 'number' ? parsed.elapsedMs : 0,
       runStartedAt: typeof parsed.runStartedAt === 'number' ? parsed.runStartedAt : null,
+      half: parsed.half === 2 ? 2 : 1,
+      halfEnded: parsed.halfEnded === true,
+      overtime: parsed.overtime === true,
+      overtimeEnded: parsed.overtimeEnded === true,
     };
   } catch {
     return empty;

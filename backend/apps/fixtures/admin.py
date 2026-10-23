@@ -7,6 +7,7 @@ from .models import (
     LineupEntry,
     MatchReport,
     ScoreEvent,
+    ScrabbleMove,
     Substitution,
 )
 
@@ -64,3 +65,8 @@ class SubstitutionAdmin(admin.ModelAdmin):
 @admin.register(MatchReport)
 class MatchReportAdmin(admin.ModelAdmin):
     list_display = ["fixture", "written_by", "submitted_at"]
+
+
+@admin.register(ScrabbleMove)
+class ScrabbleMoveAdmin(admin.ModelAdmin):
+    list_display = ["fixture", "side", "turn_no", "kind", "total", "bingo"]

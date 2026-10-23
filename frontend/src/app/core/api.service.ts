@@ -40,6 +40,7 @@ import type {
   ScoreEvent,
   ScoreAssistEntry,
   ScoringCategory,
+  ScrabbleBoard,
   StandingsResponse,
   UploadTarget,
 } from './models';
@@ -472,6 +473,46 @@ export class ApiService {
   }
 
   // --- Score events ---------------------------------------------------------
+
+  getScrabbleBoard(competitionId: string, fixtureId: string): Observable<ScrabbleBoard> {
+    return this.http.get<ScrabbleBoard>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/scrabble`,
+    );
+  }
+
+  previewScrabbleMove(competitionId: string, fixtureId: string, body: Record<string, unknown>) {
+    return this.http.post<{ words: Array<{ breakdown: string; total: number }>; bingo: boolean; bingo_bonus: number; total: number }>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/scrabble/preview`,
+      body,
+    );
+  }
+
+  recordScrabbleMove(competitionId: string, fixtureId: string, body: Record<string, unknown>) {
+    return this.http.post<ScrabbleBoard>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/scrabble/moves`,
+      body,
+    );
+  }
+
+  updateScrabbleMove(competitionId: string, fixtureId: string, moveId: string, body: Record<string, unknown>) {
+    return this.http.patch<ScrabbleBoard>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/scrabble/moves/${moveId}`,
+      body,
+    );
+  }
+
+  deleteScrabbleMove(competitionId: string, fixtureId: string, moveId: string) {
+    return this.http.delete<ScrabbleBoard>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/scrabble/moves/${moveId}`,
+    );
+  }
+
+  applyScrabbleRacks(competitionId: string, fixtureId: string, body: Record<string, unknown>) {
+    return this.http.post<ScrabbleBoard>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/scrabble/racks`,
+      body,
+    );
+  }
 
   recordEvent(fixtureId: string, body: Record<string, unknown>): Observable<ScoreEvent> {
     return this.http.post<ScoreEvent>(`${this.base}/fixtures/${fixtureId}/events`, body);

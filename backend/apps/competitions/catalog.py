@@ -642,13 +642,14 @@ CATALOG: dict[str, dict] = {
         sport="scrabble",
         participant_type="individual",
         description=(
-            "Each turn adds letter scores, with double or triple letters and "
-            "double or triple words. Using all 7 tiles scores a 50-point bingo. "
-            "At the end, unplayed tiles are subtracted from each player and added "
-            "to the player who went out. The higher total wins. A draw is possible. "
-            "A knockout tie is replayed. The table uses points, then the spread, "
-            "then the head-to-head result."
+            "Official English tiles. The scorer types each word; letter and word "
+            "premiums and blanks are marked on the tiles. Using all 7 tiles scores "
+            "a 50-point bingo. At the end, unplayed tiles are subtracted from each "
+            "player and added to the player who went out. The higher total wins. A "
+            "draw is possible. A knockout tie is replayed. The table uses points, "
+            "then the spread, then the head-to-head result."
         ),
+        tile_set="english",
         draw_resolution="replay",
         score_types=[
             {"key": "turn", "label": "Turn", "value": 1, "affects_score": True},

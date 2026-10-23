@@ -96,9 +96,12 @@ def team_sheet_kickoff_problems(fixture) -> list[str]:
         except ObjectDoesNotExist:
             problems.append(f"Submit {name}'s team sheet before kickoff.")
             continue
-        starters = sum(1 for entry in lineup.entries.all() if entry.role == LineupEntry.Role.STARTER)
+        entries = list(lineup.entries.all())
+        starters = sum(1 for entry in entries if entry.role == LineupEntry.Role.STARTER)
         if starters < needed:
             problems.append(f"{name}'s team sheet needs at least {needed} named players.")
+        if entries and any(entry.number is None for entry in entries):
+            problems.append(f"Give every player on {name}'s team sheet a shirt number.")
     return problems
 
 
@@ -457,12 +460,13 @@ class TeamSheetView(_FixtureView):
             seen.add(player_id)
             number = (row or {}).get("number")
             if number in ("", None):
-                number = None
-            else:
-                try:
-                    number = int(number)
-                except (TypeError, ValueError) as exc:
-                    raise ValidationError({role: "Shirt numbers are whole numbers."}) from exc
+                raise ValidationError({role: "Give every player on the team sheet a shirt number."})
+            try:
+                number = int(number)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError({role: "Shirt numbers are whole numbers."}) from exc
+            if number < 0:
+                raise ValidationError({role: "Shirt numbers cannot be negative."})
             return {"player": squad[player_id], "number": number, "slot": (row or {}).get("slot")}
 
         starting = [clean(row, "starters") for row in starters]

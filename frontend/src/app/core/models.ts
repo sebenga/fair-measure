@@ -524,6 +524,42 @@ export interface FixtureDetail extends Fixture {
   created_at: string;
 }
 
+export interface ScrabbleTile {
+  letter: string;
+  blank: boolean;
+  letter_mult: number;
+  new: boolean;
+  id?: string;
+}
+
+export interface ScrabbleWord {
+  text: string;
+  tiles: ScrabbleTile[];
+  word_mult: number;
+  breakdown?: string;
+  total?: number;
+}
+
+export interface ScrabbleMove {
+  id: string;
+  side: string;
+  player: string;
+  turn_no: number;
+  type: 'play' | 'pass' | 'exchange' | 'challenge_lost';
+  words: ScrabbleWord[];
+  total: number;
+  bingo: boolean;
+  breakdown: string[];
+  created_at: string;
+}
+
+export interface ScrabbleBoard {
+  tile_set: { key: string; label: string; blanks: number; values: Record<string, number> };
+  can_score: boolean;
+  moves: ScrabbleMove[];
+  endgame: { racks: Array<{ side: string; letters: string; value: number }>; went_out: string | null } | null;
+}
+
 export interface PlayerLeagueProfile {
   profile: {
     id: string;
@@ -734,6 +770,7 @@ export interface Preset {
   variant_label?: string;
   league_points?: Record<string, number>;
   table_bonus?: TableBonus;
+  tile_set?: string;
 }
 
 export interface TeamSheet {

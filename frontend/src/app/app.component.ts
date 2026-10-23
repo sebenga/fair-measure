@@ -86,6 +86,8 @@ import {
   arrowUndoOutline,
   cardOutline,
   videocamOutline,
+  textOutline,
+  banOutline,
 } from 'ionicons/icons';
 
 import { AuthService } from './core/auth.service';
@@ -194,6 +196,8 @@ export class AppComponent {
       arrowUndoOutline,
       videocam,
       waterOutline,
+      textOutline,
+      banOutline,
     });
 
     // Hold one socket for the whole session, tied to being signed in.

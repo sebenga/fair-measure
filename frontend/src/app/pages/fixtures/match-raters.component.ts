@@ -81,14 +81,8 @@ import { RealtimeService } from '../../core/realtime.service';
 
       @if (d.teams.length) {
         <h3 class="fm-section-title">Player ratings</h3>
-        @if (d.is_rater && !d.can_rate) {
-          <p class="note">
-            @if (!d.enough) {
-              Rating opens once {{ d.minimum }} raters are appointed.
-            } @else {
-              Rating opens at kickoff.
-            }
-          </p>
+        @if (cannotRateReason(); as why) {
+          <p class="warn why-banner">{{ why }}</p>
         }
         <div class="fm-team-columns" [class.many]="d.teams.length > 2">
           @for (team of d.teams; track team.side_id) {
@@ -168,20 +162,31 @@ import { RealtimeService } from '../../core/realtime.service';
                       <em>No player stats for this sport yet.</em>
                     }
                   </dl>
-                  <div class="marks" role="radiogroup" [attr.aria-label]="'Rate ' + player.name + ' from these stats'">
+                  <div
+                    class="marks"
+                    role="radiogroup"
+                    [class.blocked]="!!cannotRateReason(player)"
+                    [attr.aria-label]="'Rate ' + player.name + ' from these stats'"
+                    [attr.title]="cannotRateReason(player) || null"
+                  >
                     @for (mark of scale; track mark) {
                       <button
                         type="button"
                         role="radio"
                         [class.on]="isMark(player, mark)"
+                        [class.blocked]="!!cannotRateReason(player)"
                         [attr.aria-checked]="isMark(player, mark)"
-                        [disabled]="busy() || !canMark(d) || !!player.rating_locked"
-                        (click)="rate(player.player_id, mark)"
+                        [attr.aria-disabled]="!!cannotRateReason(player)"
+                        [attr.title]="cannotRateReason(player) || null"
+                        (click)="rate(player, mark)"
                       >
                         {{ mark }}
                       </button>
                     }
                   </div>
+                  @if (cannotRateReason(player); as why) {
+                    <p class="why">{{ why }}</p>
+                  }
                 </div>
               } @empty {
                 <p class="muted">No players to rate.</p>
@@ -439,9 +444,19 @@ import { RealtimeService } from '../../core/realtime.service';
         background: var(--ion-color-primary);
         color: var(--ion-color-primary-contrast);
       }
-      .marks button:disabled {
+      .marks button:disabled,
+      .marks button.blocked {
         opacity: 0.45;
-        cursor: not-allowed;
+        cursor: help;
+      }
+      .why-banner {
+        margin: -4px 16px 10px;
+      }
+      .why {
+        margin: 6px 0 0;
+        font-size: 0.74rem;
+        font-weight: 650;
+        color: var(--ion-color-medium);
       }
       .num {
         display: inline-block;
@@ -540,17 +555,42 @@ export class MatchRatersComponent implements OnInit {
     return data.can_rate || (data.can_manage && data.enough && open);
   }
 
-  rate(playerId: string, mark: number): void {
+  cannotRateReason(player?: { rating_locked?: boolean }): string | null {
+    if (this.busy()) return 'Wait for the last change to save.';
+    if (player?.rating_locked) return 'This player was sent off. Their rating has stopped.';
     const data = this.data();
-    if (!data || !this.canMark(data)) return;
-    this.drafts.update((drafts) => ({ ...drafts, [playerId]: String(mark) }));
+    if (!data) return 'Ratings are not available yet.';
+    if (!data.enough) {
+      const have = data.raters.length;
+      return `Appoint at least ${data.minimum} raters before rating starts. ${have} ${have === 1 ? 'is' : 'are'} appointed so far.`;
+    }
+    const open = data.status === 'live' || data.status === 'completed' || data.status === 'forfeit';
+    if (!open) return 'Rating opens at kickoff.';
+    if (!data.is_rater) {
+      return data.can_manage
+        ? 'Appoint yourself as a rater before you can mark players.'
+        : 'You are not appointed as a rater for this match.';
+    }
+    if (!this.canMark(data)) return 'You cannot rate this match yet.';
+    return null;
+  }
+
+  rate(player: { player_id: string; rating_locked?: boolean }, mark: number): void {
+    const reason = this.cannotRateReason(player);
+    if (reason) {
+      void this.toast(reason);
+      return;
+    }
+    this.drafts.update((drafts) => ({ ...drafts, [player.player_id]: String(mark) }));
     this.run(
-      this.api.submitRatings(this.competitionId(), this.fixtureId(), [{ player: playerId, rating: String(mark) }]),
+      this.api.submitRatings(this.competitionId(), this.fixtureId(), [
+        { player: player.player_id, rating: String(mark) },
+      ]),
       'Could not save that rating.',
       () => {
         this.drafts.update((drafts) => {
           const next = { ...drafts };
-          delete next[playerId];
+          delete next[player.player_id];
           return next;
         });
       },

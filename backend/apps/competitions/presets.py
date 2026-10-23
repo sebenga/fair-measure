@@ -366,6 +366,7 @@ def public_preset(key: str, preset: Preset) -> dict:
         "family_label": preset.get("family_label") or "",
         "variant_label": preset.get("variant_label") or "",
         "table_bonus": dict(preset.get("table_bonus") or {}),
+        "tile_set": preset.get("tile_set") or "",
         **governance(preset),
     }
 
@@ -526,6 +527,7 @@ def apply_preset(competition, preset_key: str, *, unit_count: int | None = None)
             "family": preset.get("family") or "",
             "variant": preset.get("variant") or "",
             "table_bonus": dict(preset.get("table_bonus") or {}),
+            "tile_set": preset.get("tile_set") or "",
             **governance(preset),
             "category_better": {
                 item["key"]: item["better"]

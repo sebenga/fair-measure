@@ -1456,7 +1456,10 @@ def test_a_game_needs_a_time_limit_and_a_referee_before_kickoff(api, other_user)
         return {
             "formation": "4-4-2",
             "captain": str(members[0].id),
-            "starters": [{"player": str(member.id), "slot": index} for index, member in enumerate(members)],
+            "starters": [
+                {"player": str(member.id), "slot": index, "number": member.number}
+                for index, member in enumerate(members)
+            ],
         }
 
     assert api.put(f"{detail_url}/team-sheets/{home_side.id}", sheet(home), format="json").status_code == 200

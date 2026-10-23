@@ -164,8 +164,8 @@ interface Draft {
     @if (day()?.enabled && sides().length && part() !== 'subs') {
       <h3 class="fm-section-title">Team sheets</h3>
       <p class="hint">
-        Both teams must submit a team sheet of at least {{ sheetMinimum() }} before kickoff. Officials
-        must be picked on Setup.
+        Both teams must submit a team sheet of at least {{ sheetMinimum() }} before kickoff, and every
+        named player needs a shirt number. Officials must be picked on Setup.
       </p>
       <div class="fm-team-columns" [class.many]="sides().length > 2" [class.editing]="!!draft()">
         @for (side of sides(); track side.side_id) {
@@ -273,21 +273,22 @@ interface Draft {
         </label>
 
         @if (draftNamed().length) {
-          <details class="numbers">
-            <summary>Shirt numbers</summary>
+          <div class="numbers">
+            <p class="hint">Shirt numbers (required)</p>
             @for (player of draftNamed(); track player.player_id) {
-              <label>
+              <label [class.missing]="!numberFor(player.player_id)">
                 <span>{{ player.name }}</span>
                 <input
                   type="number"
                   min="0"
+                  required
                   inputmode="numeric"
                   [value]="numberFor(player.player_id)"
-                  (change)="setNumber(player.player_id, value($event))"
+                  (input)="setNumber(player.player_id, value($event))"
                 />
               </label>
             }
-          </details>
+          </div>
         }
 
         <div class="actions">
@@ -670,16 +671,15 @@ interface Draft {
         gap: 6px;
         font-size: 0.85rem;
       }
-      .numbers summary {
-        cursor: pointer;
-        font-weight: 650;
-      }
       .numbers label {
         display: grid;
         grid-template-columns: 1fr 80px;
         align-items: center;
         gap: 8px;
         margin-top: 6px;
+      }
+      .numbers label.missing input {
+        border-color: var(--ion-color-danger);
       }
       .numbers input {
         min-height: 34px;
@@ -1032,6 +1032,7 @@ export class MatchDayComponent implements OnInit {
       slots,
       bench: draft.bench.filter((id) => id !== playerId),
       captain: Object.values(slots).includes(draft.captain) ? draft.captain : '',
+      numbers: playerId ? this.withNumber(draft.numbers, playerId) : draft.numbers,
     });
   }
 
@@ -1050,7 +1051,11 @@ export class MatchDayComponent implements OnInit {
       void this.toast(`Name at most ${limit} starters.`);
       return;
     }
-    this.patch({ starters: [...draft.starters, playerId], bench: draft.bench.filter((id) => id !== playerId) });
+    this.patch({
+      starters: [...draft.starters, playerId],
+      bench: draft.bench.filter((id) => id !== playerId),
+      numbers: this.withNumber(draft.numbers, playerId),
+    });
   }
 
   toggleBench(playerId: string): void {
@@ -1065,7 +1070,7 @@ export class MatchDayComponent implements OnInit {
       void this.toast(`Name at most ${limit} substitutes.`);
       return;
     }
-    this.patch({ bench: [...draft.bench, playerId] });
+    this.patch({ bench: [...draft.bench, playerId], numbers: this.withNumber(draft.numbers, playerId) });
   }
 
   setCaptain(playerId: string): void {
@@ -1079,6 +1084,33 @@ export class MatchDayComponent implements OnInit {
   setNumber(playerId: string, number: string): void {
     const draft = this.draft();
     if (draft) this.patch({ numbers: { ...draft.numbers, [playerId]: number } });
+  }
+
+  private withNumber(numbers: Record<string, string>, playerId: string): Record<string, string> {
+    if ((numbers[playerId] ?? '').trim()) return numbers;
+    const player = this.squad().find((item) => item.player_id === playerId);
+    if (player?.number !== null && player?.number !== undefined) {
+      const taken = this.takenNumbers(numbers);
+      if (!taken.has(player.number)) {
+        return { ...numbers, [playerId]: String(player.number) };
+      }
+    }
+    return { ...numbers, [playerId]: String(this.nextFreeNumber(numbers)) };
+  }
+
+  private takenNumbers(numbers: Record<string, string>): Set<number> {
+    return new Set(
+      Object.values(numbers)
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value >= 0),
+    );
+  }
+
+  private nextFreeNumber(numbers: Record<string, string>): number {
+    const taken = this.takenNumbers(numbers);
+    let next = 1;
+    while (taken.has(next)) next += 1;
+    return next;
   }
 
   autoFill(): void {
@@ -1102,13 +1134,17 @@ export class MatchDayComponent implements OnInit {
       if (bench.length >= benchMax) break;
       if (!bench.includes(id)) bench.push(id);
     }
-    this.patch({ slots, starters, bench });
+    let numbers = { ...draft.numbers };
+    for (const id of [...Object.values(slots), ...starters, ...bench]) {
+      if (id) numbers = this.withNumber(numbers, id);
+    }
+    this.patch({ slots, starters, bench, numbers });
   }
 
   save(): void {
     const draft = this.draft();
     if (!draft || this.busy()) return;
-    const number = (id: string) => draft.numbers[id] ?? '';
+    const number = (id: string) => draft.numbers[id]?.trim() ?? '';
     const starters = this.draftSlots().length
       ? Object.entries(draft.slots)
           .filter(([, id]) => id)
@@ -1119,11 +1155,25 @@ export class MatchDayComponent implements OnInit {
       void this.toast(`Name at least ${needed} players on the team sheet.`);
       return;
     }
+    const named = [...starters, ...draft.bench.map((id) => ({ player: id, number: number(id) }))];
+    if (named.some((row) => row.number === '')) {
+      void this.toast('Give every player on the team sheet a shirt number.');
+      return;
+    }
+    const parsed = named.map((row) => Number(row.number));
+    if (parsed.some((value) => !Number.isInteger(value) || value < 0)) {
+      void this.toast('Shirt numbers are whole numbers.');
+      return;
+    }
+    if (new Set(parsed).size !== parsed.length) {
+      void this.toast('Two players have the same shirt number.');
+      return;
+    }
     const body = {
       formation: draft.formation,
       captain: draft.captain || null,
-      starters,
-      bench: draft.bench.map((id) => ({ player: id, number: number(id) })),
+      starters: starters.map((row) => ({ ...row, number: Number(row.number) })),
+      bench: draft.bench.map((id) => ({ player: id, number: Number(number(id)) })),
     };
     this.busy.set(true);
     this.api.saveTeamSheet(this.competitionId(), this.fixtureId(), draft.sideId, body).subscribe({

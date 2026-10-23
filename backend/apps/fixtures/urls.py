@@ -9,6 +9,13 @@ from .matchday import (
     TeamSheetView,
 )
 from .raters import FixtureRatersView, RaterPlayerStatsView, RaterScoresView
+from .scrabble import (
+    ScrabbleBoardView,
+    ScrabbleMoveView,
+    ScrabbleMovesView,
+    ScrabblePreviewView,
+    ScrabbleRacksView,
+)
 from .views import FixtureRefereeView, FixtureViewSet, ScoreAssistView, ScoreEventViewSet
 
 fixture_list = FixtureViewSet.as_view({"get": "list", "post": "create"})
@@ -89,6 +96,31 @@ urlpatterns = [
         "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/raters/stats",
         RaterPlayerStatsView.as_view(),
         name="fixture-rater-stats",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/scrabble",
+        ScrabbleBoardView.as_view(),
+        name="fixture-scrabble",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/scrabble/preview",
+        ScrabblePreviewView.as_view(),
+        name="fixture-scrabble-preview",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/scrabble/moves",
+        ScrabbleMovesView.as_view(),
+        name="fixture-scrabble-moves",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/scrabble/moves/<uuid:move_pk>",
+        ScrabbleMoveView.as_view(),
+        name="fixture-scrabble-move",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/scrabble/racks",
+        ScrabbleRacksView.as_view(),
+        name="fixture-scrabble-racks",
     ),
     path(
         "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/report",

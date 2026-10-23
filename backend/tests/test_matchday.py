@@ -54,8 +54,11 @@ def _sheet(side, formation="4-4-2"):
     return {
         "formation": formation,
         "captain": str(squad[0].id),
-        "starters": [{"player": str(member.id), "slot": index} for index, member in enumerate(squad[:11])],
-        "bench": [{"player": str(member.id)} for member in squad[11:]],
+        "starters": [
+            {"player": str(member.id), "slot": index, "number": member.number}
+            for index, member in enumerate(squad[:11])
+        ],
+        "bench": [{"player": str(member.id), "number": member.number} for member in squad[11:]],
     }
 
 
@@ -82,7 +85,8 @@ def test_team_sheet_uses_the_preset_formations_and_limits(api, league):
     assert api.put(_url(fixture, f"team-sheets/{sides[0].id}"), bad, format="json").status_code == 400
 
     too_many = _sheet(sides[0])
-    too_many["starters"].append({"player": too_many["bench"].pop()["player"]})
+    moved = too_many["bench"].pop()
+    too_many["starters"].append({**moved, "slot": 11})
     assert api.put(_url(fixture, f"team-sheets/{sides[0].id}"), too_many, format="json").status_code == 400
 
     too_few = _sheet(sides[0])
@@ -92,8 +96,14 @@ def test_team_sheet_uses_the_preset_formations_and_limits(api, league):
     assert "at least 11" in str(short.data)
 
     stranger = _sheet(sides[0])
-    stranger["bench"].append({"player": str(_squad(sides[1])[0].id)})
+    stranger["bench"].append({"player": str(_squad(sides[1])[0].id), "number": 99})
     assert api.put(_url(fixture, f"team-sheets/{sides[0].id}"), stranger, format="json").status_code == 400
+
+    unnumbered = _sheet(sides[0])
+    unnumbered["starters"][0].pop("number")
+    missing = api.put(_url(fixture, f"team-sheets/{sides[0].id}"), unnumbered, format="json")
+    assert missing.status_code == 400
+    assert "shirt number" in str(missing.data).lower()
 
 
 def test_team_manager_picks_before_kickoff_and_sheet_locks_after(api, league, other_user):
@@ -159,8 +169,11 @@ def test_substitution_limit_and_delete_order(api, league):
     _, fixture, sides = league
     sheet = _sheet(sides[0])
     squad = _squad(sides[0])
-    extra = [RosterMember.objects.create(participant=sides[0].participant, name=f"Extra {i}") for i in range(4)]
-    sheet["bench"] += [{"player": str(member.id)} for member in extra]
+    extra = [
+        RosterMember.objects.create(participant=sides[0].participant, name=f"Extra {i}", number=20 + i)
+        for i in range(4)
+    ]
+    sheet["bench"] += [{"player": str(member.id), "number": member.number} for member in extra]
     assert api.put(_url(fixture, f"team-sheets/{sides[0].id}"), sheet, format="json").status_code == 200
     fixture.status = Fixture.Status.LIVE
     fixture.save()
@@ -304,6 +317,15 @@ def test_kickoff_needs_both_team_sheets_of_eleven_and_officials(api, league, oth
         )
     short = fixture.kickoff_problems()
     assert "Away XI's team sheet needs at least 11 named players." in short
+    lineup.delete()
+
+    lineup = FixtureLineup.objects.create(fixture=fixture, side=sides[1])
+    for index, member in enumerate(_squad(sides[1])[:11]):
+        LineupEntry.objects.create(
+            lineup=lineup, player=member, role=LineupEntry.Role.STARTER, order=index
+        )
+    unnumbered = fixture.kickoff_problems()
+    assert "Give every player on Away XI's team sheet a shirt number." in unnumbered
     lineup.delete()
 
     api.put(_url(fixture, f"team-sheets/{sides[1].id}"), _sheet(sides[1]), format="json")

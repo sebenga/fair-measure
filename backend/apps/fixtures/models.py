@@ -438,6 +438,48 @@ class MatchReport(BaseModel):
         return f"Report for {self.fixture_id}"
 
 
+class ScrabbleMove(BaseModel):
+    """One turn in a word-entry match. The stored total is always recomputed on the server."""
+
+    class Kind(models.TextChoices):
+        PLAY = "play", _("Play")
+        PASS = "pass", _("Pass")
+        EXCHANGE = "exchange", _("Exchange")
+        CHALLENGE_LOST = "challenge_lost", _("Lost challenge")
+
+    fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="scrabble_moves")
+    side = models.ForeignKey(FixtureSide, on_delete=models.CASCADE, related_name="scrabble_moves")
+    turn_no = models.PositiveIntegerField()
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.PLAY)
+    words = models.JSONField(default=list)
+    total = models.IntegerField(default=0)
+    bingo = models.BooleanField(default=False)
+    event = models.OneToOneField(
+        ScoreEvent, on_delete=models.SET_NULL, null=True, blank=True, related_name="scrabble_move"
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+    note = models.CharField(max_length=280, blank=True)
+
+    class Meta:
+        ordering = ["turn_no", "created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.side_id} turn {self.turn_no}: {self.total}"
+
+
+class ScrabbleEndgame(BaseModel):
+    """Remaining racks after the last play, used to apply unplayed-tile scores."""
+
+    fixture = models.OneToOneField(Fixture, on_delete=models.CASCADE, related_name="scrabble_endgame")
+    racks = models.JSONField(default=list)
+    went_out_id = models.UUIDField(null=True, blank=True)
+    applied_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+
+
 class FixtureAward(BaseModel):
     """A per-match award the preset names, such as a best player or a best horse."""
 
