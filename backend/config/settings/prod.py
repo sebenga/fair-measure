@@ -1,14 +1,16 @@
 """Production settings. Fails loudly rather than starting up insecure."""
 
-from .base import *  # noqa: F403
+import hashlib
 from pathlib import Path
 
+from .base import *  # noqa: F403
 from .base import (
     ALLOWED_HOSTS,
     CORS_ALLOWED_ORIGINS,
     CSRF_TRUSTED_ORIGINS,
     REST_FRAMEWORK,
     SECRET_KEY,
+    SIMPLE_JWT,
     SPA_DIR,
     env,
     env_bool,
@@ -18,7 +20,15 @@ from .base import (
 DEBUG = False
 
 if SECRET_KEY in {"", "insecure-dev-key-change-me"}:
-    raise RuntimeError("DJANGO_SECRET_KEY must be set to a real value in production.")
+    if env("RENDER"):
+        # Unblocks a first deploy when the dashboard secret was not set.
+        # Set DJANGO_SECRET_KEY yourself for a service that matters.
+        material = env("RENDER_SERVICE_ID") or env("RENDER_EXTERNAL_HOSTNAME") or "fairmeasure-render"
+        SECRET_KEY = hashlib.sha256(f"fm-v2|{material}".encode()).hexdigest()
+        JWT_SIGNING_KEY = env("JWT_SIGNING_KEY") or SECRET_KEY
+        SIMPLE_JWT = {**SIMPLE_JWT, "SIGNING_KEY": JWT_SIGNING_KEY}
+    else:
+        raise RuntimeError("DJANGO_SECRET_KEY must be set to a real value in production.")
 
 REST_FRAMEWORK = {
     **REST_FRAMEWORK,
@@ -53,7 +63,10 @@ if env("RENDER"):
         ALLOWED_HOSTS.append(render_host)
     if ".onrender.com" not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(".onrender.com")
-    for origin in (env("PUBLIC_APP_ORIGIN"), env("PUBLIC_API_ORIGIN")):
+    origins = [env("PUBLIC_APP_ORIGIN"), env("PUBLIC_API_ORIGIN")]
+    if render_host:
+        origins.append(f"https://{render_host}")
+    for origin in origins:
         if origin and origin not in CORS_ALLOWED_ORIGINS:
             CORS_ALLOWED_ORIGINS.append(origin)
         if origin and origin not in CSRF_TRUSTED_ORIGINS:
