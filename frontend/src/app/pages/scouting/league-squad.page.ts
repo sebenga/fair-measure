@@ -61,7 +61,7 @@ const SOURCE_LABEL: Record<string, string> = {
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting/leagues" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
         <ion-title>League squad</ion-title>
         <ion-buttons slot="end">
           <ion-button (click)="openTalentReport()">
@@ -94,7 +94,7 @@ const SOURCE_LABEL: Record<string, string> = {
             <h2>{{ s.name }}</h2>
             <div class="hero-row">
               <span class="badge" [class.ok]="s.status === 'published'" [class.warn]="s.status === 'draft'">
-                {{ s.status === 'published' ? 'Published' : 'Draft · only selectors see this' }}
+                {{ s.status === 'published' ? 'Published' : 'Draft · only admins and league scouts see this' }}
               </span>
               <span class="count">{{ s.filled }} / {{ s.size }} players</span>
             </div>
@@ -116,7 +116,7 @@ const SOURCE_LABEL: Record<string, string> = {
 
           @if (s.can_edit) {
             <section class="fm-card section no-print">
-              <h3>Selector tools</h3>
+              <h3>Amend the squad</h3>
               <div class="tools">
                 <button type="button" class="btn" [disabled]="busy()" (click)="generate()">
                   <ion-icon name="refresh-outline" aria-hidden="true" />
@@ -134,7 +134,10 @@ const SOURCE_LABEL: Record<string, string> = {
                   </button>
                 }
               </div>
-              <p class="hint">Re-picking keeps players you locked and never brings back players you dropped.</p>
+              <p class="hint">
+                Admins can change this squad after it is published. Re-picking keeps players you
+                locked and never brings back players you dropped.
+              </p>
               <div class="row">
                 <label class="field">
                   Squad size
@@ -146,7 +149,7 @@ const SOURCE_LABEL: Record<string, string> = {
                 </label>
               </div>
               <label class="field">
-                Selector's notes
+                Notes
                 <textarea maxlength="4000" [value]="s.notes" (change)="setNotes($event)" placeholder="Shown with the published squad"></textarea>
               </label>
             </section>
@@ -194,7 +197,7 @@ const SOURCE_LABEL: Record<string, string> = {
                     <div class="pick-foot">
                       <span class="chip-mini" [attr.data-confidence]="pick.confidence">{{ confidence(pick.confidence) }}</span>
                       @if (pick.locked) {
-                        <span class="chip-mini"><ion-icon name="lock-closed-outline" aria-hidden="true" /> Selector's pick</span>
+                        <span class="chip-mini"><ion-icon name="lock-closed-outline" aria-hidden="true" /> Locked pick</span>
                       }
                       @if (s.can_edit) {
                         <span class="spacer"></span>
@@ -223,10 +226,10 @@ const SOURCE_LABEL: Record<string, string> = {
             <ion-icon name="shirt-outline" aria-hidden="true" />
             <h3>No squad named yet</h3>
             @if (canEdit()) {
-              <p>Pick the league's best players from its match ratings, tagged scores and team results. You can change every pick before you publish.</p>
+              <p>Pick the league's best players from its match ratings, tagged scores and team results. Admins can change every pick before and after publishing.</p>
               <button type="button" class="btn" [disabled]="busy()" (click)="generate()">Pick the best squad</button>
             } @else {
-              <p>The league's selectors have not published a squad.</p>
+              <p>The league's admins have not published a squad yet.</p>
             }
           </div>
         }
@@ -237,7 +240,7 @@ const SOURCE_LABEL: Record<string, string> = {
             <p class="hint">
               {{ c.counts.eligible }} of {{ c.counts.rostered }} rostered players can be considered.
               @if (c.counts.private + c.counts.no_profile > 0) {
-                {{ c.counts.private + c.counts.no_profile }} are left out: no talent profile, a private profile, or an under-18 still waiting for a guardian's consent.
+                {{ c.counts.private + c.counts.no_profile }} are left out: a private profile, missing date of birth, or an under-18 still waiting for a guardian's consent.
               }
             </p>
             <div class="filters">
@@ -722,6 +725,13 @@ export class LeagueSquadPage {
 
   private readonly leagueId = computed(() => this.route.snapshot.paramMap.get('id') ?? '');
 
+  backHref(): string {
+    const id = this.leagueId();
+    return this.route.snapshot.routeConfig?.path?.startsWith('competitions/')
+      ? `/tabs/competitions/${id}`
+      : '/tabs/scouting/leagues';
+  }
+
   openTalentReport(): void {
     void this.router.navigate(['/tabs/scouting/reports/competition'], {
       queryParams: { competition: this.leagueId() },
@@ -731,7 +741,9 @@ export class LeagueSquadPage {
   readonly filteredCandidates = computed<LeagueCandidate[]>(() => {
     const rows = this.pool()?.results ?? [];
     const filter = this.groupFilter();
-    return filter ? rows.filter((row) => (row.group_key ?? 'other') === filter) : rows;
+    return filter
+      ? rows.filter((row) => (row.group_keys?.length ? row.group_keys : [row.group_key ?? 'other']).includes(filter))
+      : rows;
   });
 
   readonly isFull = computed(() => {
@@ -836,7 +848,10 @@ export class LeagueSquadPage {
   }
 
   add(row: LeagueCandidate): void {
-    this.run(this.scouting.addPick(this.leagueId(), row.user_id, row.group_key), `${row.name} added and locked.`);
+    const filter = this.groupFilter();
+    const groups = row.group_keys?.length ? row.group_keys : [row.group_key];
+    const group = filter && groups.includes(filter) ? filter : row.group_key;
+    this.run(this.scouting.addPick(this.leagueId(), row.user_id, group), `${row.name} added and locked.`);
   }
 
   restore(row: LeagueCandidate): void {

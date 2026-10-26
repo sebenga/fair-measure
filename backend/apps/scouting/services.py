@@ -31,6 +31,63 @@ def today() -> date:
     return timezone.localdate()
 
 
+def date_of_birth_of(profile: PlayerProfile):
+    """Age comes from the account. The scouting row is only a fallback."""
+
+    user = getattr(profile, "user", None)
+    return getattr(user, "date_of_birth", None) or profile.date_of_birth
+
+
+def account_name(user) -> tuple[str, str]:
+    given = (getattr(user, "given_name", None) or "").strip()
+    family = (getattr(user, "family_name", None) or "").strip()
+    if not given:
+        display = (getattr(user, "display_name", None) or "").strip()
+        if display:
+            parts = display.split()
+            given = parts[0]
+            if not family and len(parts) > 1:
+                family = " ".join(parts[1:])
+    return given[:80], family[:80]
+
+
+def ensure_player_profile(user) -> PlayerProfile:
+    """Every signed-in person has one scouting record, filled from their account."""
+
+    given, family = account_name(user)
+    values = {}
+    if given:
+        values["first_name"] = given
+    if family:
+        values["last_name"] = family
+    if user.date_of_birth:
+        values["date_of_birth"] = user.date_of_birth
+    if user.avatar_url:
+        values["photo_url"] = user.avatar_url
+    if user.bio:
+        values["bio"] = user.bio
+    if user.country:
+        values["nationality"] = user.country
+    profile = PlayerProfile.objects.filter(user=user).first()
+    if profile is None:
+        return PlayerProfile.objects.create(
+            user=user,
+            first_name=given or (user.email or "Player").split("@")[0][:80],
+            last_name=family,
+            date_of_birth=user.date_of_birth,
+            photo_url=user.avatar_url or "",
+            bio=user.bio or "",
+            nationality=user.country or "",
+            visibility=PlayerProfile.Visibility.SCOUTS,
+        )
+    changed = [field for field, value in values.items() if getattr(profile, field) != value]
+    for field in changed:
+        setattr(profile, field, values[field])
+    if changed:
+        profile.save(update_fields=[*changed, "updated_at"])
+    return profile
+
+
 def age_on(date_of_birth: date | None, on: date) -> int | None:
     if date_of_birth is None:
         return None
@@ -56,7 +113,7 @@ def age_group(date_of_birth: date | None, on: date | None = None) -> dict | None
 def is_minor(profile: PlayerProfile, on: date | None = None) -> bool:
     """Unknown age is treated as a minor: nothing is shown until we know."""
 
-    age = age_on(profile.date_of_birth, on or today())
+    age = age_on(date_of_birth_of(profile), on or today())
     return age is None or age < catalog.AGE_OF_CONSENT
 
 
@@ -143,7 +200,7 @@ def effective_visibility(profile: PlayerProfile, on: date | None = None) -> str:
     """What scouts and the public actually get, after the age and consent rules."""
 
     chosen = profile.visibility
-    if profile.date_of_birth is None:
+    if date_of_birth_of(profile) is None:
         return PlayerProfile.Visibility.PRIVATE
     if not is_minor(profile, on):
         return chosen

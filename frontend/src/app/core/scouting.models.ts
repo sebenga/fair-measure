@@ -383,6 +383,7 @@ export interface LeagueCandidate {
   team: string;
   position: string;
   group_key: string | null;
+  group_keys?: string[];
   score: string | null;
   available: boolean;
   availability: string;

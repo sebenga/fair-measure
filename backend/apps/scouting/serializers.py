@@ -16,10 +16,12 @@ from .models import (
 )
 from .services import (
     MAX_PROFILE_TEAMS,
+    account_name,
     active_consent,
     affiliated_teams,
     age_group,
     age_on,
+    date_of_birth_of,
     effective_visibility,
     is_minor,
     roster_team_ids,
@@ -411,6 +413,9 @@ class PlayerProfileSerializer(serializers.ModelSerializer):
             "access",
             "updated_at",
         ]
+        extra_kwargs = {
+            "first_name": {"required": False, "allow_blank": True},
+        }
 
     def validate_gender_category(self, value: str) -> str:
         if value and value not in catalog.keys(catalog.GENDER_CATEGORIES):
@@ -472,8 +477,23 @@ class PlayerProfileSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data: dict) -> PlayerProfile:
         team_ids = validated_data.pop("team_ids", [])
+        user = validated_data.get("user")
+        if user is not None:
+            given, family = account_name(user)
+            if not validated_data.get("first_name"):
+                validated_data["first_name"] = given or (user.email or "Player").split("@")[0][:80]
+            validated_data.setdefault("last_name", family)
+            if user.date_of_birth and not validated_data.get("date_of_birth"):
+                validated_data["date_of_birth"] = user.date_of_birth
+            if user.avatar_url and not validated_data.get("photo_url"):
+                validated_data["photo_url"] = user.avatar_url
+            if user.bio and not validated_data.get("bio"):
+                validated_data["bio"] = user.bio
+            if user.country and not validated_data.get("nationality"):
+                validated_data["nationality"] = user.country
         profile = super().create(validated_data)
         self._set_teams(profile, team_ids)
+        self._sync_account(profile, validated_data)
         return profile
 
     def update(self, instance: PlayerProfile, validated_data: dict) -> PlayerProfile:
@@ -481,7 +501,42 @@ class PlayerProfileSerializer(serializers.ModelSerializer):
         profile = super().update(instance, validated_data)
         if team_ids is not None:
             self._set_teams(profile, team_ids)
+        self._sync_account(profile, validated_data)
         return profile
+
+    def _sync_account(self, profile: PlayerProfile, validated_data: dict) -> None:
+        user = profile.user
+        mapping = {
+            "first_name": "given_name",
+            "last_name": "family_name",
+            "date_of_birth": "date_of_birth",
+            "photo_url": "avatar_url",
+            "bio": "bio",
+            "nationality": "country",
+        }
+        changed: list[str] = []
+        for src, dest in mapping.items():
+            if src not in validated_data:
+                continue
+            value = validated_data[src]
+            if getattr(user, dest) != value:
+                setattr(user, dest, value)
+                changed.append(dest)
+        if changed:
+            user.save(update_fields=changed)
+
+    def to_representation(self, instance: PlayerProfile) -> dict:
+        data = super().to_representation(instance)
+        user = instance.user
+        given, family = account_name(user)
+        data["first_name"] = given or instance.first_name
+        data["last_name"] = family or instance.last_name
+        data["date_of_birth"] = user.date_of_birth or instance.date_of_birth
+        data["photo_url"] = user.avatar_url or instance.photo_url
+        data["bio"] = user.bio or instance.bio
+        if user.country:
+            data["nationality"] = user.country
+        return data
 
     def _set_teams(self, profile: PlayerProfile, team_ids: list) -> None:
         profile.teams.set(team_ids)
@@ -489,10 +544,10 @@ class PlayerProfileSerializer(serializers.ModelSerializer):
         profile.save(update_fields=["school_or_club", "updated_at"])
 
     def get_age(self, obj: PlayerProfile) -> int | None:
-        return age_on(obj.date_of_birth, today())
+        return age_on(date_of_birth_of(obj), today())
 
     def get_age_group(self, obj: PlayerProfile) -> dict | None:
-        return age_group(obj.date_of_birth)
+        return age_group(date_of_birth_of(obj))
 
     def get_is_minor(self, obj: PlayerProfile) -> bool:
         return is_minor(obj)
@@ -501,7 +556,8 @@ class PlayerProfileSerializer(serializers.ModelSerializer):
         return effective_visibility(obj)
 
     def get_consent_status(self, obj: PlayerProfile) -> dict:
-        if not is_minor(obj) and obj.date_of_birth is not None:
+        born = date_of_birth_of(obj)
+        if not is_minor(obj) and born is not None:
             return {"needed": False, "granted": True, "visibility": None, "sections": []}
         consent = active_consent(obj)
         return {
@@ -509,7 +565,7 @@ class PlayerProfileSerializer(serializers.ModelSerializer):
             "granted": consent is not None,
             "visibility": consent.visibility if consent else None,
             "sections": consent.sections if consent else [],
-            "missing_date_of_birth": obj.date_of_birth is None,
+            "missing_date_of_birth": born is None,
         }
 
     def get_measurements(self, obj: PlayerProfile) -> list[dict]:
@@ -525,20 +581,22 @@ class ScoutProfileSerializer(serializers.Serializer):
     def to_representation(self, profile: PlayerProfile) -> dict:
         access = self.context.get("access", "public")
         sections = shared_sections(profile)
-        group = age_group(profile.date_of_birth)
+        group = age_group(date_of_birth_of(profile))
+        user = profile.user
+        given, family = account_name(user)
         teams = affiliated_teams(profile)
         data: dict = {
             "id": str(profile.id),
-            "first_name": profile.first_name,
-            "last_name": profile.last_name,
-            "photo_url": profile.photo_url,
+            "first_name": given or profile.first_name,
+            "last_name": family or profile.last_name,
+            "photo_url": user.avatar_url or profile.photo_url,
             "age_group": group,
             "gender_category": profile.gender_category,
             "nationality": profile.nationality,
             "region": profile.region,
             "teams": teams,
             "school_or_club": school_or_club_label(teams, profile.school_or_club),
-            "bio": profile.bio,
+            "bio": user.bio or profile.bio,
             "access": access,
             "contact": "Contact this player through Fair Measure; details are never shared.",
             "sports": PlayerSportSerializer(profile.sports.all(), many=True).data,
@@ -550,7 +608,7 @@ class ScoutProfileSerializer(serializers.Serializer):
         }
         # Exact age only for scouts; the public sees the age group.
         if access == "scout":
-            data["age"] = age_on(profile.date_of_birth, today())
+            data["age"] = age_on(date_of_birth_of(profile), today())
         if "physical" in sections:
             data["measurements"] = MeasurementSerializer(
                 _latest_measurements(profile), many=True
@@ -574,12 +632,13 @@ class ProfileCardSerializer(serializers.Serializer):
 
     def to_representation(self, profile: PlayerProfile) -> dict:
         primary = next(iter(profile.sports.all()), None)
-        group = age_group(profile.date_of_birth)
+        given, family = account_name(profile.user)
+        group = age_group(date_of_birth_of(profile))
         teams = affiliated_teams(profile)
         return {
             "id": str(profile.id),
-            "name": profile.full_name,
-            "photo_url": profile.photo_url,
+            "name": " ".join(part for part in (given, family) if part) or profile.full_name,
+            "photo_url": profile.user.avatar_url or profile.photo_url,
             "age_group": group["label"] if group else None,
             "region": profile.region,
             "teams": teams,

@@ -1,6 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
 import {
   IonBackButton,
@@ -15,7 +14,6 @@ import {
 } from '@ionic/angular/standalone';
 import { Observable } from 'rxjs';
 
-import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type {
   CatalogSport,
@@ -66,7 +64,7 @@ const EMPTY_IDENTITY: Identity = {
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
-        <ion-title>{{ profile() ? 'My talent profile' : 'Create talent profile' }}</ion-title>
+        <ion-title>Scouting</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -100,7 +98,7 @@ const EMPTY_IDENTITY: Identity = {
           @if (p.consent_status.needed) {
             <div class="notice" [class.ok]="p.consent_status.granted">
               @if (p.consent_status.missing_date_of_birth) {
-                Add your date of birth. Profiles without one stay private so we can protect minors.
+                Add your date of birth on your profile. Without it you stay private so we can protect minors.
               } @else if (p.consent_status.granted) {
                 A guardian consented to <strong>{{ visibilityLabel(p.consent_status.visibility ?? 'private') }}</strong>.
                 Your profile is shown at the lower of their choice and yours.
@@ -124,20 +122,31 @@ const EMPTY_IDENTITY: Identity = {
           }
         } @else {
           <p class="lede">
-            Your talent profile is what scouts see. You decide how visible it is, and phone numbers and
-            email addresses are never shown to anyone. Your name, date of birth, photo and teams are filled in
-            from your main profile; change anything before you save.
+            Scouts see your Fair Measure profile: name, age and where you play. Phone numbers and email
+            addresses are never shown. You only choose visibility, sports and availability here.
           </p>
         }
 
         <form class="fm-card section" (submit)="saveIdentity($event)">
           <h3>About you</h3>
-          <div class="row">
-            <label class="field">First name<input required [value]="draft().first_name" (input)="set('first_name', $event)" /></label>
-            <label class="field">Last name<input [value]="draft().last_name" (input)="set('last_name', $event)" /></label>
+          <p class="hint">
+            Name, age, photo and country come from
+            <button type="button" class="link" (click)="goAccount()">your profile</button>.
+          </p>
+          <div class="identity-readonly">
+            <p>
+              <strong>{{ draft().first_name }} {{ draft().last_name }}</strong>
+              @if (draft().date_of_birth) {
+                <small>{{ draft().date_of_birth }}</small>
+              } @else {
+                <small>Add your date of birth on your profile</small>
+              }
+            </p>
+            @if (draft().nationality) {
+              <p class="hint">{{ draft().nationality }}</p>
+            }
           </div>
           <div class="row">
-            <label class="field">Date of birth<input type="date" [value]="draft().date_of_birth ?? ''" (input)="set('date_of_birth', $event)" /></label>
             <label class="field">
               Category
               <select [value]="draft().gender_category" (change)="set('gender_category', $event)">
@@ -147,9 +156,6 @@ const EMPTY_IDENTITY: Identity = {
                 }
               </select>
             </label>
-          </div>
-          <div class="row">
-            <label class="field">Nationality<input [value]="draft().nationality" (input)="set('nationality', $event)" /></label>
             <label class="field">
               Province / region
               <select [value]="draft().region" (change)="set('region', $event)">
@@ -203,8 +209,6 @@ const EMPTY_IDENTITY: Identity = {
               <p class="hint">No teams match that name. Ask your coach to add the side to a competition first.</p>
             }
           </div>
-          <label class="field">Photo link<input type="url" placeholder="https://" [value]="draft().photo_url" (input)="set('photo_url', $event)" /></label>
-          <label class="field">About me<textarea maxlength="1000" [value]="draft().bio" (input)="set('bio', $event)"></textarea></label>
           <div class="row">
             <label class="field">
               Availability
@@ -217,9 +221,7 @@ const EMPTY_IDENTITY: Identity = {
             </label>
             <label class="field">Note<input maxlength="200" [value]="draft().availability_note" (input)="set('availability_note', $event)" /></label>
           </div>
-          <button type="submit" class="btn block" [disabled]="busy() || !draft().first_name.trim()">
-            {{ profile() ? 'Save changes' : 'Create my profile' }}
-          </button>
+          <button type="submit" class="btn block" [disabled]="busy()">Save changes</button>
         </form>
 
         @if (profile(); as p) {
@@ -446,6 +448,32 @@ const EMPTY_IDENTITY: Identity = {
   `,
   styles: [
     `
+      .identity-readonly {
+        margin: 0 0 12px;
+
+        p {
+          margin: 0;
+        }
+
+        strong {
+          display: block;
+        }
+
+        small {
+          color: var(--ion-color-medium);
+        }
+      }
+
+      button.link {
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--ion-color-primary);
+        font: inherit;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+
       .qr-card summary {
         cursor: pointer;
         font-weight: 700;
@@ -602,7 +630,6 @@ export class TalentProfilePage {
   private readonly uploads = inject(UploadService);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastController);
-  private readonly auth = inject(AuthService);
 
   readonly catalog = signal<ScoutingCatalog | null>(null);
   readonly profile = signal<PlayerProfile | null>(null);
@@ -653,26 +680,8 @@ export class TalentProfilePage {
 
   ionViewWillEnter(): void {
     this.scouting.catalog().subscribe((catalog) => this.catalog.set(catalog));
-    // "me" says whether a profile exists, so creating one never starts with a 404.
-    this.scouting.loadMe().subscribe({
-      next: (me) => {
-        if (!me.profile_id) {
-          this.loading.set(false);
-          this.prefillFromAccount();
-          return;
-        }
-        this.scouting.myProfile().subscribe({
-          next: (profile) => this.applyProfile(profile),
-          error: (err: unknown) => {
-            this.loading.set(false);
-            if (err instanceof HttpErrorResponse && err.status === 404) {
-              this.prefillFromAccount();
-              return;
-            }
-            void this.toast(extractErrorMessage(err, 'Could not load your profile.'), 'danger');
-          },
-        });
-      },
+    this.scouting.myProfile().subscribe({
+      next: (profile) => this.applyProfile(profile),
       error: (err: unknown) => {
         this.loading.set(false);
         void this.toast(extractErrorMessage(err, 'Could not load your profile.'), 'danger');
@@ -680,37 +689,8 @@ export class TalentProfilePage {
     });
   }
 
-  /** A new talent profile starts from the main profile, so nothing is typed twice. */
-  private prefillFromAccount(): void {
-    const user = this.auth.user();
-    if (!user || this.draft().first_name) return;
-    const [first, ...rest] = (user.display_name || '').trim().split(/\s+/);
-    this.draft.update((current) => ({
-      ...current,
-      first_name: user.given_name || first || '',
-      last_name: user.family_name || rest.join(' '),
-      date_of_birth: user.date_of_birth || null,
-      photo_url: user.avatar_url || '',
-      bio: current.bio || user.bio || '',
-    }));
-    this.teamsFromRoster();
-  }
-
-  /** Teams the player already joined (accepted invites) are listed before they save. */
-  private teamsFromRoster(): void {
-    this.scouting.teamMemberships().subscribe({
-      next: (result) =>
-        this.selectedTeams.set(
-          result.teams.map((team) => ({
-            id: team.id,
-            name: team.name,
-            competition_id: team.competition_id,
-            competition: team.competition,
-            sport: team.sport,
-            from_roster: true,
-          })),
-        ),
-    });
+  goAccount(): void {
+    void this.router.navigateByUrl('/tabs/profile');
   }
 
   private applyProfile(profile: PlayerProfile): void {
@@ -739,9 +719,17 @@ export class TalentProfilePage {
 
   saveIdentity(event: Event): void {
     event.preventDefault();
-    const body = { ...this.draft(), team_ids: this.selectedTeams().map((team) => team.id) };
-    const request = this.profile() ? this.scouting.updateProfile(body) : this.scouting.createProfile(body);
-    this.run(request, this.profile() ? 'Saved.' : 'Profile created. Add your sports next.');
+    const draft = this.draft();
+    this.run(
+      this.scouting.updateProfile({
+        gender_category: draft.gender_category,
+        region: draft.region,
+        availability: draft.availability,
+        availability_note: draft.availability_note,
+        team_ids: this.selectedTeams().map((team) => team.id),
+      }),
+      'Saved.',
+    );
   }
 
   onTeamFocus(): void {

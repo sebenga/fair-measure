@@ -7,6 +7,8 @@ without one still get a free-form sheet. Nothing here names a sport.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -51,21 +53,19 @@ BEFORE_KICKOFF = {Fixture.Status.SCHEDULED, Fixture.Status.POSTPONED}
 
 
 def team_sheet_config(competition) -> dict | None:
-    """The competition's team sheet rules, or None where entrants are not teams."""
+    """Team-sheet rules for every team competition. None only when entrants are not teams."""
 
     from apps.competitions.presets import PRESETS
 
     settings = competition.settings_json or {}
-    config = settings.get("team_sheet") or (PRESETS.get(settings.get("preset") or "") or {}).get(
-        "team_sheet"
-    )
-    if config:
-        return {**FREE_FORM, **config}
-    if settings.get("participant_type", "team") != "team":
+    if (settings.get("participant_type") or "team") != "team":
         return None
-    if settings.get("contest_type", "head_to_head") != "head_to_head":
-        return None
-    return dict(FREE_FORM)
+    raw = settings.get("team_sheet")
+    if not isinstance(raw, dict) or not raw:
+        raw = (PRESETS.get(settings.get("preset") or "") or {}).get("team_sheet") or {}
+    if not isinstance(raw, dict):
+        raw = {}
+    return {**FREE_FORM, **raw}
 
 
 DEFAULT_SHEET_MINIMUM = 11
@@ -149,6 +149,36 @@ def formation_slots(formation: str, config: dict) -> list[dict]:
     return slots
 
 
+def _display_slots(formation: str, starter_count: int, config: dict) -> list[dict]:
+    """Slots for the pitch graphic. A missing formation still gets a shape."""
+
+    relaxed = {**config, "starters": None}
+    for candidate in (formation, _shape_for(starter_count)):
+        if not candidate:
+            continue
+        try:
+            return formation_slots(candidate, relaxed)
+        except ValidationError:
+            continue
+    return []
+
+
+def _shape_for(starter_count: int) -> str:
+    if starter_count >= 11:
+        return "4-3-3"
+    if starter_count == 10:
+        return "4-3-2"
+    if starter_count == 8:
+        return "3-3-1"
+    if starter_count == 7:
+        return "2-3-1"
+    if starter_count == 6:
+        return "2-2-1"
+    if starter_count == 5:
+        return "2-2"
+    return ""
+
+
 def can_manage_sheet(fixture: Fixture, side: FixtureSide, user) -> bool:
     """Admins always; before kickoff also the team's manager and the match's scorers."""
 
@@ -227,11 +257,50 @@ def _minutes_map(fixture: Fixture) -> dict:
 
 
 def _ratings_map(fixture: Fixture) -> dict:
-    return {row.player_id: format(row.rating, "f") for row in PlayerMatchRating.objects.filter(fixture=fixture)}
+    return {
+        row.player_id: format(row.rating.quantize(Decimal("0.1")), "f")
+        for row in PlayerMatchRating.objects.filter(fixture=fixture)
+    }
+
+
+def _stats_map(fixture: Fixture) -> dict:
+    """Recorded match figures per player, for the lineup graphic."""
+
+    figures: dict = {}
+    events = ScoreEvent.objects.filter(fixture=fixture, player__isnull=False).select_related(
+        "scoring_category"
+    )
+    for event in events:
+        bucket = figures.setdefault(event.player_id, {})
+        category = event.scoring_category
+        row = bucket.setdefault(
+            category.code,
+            {"code": category.code, "label": category.name, "count": Decimal("0")},
+        )
+        row["count"] += event.quantity
+    return {
+        player_id: [
+            {
+                "code": row["code"],
+                "label": row["label"],
+                "count": format(row["count"].normalize(), "f"),
+            }
+            for row in rows.values()
+            if row["count"]
+        ]
+        for player_id, rows in figures.items()
+    }
 
 
 def _side_payload(
-    fixture: Fixture, side: FixtureSide, config: dict, user, subs, minutes: dict, ratings: dict
+    fixture: Fixture,
+    side: FixtureSide,
+    config: dict,
+    user,
+    subs,
+    minutes: dict,
+    ratings: dict,
+    stats: dict,
 ) -> dict:
     lineup = getattr(side, "lineup", None)
     side_subs = [sub for sub in subs if sub.side_id == side.id]
@@ -261,6 +330,7 @@ def _side_payload(
             "sent_off": entry.player_id in dismissed,
             "minutes": minutes.get(entry.player_id),
             "rating": ratings.get(entry.player_id),
+            "stats": stats.get(entry.player_id, []),
         }
 
     used = len(side_subs)
@@ -275,7 +345,11 @@ def _side_payload(
         if lineup is None
         else {
             "formation": lineup.formation,
-            "slots": formation_slots(lineup.formation, config) if lineup.formation else [],
+            "slots": _display_slots(
+                lineup.formation,
+                sum(1 for entry in entries if entry.role == LineupEntry.Role.STARTER),
+                config,
+            ),
             "captain_id": str(lineup.captain_id) if lineup.captain_id else None,
             "starters": [entry_row(e) for e in entries if e.role == LineupEntry.Role.STARTER],
             "bench": [entry_row(e) for e in entries if e.role == LineupEntry.Role.BENCH],
@@ -322,6 +396,7 @@ def match_day(fixture: Fixture, user) -> dict:
     )
     minutes = _minutes_map(fixture)
     ratings = _ratings_map(fixture)
+    stats = _stats_map(fixture)
     return {
         "enabled": True,
         "config": {**config, "min_personnel": team_sheet_minimum(config)},
@@ -331,7 +406,7 @@ def match_day(fixture: Fixture, user) -> dict:
         ],
         "status": fixture.status,
         "sides": [
-            _side_payload(fixture, side, config, user, subs, minutes, ratings)
+            _side_payload(fixture, side, config, user, subs, minutes, ratings, stats)
             for side in sides
         ],
         "substitutions": [_sub_row(sub) for sub in subs],

@@ -105,7 +105,9 @@ import { squadSizeOf } from '../../core/models';
             </p>
           }
           <p class="hint">
-            @if (teamEntry() === 'draft') {
+            @if (teamEntry() && !entryOpen()) {
+              Name every team on Setup first. Picking and drafting start after the list is complete.
+            } @else if (teamEntry() === 'draft') {
               Players join through the draft. A team needs at least {{ squadSize() }} to start. A drafted
               player is on the team straight away. Add more later if the team grows.
             } @else if (teamEntry() === 'pick') {
@@ -121,8 +123,12 @@ import { squadSizeOf } from '../../core/models';
               <ion-icon name="people-outline" aria-hidden="true" />
               <h3>No members yet</h3>
               <p>
-                @if (teamEntry() === 'draft') {
-                  Draft profiles onto this team from Setup. After it has {{ squadSize() }}, you can add more here.
+                @if (teamEntry() && !entryOpen()) {
+                  Finish naming the teams on Setup, then start
+                  {{ teamEntry() === 'pick' ? 'picking' : 'the draft' }}.
+                } @else if (teamEntry() === 'draft') {
+                  Draft profiles onto this team from Setup, or add them here. A team needs at least
+                  {{ squadSize() }} to start, and you can add more than that.
                 } @else {
                   Pick a profile. They accept before they are on the team. You can add more later if the team grows.
                 }
@@ -217,15 +223,11 @@ import { squadSizeOf } from '../../core/models';
             </ion-list>
           }
 
-          @if (canManage() && teamEntry() === 'draft' && current.roster.length < squadSize()) {
-            <p class="hint">
-              Finish the draft from Setup first. After this team has {{ squadSize() }}, you can add more here.
-            </p>
-          }
-
-          @if (canManage() && (teamEntry() !== 'draft' || canGrowTeam())) {
+          @if (canManage() && entryOpen()) {
             <h3 class="fm-section-title">{{ teamEntry() === 'draft' ? 'Add a player' : 'Pick a profile' }}</h3>
-            <p class="hint">You can add more players as the team grows.</p>
+            <p class="hint">
+              A team needs at least {{ squadSize() }} to start. You can add more than that at any time.
+            </p>
             <ion-searchbar
               placeholder="Search profiles"
               [debounce]="150"
@@ -334,9 +336,9 @@ export class TeamProfilePage implements OnInit {
     return value === 'pick' || value === 'draft' ? value : null;
   }
 
-  canGrowTeam(): boolean {
-    if (this.teamEntry() !== 'draft') return true;
-    return (this.team()?.roster.length ?? 0) >= this.squadSize();
+  entryOpen(): boolean {
+    if (!this.teamEntry()) return true;
+    return this.competition()?.settings_json?.['team_entry_open'] === true;
   }
 
   playingNumbers(): number[] {
@@ -468,7 +470,7 @@ export class TeamProfilePage implements OnInit {
   }
 
   pickProfile(profile: ProfileSummary): void {
-    if (this.profileBlocked(profile.id) || this.busy()) return;
+    if (!this.entryOpen() || this.profileBlocked(profile.id) || this.busy()) return;
     this.offer(profile.id);
   }
 

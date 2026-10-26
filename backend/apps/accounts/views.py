@@ -100,6 +100,12 @@ class MeView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         return self.request.user
 
+    def perform_update(self, serializer):
+        user = serializer.save()
+        from apps.scouting.services import ensure_player_profile
+
+        ensure_player_profile(user)
+
 
 @extend_schema(
     tags=["Auth"],

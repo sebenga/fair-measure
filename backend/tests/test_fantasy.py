@@ -10,7 +10,14 @@ from apps.competitions.models import Participant, RosterMember
 from apps.fantasy.models import FantasyTeam
 from apps.fantasy.scoring import classify_slot, player_match_points
 from apps.fantasy.models import FantasySlot
-from apps.fixtures.models import Fixture, FixtureSide, PlayerAppearance, ScoreEvent
+from apps.fixtures.models import (
+    Fixture,
+    FixtureLineup,
+    FixtureSide,
+    LineupEntry,
+    PlayerAppearance,
+    ScoreEvent,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -243,3 +250,37 @@ def test_incomplete_squad_can_be_saved_while_building(api, competition):
     assert response.status_code == 200, response.data
     assert response.data["team"]["complete"] is False
     assert len(response.data["team"]["picks"]) == 1
+
+
+def test_a_player_who_played_two_lines_is_listed_in_both_slots(api, competition):
+    club = Participant.objects.create(competition=competition, name="Wanderers", kind=Participant.Kind.TEAM)
+    member = RosterMember.objects.create(participant=club, name="Hybrid Wide", number=8, position="CB")
+    opponent = Participant.objects.create(competition=competition, name="Visitors", kind=Participant.Kind.TEAM)
+    for index, shirt in enumerate(("DEF", "MID")):
+        fixture = Fixture.objects.create(
+            competition=competition, status=Fixture.Status.COMPLETED, label=f"Round {index}"
+        )
+        side = FixtureSide.objects.create(fixture=fixture, participant=club, position=0)
+        FixtureSide.objects.create(fixture=fixture, participant=opponent, position=1)
+        lineup = FixtureLineup.objects.create(fixture=fixture, side=side)
+        LineupEntry.objects.create(
+            lineup=lineup,
+            player=member,
+            role=LineupEntry.Role.STARTER,
+            slot=1,
+            position=shirt,
+            order=0,
+        )
+
+    market = api.get(f"/api/v1/competitions/{competition.id}/fantasy/players")
+    row = next(item for item in market.data["players"] if item["id"] == str(member.id))
+    assert set(row["slots"]) == {"DEF", "MID"}
+    assert row["id"] == str(member.id)
+
+    defenders = api.get(f"/api/v1/competitions/{competition.id}/fantasy/players?slot=DEF")
+    mids = api.get(f"/api/v1/competitions/{competition.id}/fantasy/players?slot=MID")
+    assert str(member.id) in {item["id"] for item in defenders.data["players"]}
+    assert str(member.id) in {item["id"] for item in mids.data["players"]}
+    def_row = next(item for item in defenders.data["players"] if item["id"] == str(member.id))
+    mid_row = next(item for item in mids.data["players"] if item["id"] == str(member.id))
+    assert def_row["id"] == mid_row["id"]

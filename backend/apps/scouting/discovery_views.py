@@ -146,7 +146,10 @@ class SavedSearchDetailView(APIView):
 def run_saved_search_alerts() -> int:
     """The scheduled job: notify scouts of players newly matching their saved searches."""
 
+    from apps.competitions.demo import purge_expired_demos
     from apps.notifications.services import notify_users
+
+    purge_expired_demos()
 
     sent = 0
     for row in SavedSearch.objects.filter(alerts=True).select_related("user"):

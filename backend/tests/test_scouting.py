@@ -456,3 +456,31 @@ def test_seed_scouting_is_repeatable_and_respects_consent():
     consented = PlayerProfile.objects.get(user__email="junior@example.com")
     assert scout.get(f"/api/v1/scouting/profiles/{pending.id}").status_code == 404
     assert scout.get(f"/api/v1/scouting/profiles/{consented.id}").status_code == 200
+
+
+def test_scouting_uses_the_account_not_a_separate_talent_profile():
+    client, person = _client(
+        "account.only@player.test",
+        display_name="Amahle Dlamini",
+        given_name="Amahle",
+        family_name="Dlamini",
+        date_of_birth=date(2004, 5, 12),
+        country="South Africa",
+    )
+    assert PlayerProfile.objects.filter(user=person).exists() is False
+
+    me = client.get("/api/v1/scouting/me")
+    assert me.status_code == 200
+    assert me.data["profile_id"]
+
+    profile = client.get("/api/v1/scouting/profile")
+    assert profile.status_code == 200
+    assert profile.data["first_name"] == "Amahle"
+    assert profile.data["last_name"] == "Dlamini"
+    assert str(profile.data["date_of_birth"]) == "2004-05-12"
+    assert profile.data["age"] is not None
+
+    changed = client.patch("/api/v1/auth/me", {"date_of_birth": "2003-01-01"}, format="json")
+    assert changed.status_code == 200, changed.data
+    again = client.get("/api/v1/scouting/profile")
+    assert str(again.data["date_of_birth"]) == "2003-01-01"

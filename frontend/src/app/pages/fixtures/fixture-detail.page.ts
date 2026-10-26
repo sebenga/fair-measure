@@ -30,6 +30,7 @@ import {
 } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
+import { isCupFixture } from '../competitions/tabs/cup';
 import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type {
@@ -1177,7 +1178,11 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   }
 
   backHref(): string {
-    return `/tabs/competitions/${this.competitionId}?tab=fixtures`;
+    const competition = this.competition();
+    const fixture = this.fixture();
+    const tab =
+      competition && fixture && isCupFixture(fixture, competition.stages) ? 'cup' : 'fixtures';
+    return `/tabs/competitions/${this.competitionId}?tab=${tab}`;
   }
 
   rosterFor(side: FixtureSide): RosterMember[] {

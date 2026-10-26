@@ -212,7 +212,7 @@ const KITS: Array<[string, string]> = [
           <ul class="market">
             @for (player of visibleMarket(); track player.id) {
               <li>
-                <span class="pos">{{ player.slot }}</span>
+                <span class="pos">{{ slotLabel(player) }}</span>
                 <span class="info">
                   <strong>{{ player.name }}</strong>
                   <small>{{ player.team_name }} · {{ player.points }} pts</small>
@@ -296,12 +296,12 @@ const KITS: Array<[string, string]> = [
           <ul class="market">
             @for (player of pickerMarket(); track player.id) {
               <li>
-                <span class="pos">{{ player.slot }}</span>
+                <span class="pos">{{ slotLabel(player) }}</span>
                 <span class="info">
                   <strong>{{ player.name }}</strong>
                   <small>{{ player.team_name }} · £{{ player.price }}m · {{ player.points }} pts</small>
                 </span>
-                <ion-button size="small" (click)="choose(player)" [disabled]="!canAdd(player, pickState.replaceId)">
+                <ion-button size="small" (click)="choose(player)" [disabled]="!canAdd(player, pickState.replaceId, pickState.slot)">
                   Select
                 </ion-button>
               </li>
@@ -717,7 +717,7 @@ export class CompetitionFantasyComponent implements OnInit {
     const needle = this.query().trim().toLowerCase();
     const slot = this.marketSlot();
     return this.market().filter((player) => {
-      if (slot && player.slot !== slot) return false;
+      if (slot && !this.playsSlot(player, slot)) return false;
       if (!needle) return true;
       return (
         player.name.toLowerCase().includes(needle) || player.team_name.toLowerCase().includes(needle)
@@ -730,7 +730,7 @@ export class CompetitionFantasyComponent implements OnInit {
     if (!state) return [];
     const needle = this.query().trim().toLowerCase();
     return this.market().filter((player) => {
-      if (player.slot !== state.slot) return false;
+      if (!this.playsSlot(player, state.slot)) return false;
       if (this.pickedIds().has(player.id) && player.id !== state.replaceId) return false;
       if (!needle) return true;
       return (
@@ -798,10 +798,19 @@ export class CompetitionFantasyComponent implements OnInit {
     this.picker.set(null);
   }
 
-  canAdd(player: FantasyPlayer, replacing?: string): boolean {
+  playsSlot(player: FantasyPlayer, slot: FantasySlot): boolean {
+    return (player.slots?.length ? player.slots : [player.slot]).includes(slot);
+  }
+
+  slotLabel(player: FantasyPlayer): string {
+    return (player.slots?.length ? player.slots : [player.slot]).join(' · ');
+  }
+
+  canAdd(player: FantasyPlayer, replacing?: string, asSlot?: FantasySlot): boolean {
+    const slot = asSlot ?? player.slot;
     const others = this.picks().filter((pick) => pick.player.id !== replacing);
     if (others.some((pick) => pick.player.id === player.id)) return false;
-    if (others.filter((pick) => pick.slot === player.slot).length >= SQUAD[player.slot]) return false;
+    if (others.filter((pick) => pick.slot === slot).length >= SQUAD[slot]) return false;
     const clubLimit = this.overview()?.rules.max_per_club ?? 3;
     if (others.filter((pick) => pick.player.team_id === player.team_id).length >= clubLimit) {
       return false;
@@ -810,19 +819,20 @@ export class CompetitionFantasyComponent implements OnInit {
     return used + Number(player.price) <= 100.0001;
   }
 
-  addPlayer(player: FantasyPlayer, bench = false): void {
-    if (!this.canAdd(player)) {
+  addPlayer(player: FantasyPlayer, bench = false, asSlot?: FantasySlot): void {
+    const slot = asSlot ?? player.slot;
+    if (!this.canAdd(player, undefined, slot)) {
       void this.toast('That pick breaks the budget, club limit, or position quota.', 'danger');
       return;
     }
     const starters = this.picks().filter((pick) => pick.is_starter).length;
-    const slotStarters = this.picks().filter((pick) => pick.slot === player.slot && pick.is_starter).length;
-    const start = !bench && starters < 11 && slotStarters < XI[player.slot];
+    const slotStarters = this.picks().filter((pick) => pick.slot === slot && pick.is_starter).length;
+    const start = !bench && starters < 11 && slotStarters < XI[slot];
     this.picks.update((list) => [
       ...list,
       {
         player,
-        slot: player.slot,
+        slot,
         is_starter: start,
         is_captain: list.length === 0,
         is_vice: list.length === 1,
@@ -835,7 +845,7 @@ export class CompetitionFantasyComponent implements OnInit {
     const state = this.picker();
     if (!state) return;
     if (state.replaceId) this.removePlayer(state.replaceId);
-    this.addPlayer(player, state.bench);
+    this.addPlayer(player, state.bench, state.slot);
     this.closePicker();
   }
 

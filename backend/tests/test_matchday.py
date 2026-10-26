@@ -272,9 +272,9 @@ def test_post_match_report_is_written_by_officials_after_the_result(api, league,
 def test_lineup_includes_minutes_and_updated_ratings(api, league):
     from decimal import Decimal
 
-    from apps.fixtures.models import PlayerMatchRating
+    from apps.fixtures.models import PlayerMatchRating, ScoreEvent
 
-    _, fixture, sides = league
+    competition, fixture, sides = league
     saved = api.put(_url(fixture, f"team-sheets/{sides[0].id}"), _sheet(sides[0]), format="json")
     assert saved.status_code == 200, saved.data
     player = _squad(sides[0])[0]
@@ -284,10 +284,20 @@ def test_lineup_includes_minutes_and_updated_ratings(api, league):
 
     PlayerAppearance.objects.create(fixture=fixture, player=player, minutes=67)
     PlayerMatchRating.objects.create(fixture=fixture, player=player, rating=Decimal("7.2"))
+    assist = competition.scoring_categories.get(code="assist")
+    ScoreEvent.objects.create(
+        fixture=fixture,
+        side=sides[0],
+        scoring_category=assist,
+        player=player,
+        player_name=player.name,
+        quantity=Decimal("2"),
+    )
     day = api.get(_url(fixture, "team-sheets")).data
     starter = next(row for row in day["sides"][0]["lineup"]["starters"] if row["player_id"] == str(player.id))
     assert starter["minutes"] == 67
     assert starter["rating"] == "7.2"
+    assert any(row["code"] == "assist" and row["count"] == "2" for row in starter["stats"])
 
 
 def test_kickoff_needs_both_team_sheets_of_eleven_and_officials(api, league, other_user):
@@ -332,3 +342,45 @@ def test_kickoff_needs_both_team_sheets_of_eleven_and_officials(api, league, oth
     started = api.post(_url(fixture, "set-status"), {"status": "live"}, format="json")
     assert started.status_code == 200, started.data
     assert started.data["status"] == "live"
+
+
+def test_every_team_competition_provides_team_sheets(api):
+    from apps.fixtures.matchday import team_sheet_config
+
+    team = api.post(
+        "/api/v1/competitions",
+        {"name": "Water polo cup", "preset": "water_polo", "format": "league"},
+        format="json",
+    )
+    assert team.status_code == 201, team.data
+    competition = Competition.objects.get(pk=team.data["id"])
+    assert competition.settings_json.get("participant_type") == "team"
+    assert team_sheet_config(competition) is not None
+    assert competition.settings_json.get("team_sheet")
+
+    home = Participant.objects.create(competition=competition, name="Harbour", kind="team")
+    away = Participant.objects.create(competition=competition, name="Quays", kind="team")
+    fixture = Fixture.objects.create(competition=competition, label="Final", duration_minutes=32)
+    FixtureSide.objects.create(fixture=fixture, participant=home, position=0)
+    FixtureSide.objects.create(fixture=fixture, participant=away, position=1)
+    day = api.get(f"/api/v1/competitions/{competition.id}/fixtures/{fixture.id}/team-sheets")
+    assert day.status_code == 200, day.data
+    assert day.data["enabled"] is True
+
+    quiz = api.post(
+        "/api/v1/competitions",
+        {"name": "Pub teams", "preset": "quiz", "format": "league"},
+        format="json",
+    )
+    assert quiz.status_code == 201, quiz.data
+    quiz_comp = Competition.objects.get(pk=quiz.data["id"])
+    assert quiz_comp.settings_json.get("participant_type") == "team"
+    assert team_sheet_config(quiz_comp) is not None
+
+    individual = api.post(
+        "/api/v1/competitions",
+        {"name": "Stroke play", "preset": "golf_stroke", "format": "league"},
+        format="json",
+    )
+    assert individual.status_code == 201, individual.data
+    assert team_sheet_config(Competition.objects.get(pk=individual.data["id"])) is None

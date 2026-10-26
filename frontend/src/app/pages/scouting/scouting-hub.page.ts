@@ -64,10 +64,10 @@ import { PromoSlotComponent } from '../../shared/promo-slot.component';
               kind="sponsored"
               eyebrow="Sponsored"
               title="Get found by scouts"
-              body="Players decide what is shown. Put your profile on the talent side of Fair Measure."
-              action="Open talent profile"
+              body="Scouts see your Fair Measure profile. You decide what is shown."
+              action="Open my profile"
               icon="person-outline"
-              (open)="go('profile')"
+              (open)="goAccount()"
             />
           </aside>
 
@@ -101,18 +101,6 @@ import { PromoSlotComponent } from '../../shared/promo-slot.component';
           />
         }
 
-        @if (!me()?.profile_id) {
-          <fm-promo-slot
-            kind="banner"
-            eyebrow="Get found"
-            title="Put your profile in front of scouts"
-            body="Players decide what is shown. This is the LinkedIn side of Fair Measure — be discoverable on your terms."
-            action="Create my talent profile"
-            icon="person-outline"
-            (open)="go('profile')"
-          />
-        }
-
         @if (trials().length) {
           <section class="rail">
             <h3 class="fm-section-title">Featured leagues looking for talent</h3>
@@ -128,10 +116,10 @@ import { PromoSlotComponent } from '../../shared/promo-slot.component';
         }
 
         <div class="quick fm-stagger">
-          <button type="button" class="tile" (click)="go('profile')">
+          <button type="button" class="tile" (click)="goAccount()">
             <ion-icon name="person-outline" aria-hidden="true" />
-            <strong>{{ me()?.profile_id ? 'My talent profile' : 'Create my talent profile' }}</strong>
-            <small>{{ me()?.profile_id ? 'Edit, and choose who sees it' : 'For players' }}</small>
+            <strong>My profile</strong>
+            <small>Name, age and who can see you</small>
           </button>
           <button type="button" class="tile" (click)="go('guardian')">
             <ion-icon name="shield-checkmark-outline" aria-hidden="true" />
@@ -229,9 +217,7 @@ import { PromoSlotComponent } from '../../shared/promo-slot.component';
 
               @switch (guide.key) {
                 @case ('player') {
-                  <button type="button" class="btn block" (click)="go('profile')">
-                    {{ has('player') ? 'Open my profile' : 'Create my talent profile' }}
-                  </button>
+                  <button type="button" class="btn block" (click)="goAccount()">Open my profile</button>
                 }
                 @case ('guardian') {
                   <p class="how">A player invites you by email from their profile. Then confirm it here.</p>
@@ -630,6 +616,10 @@ export class ScoutingHubPage {
 
   go(path: string): void {
     void this.router.navigateByUrl(`/tabs/scouting/${path}`);
+  }
+
+  goAccount(): void {
+    void this.router.navigateByUrl('/tabs/profile');
   }
 
   openLeague(league: Competition): void {

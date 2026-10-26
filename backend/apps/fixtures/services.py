@@ -197,17 +197,10 @@ def interleave_match_days(league_rounds: int, cup_rounds: int, every: int) -> li
 
 
 def league_and_cup_stages(competition: Competition) -> tuple[Stage, Stage]:
-    league = competition.stages.filter(kind=Stage.Kind.LEAGUE).order_by("display_order").first()
-    if league is None:
-        league = Stage.objects.create(
-            competition=competition, name="League", kind=Stage.Kind.LEAGUE, display_order=0
-        )
-    cup = competition.stages.filter(kind=Stage.Kind.KNOCKOUT).order_by("display_order").first()
-    if cup is None:
-        cup = Stage.objects.create(
-            competition=competition, name="Cup", kind=Stage.Kind.KNOCKOUT, display_order=1
-        )
-    return league, cup
+    from apps.competitions.cups import ensure_league_and_cup_stages
+
+    league, cups = ensure_league_and_cup_stages(competition)
+    return league, cups[0]
 
 
 def _write_pair_round(
@@ -286,6 +279,7 @@ def generate_league_and_knockout(
     cup_index = 0
     reserved_cup: list[str] = []
     first_cup_pairs = knockout_slots(participants)
+    cup_label = f"{cup_stage.name} round 1"
 
     for step, kind in enumerate(sequence):
         kickoff = slots[step] if step < len(slots) else None
@@ -311,7 +305,7 @@ def generate_league_and_knockout(
                     stage=cup_stage,
                     pairs=first_cup_pairs,
                     round_number=1,
-                    label="Cup round 1",
+                    label=cup_label,
                     kickoff=kickoff,
                     options=options,
                 )
@@ -469,3 +463,75 @@ def record_result(*, competition, home, away, outcome, note, user):
     fixture.recalculate_scores()
     refresh_standings(competition)
     return fixture
+
+
+@transaction.atomic
+def start_named_cup(competition: Competition, stage: Stage, participants: list[Participant]) -> list[Fixture]:
+    """Open the next cup after the current one has finished."""
+
+    from apps.competitions.cups import assert_cups_are_sequential, cup_is_complete
+
+    if stage.kind != Stage.Kind.KNOCKOUT or stage.competition_id != competition.id:
+        raise ValueError("Choose a cup in this competition.")
+    if stage.fixtures.exists():
+        raise ValueError("This cup already has fixtures.")
+    if len(participants) < 2:
+        raise ValueError("Add at least two sides before starting a cup.")
+    assert_cups_are_sequential(competition, starting=stage)
+    priors = list(
+        competition.stages.filter(kind=Stage.Kind.KNOCKOUT, display_order__lt=stage.display_order).order_by(
+            "display_order"
+        )
+    )
+    for prior in priors:
+        if not prior.fixtures.exists():
+            raise ValueError(f"Start {prior.name} first.")
+        if not cup_is_complete(prior):
+            raise ValueError(f"{prior.name} is still running. Only one cup can run at a time.")
+
+    reserved = list((competition.settings_json or {}).get("cup_slot_datetimes") or [])
+    kickoff = None
+    if reserved:
+        from django.utils.dateparse import parse_datetime
+
+        kickoff = parse_datetime(reserved.pop(0))
+    if kickoff is None:
+        last = (
+            competition.fixtures.exclude(scheduled_at=None)
+            .order_by("-scheduled_at")
+            .values_list("scheduled_at", flat=True)
+            .first()
+        )
+        start_day = (last.date() + timedelta(days=1)) if last else timezone.now().date()
+        weekdays = competition.match_weekdays or list(range(7))
+        options = ScheduleOptions(starts_on=start_day, weekdays=weekdays, kickoff=time(15, 0))
+        slots = _slot_datetimes(options, 1)
+        kickoff = slots[0] if slots else None
+        extra_needed = max(knockout_round_count(len(participants)) - 1, 0)
+        if extra_needed and kickoff is not None:
+            extra_start = kickoff.date() + timedelta(days=1)
+            extra = _slot_datetimes(
+                ScheduleOptions(starts_on=extra_start, weekdays=weekdays, kickoff=time(15, 0)),
+                extra_needed,
+            )
+            reserved.extend(slot.isoformat() for slot in extra)
+
+    options = ScheduleOptions(
+        starts_on=kickoff.date() if kickoff else timezone.now().date(),
+        weekdays=competition.match_weekdays or [],
+        kickoff=kickoff.time() if kickoff else time(15, 0),
+    )
+    created = _write_pair_round(
+        competition=competition,
+        stage=stage,
+        pairs=knockout_slots(participants),
+        round_number=1,
+        label=f"{stage.name} round 1",
+        kickoff=kickoff,
+        options=options,
+    )
+    settings = dict(competition.settings_json or {})
+    settings["cup_slot_datetimes"] = reserved
+    competition.settings_json = settings
+    competition.save(update_fields=["settings_json", "updated_at"])
+    return created

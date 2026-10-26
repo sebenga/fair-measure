@@ -189,8 +189,15 @@ export interface DraftBoard {
   squad_size: number;
   on_the_clock: { id: string; name: string } | null;
   teams: Array<{ id: string; name: string; accepted: number; pending: number; total: number }>;
+  picks?: Array<{
+    user: string;
+    user_display_name: string;
+    participant: string;
+    team_name: string;
+  }>;
   complete: boolean;
   pick?: TeamPick;
+  undrafted?: boolean;
 }
 
 export interface Participant {
@@ -350,6 +357,7 @@ export interface LineupPlayer extends MatchPlayer {
   sent_off?: boolean;
   minutes?: number | null;
   rating?: string | null;
+  stats?: Array<{ code: string; label: string; count: string }>;
 }
 
 export interface TeamSheetSide {
@@ -885,6 +893,7 @@ export interface FantasyPlayer {
   number: number | null;
   position: string;
   slot: FantasySlot;
+  slots?: FantasySlot[];
   team_id: string;
   team_name: string;
   team_short: string;
@@ -969,4 +978,5 @@ export interface GenerateFixturesRequest {
   location?: string;
   replace_existing?: boolean;
   cup_every_league_rounds?: number;
+  cups?: string[];
 }

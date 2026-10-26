@@ -413,6 +413,13 @@ def cup_every_league_rounds(competition) -> int:
     return max(1, every)
 
 
+def team_entry_is_open(competition) -> bool:
+    """Picking and drafting wait until every team has been named."""
+    if team_entry_mode(competition) not in {"pick", "draft"}:
+        return True
+    return bool((getattr(competition, "settings_json", None) or {}).get("team_entry_open"))
+
+
 def team_entry_mode(competition) -> str | None:
     """How a team competition fills its squads. Unset leaves the older open flow."""
     settings = getattr(competition, "settings_json", None) or {}
@@ -437,20 +444,15 @@ def draft_teams(competition) -> list[Participant]:
 
 
 def next_draft_team(teams: list[Participant], size: int = MIN_TEAM_PLAYERS) -> Participant | None:
-    """Snake order. A team that already has a full squad (accepted or waiting) is skipped."""
+    """Snake order. Squad size is a minimum, not a cap — drafting can continue."""
     if not teams:
         return None
     totals = [sum(squad_counts(team)) for team in teams]
-    if all(total >= size for total in totals):
-        return None
     count = len(teams)
     made = sum(totals)
-    for step in range(made, made + count * size):
-        round_no, index = divmod(step, count)
-        slot = index if round_no % 2 == 0 else count - 1 - index
-        if totals[slot] < size:
-            return teams[slot]
-    return None
+    round_no, index = divmod(made, count)
+    slot = index if round_no % 2 == 0 else count - 1 - index
+    return teams[slot]
 
 
 def draft_payload(competition) -> dict:
@@ -469,11 +471,31 @@ def draft_payload(competition) -> dict:
         )
     size = squad_size_for(competition)
     clock = next_draft_team(teams, size)
+    drafted = (
+        RosterMember.objects.filter(
+            participant__competition=competition,
+            participant__kind=Participant.Kind.TEAM,
+            participant__is_active=True,
+            is_active=True,
+            user__isnull=False,
+        )
+        .select_related("user", "participant")
+        .order_by("participant__name", "name")
+    )
     return {
         "squad_size": size,
         "on_the_clock": None if clock is None else {"id": str(clock.id), "name": clock.name},
         "teams": rows,
-        "complete": bool(teams) and clock is None,
+        "picks": [
+            {
+                "user": str(member.user_id),
+                "user_display_name": member.user.get_full_name(),
+                "participant": str(member.participant_id),
+                "team_name": member.participant.name,
+            }
+            for member in drafted
+        ],
+        "complete": bool(teams) and all(row["total"] >= size for row in rows),
     }
 
 
@@ -598,6 +620,53 @@ def accept_team_pick(pick: TeamPick, actor) -> TeamPick:
     return confirm_team_pick(pick, actor)
 
 
+def retract_draft_pick(member: RosterMember, actor) -> TeamPick | None:
+    """Take a drafted player off the board so the pick can be made again."""
+
+    competition = member.participant.competition
+    if team_entry_mode(competition) != "draft":
+        raise serializers.ValidationError({"user": "This competition does not use a draft."})
+    if (
+        member.appearances.exists()
+        or member.lineup_entries.exists()
+        or member.match_ratings.exists()
+    ):
+        raise serializers.ValidationError(
+            {"user": "That player has already featured. You cannot undraft them."}
+        )
+
+    user = member.user
+    pick = (
+        TeamPick.objects.filter(
+            participant=member.participant,
+            user=user,
+            status=TeamPick.Status.ACCEPTED,
+        )
+        .order_by("-responded_at", "-created_at")
+        .first()
+        if user is not None
+        else None
+    )
+    member.delete()
+    if pick is not None:
+        pick.status = TeamPick.Status.DECLINED
+        pick.responded_at = timezone.now()
+        pick.save(update_fields=["status", "responded_at", "updated_at"])
+    if user is not None:
+        still_on_a_team = RosterMember.objects.filter(
+            participant__competition=competition,
+            user=user,
+            is_active=True,
+        ).exists()
+        if not still_on_a_team:
+            Membership.objects.filter(
+                competition=competition,
+                user=user,
+                role=Role.MEMBER,
+            ).delete()
+    return pick
+
+
 def decline_team_pick(pick: TeamPick, actor) -> TeamPick:
     if pick.user_id != getattr(actor, "id", None):
         raise PermissionDenied("Only the picked profile can decline.")
@@ -717,9 +786,20 @@ class ParticipantSerializer(serializers.ModelSerializer):
         return self._allowed_entrants()[0]
 
     def validate(self, attrs: dict) -> dict:
+        from .demo import demo_is_active
+
         entrant_type = self._entrant_type()
         allowed = self._allowed_entrants()
         competition = self.context.get("competition")
+        if self.instance is None and competition is not None and demo_is_active(competition):
+            raise serializers.ValidationError(
+                {
+                    "name": (
+                        "This is a one-hour demo. It cannot take your own entrants. "
+                        "Create a new competition when you are ready to set one up."
+                    )
+                }
+            )
         named = bool((attrs.get("name") or "").strip())
         if self.instance is None and "individual" in allowed and "pair" in allowed:
             member_ids = list(dict.fromkeys(attrs.get("member_ids") or []))
@@ -757,19 +837,27 @@ class ParticipantSerializer(serializers.ModelSerializer):
             and self.instance.kind != Participant.Kind.TEAM
         )
         if creating_team or converting:
-            mode = team_entry_mode(self.context.get("competition"))
+            competition = self.context.get("competition")
+            mode = team_entry_mode(competition)
             member_ids = list(dict.fromkeys(attrs.get("member_ids") or []))
-            if mode == "pick" and creating_team:
-                needed = squad_size_for(self.context.get("competition"))
-                if len(member_ids) < needed:
+            if mode in {"pick", "draft"}:
+                if creating_team and team_entry_is_open(competition):
                     raise serializers.ValidationError(
-                        {"member_ids": (f"A team needs at least {needed} players.")}
+                        {
+                            "name": (
+                                "Teams are already set. Start picking or drafting on those teams."
+                            )
+                        }
                     )
-                attrs["member_ids"] = member_ids
-            elif mode == "draft" and member_ids:
-                raise serializers.ValidationError(
-                    {"member_ids": "Name the team, then draft players onto it."}
-                )
+                if member_ids:
+                    raise serializers.ValidationError(
+                        {
+                            "member_ids": (
+                                "Name every team first. Start picking or drafting after that."
+                            )
+                        }
+                    )
+                attrs.pop("member_ids", None)
             else:
                 attrs.pop("member_ids", None)
         return attrs
@@ -1031,12 +1119,26 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         max_value=40,
         help_text="League and knockout: play a cup match day after this many league match days.",
     )
+    cups = serializers.ListField(
+        required=False,
+        write_only=True,
+        help_text="Named cups. Unique names. Send a name or {id, name} to rename. Only one cup runs at a time.",
+    )
 
     def validate_league_points(self, value: dict) -> dict:
         unknown = set(value) - {"win", "draw", "loss"}
         if unknown:
             raise serializers.ValidationError("Use win, draw and loss.")
         return value
+
+    def validate_cups(self, value: list) -> list[str]:
+        from .cups import normalize_cup_entries
+
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Send a list of cup names.")
+        entries = normalize_cup_entries(value)
+        self.context["cup_entries"] = entries
+        return [entry["name"] for entry in entries]
 
     def validate_table_bonus(self, value: dict) -> dict:
         unknown = set(value) - TABLE_BONUS_KEYS
@@ -1073,6 +1175,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
             "participant_type",
             "unit_count",
             "cup_every_league_rounds",
+            "cups",
         ]
         read_only_fields = ["id", "slug"]
 
@@ -1163,6 +1266,29 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
                         }
                     )
                 settings["team_entry"] = current_mode
+            current_settings = (
+                dict(self.instance.settings_json or {}) if self.instance is not None else {}
+            )
+            if current_settings.get("team_entry_open"):
+                settings["team_entry_open"] = True
+            elif settings.get("team_entry_open"):
+                mode = team_entry_mode(self.instance) if self.instance is not None else None
+                if incoming_mode in {"pick", "draft"}:
+                    mode = incoming_mode
+                if mode in {"pick", "draft"}:
+                    teams = 0
+                    if self.instance is not None:
+                        teams = self.instance.participants.filter(
+                            kind=Participant.Kind.TEAM, is_active=True
+                        ).count()
+                    if teams < 2:
+                        raise serializers.ValidationError(
+                            {
+                                "team_entry_open": (
+                                    "Add every team first. You need at least two before picking or drafting."
+                                )
+                            }
+                        )
         return attrs
 
     def update(self, instance: Competition, validated_data: dict) -> Competition:
@@ -1184,9 +1310,13 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         "profile_entrants",
         "level",
         "cup_every_league_rounds",
+        "cups",
+        "team_entry_open",
     )
 
     def _update(self, instance: Competition, validated_data: dict) -> Competition:
+        cups = validated_data.pop("cups", None)
+        cup_every = validated_data.pop("cup_every_league_rounds", None)
         current = dict(instance.settings_json or {})
         new_status = validated_data.get("status")
         started_locks = current.get("lock_when_started") is True
@@ -1212,7 +1342,27 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
                 validated_data["settings_json"] = merged
             else:
                 validated_data["settings_json"] = incoming
-        return super().update(instance, validated_data)
+        cup_entries = self.context.get("cup_entries") if cups is not None else None
+        if cups is None and isinstance(validated_data.get("settings_json"), dict):
+            raw_cups = validated_data["settings_json"].get("cups")
+            if raw_cups is not None:
+                from .cups import normalize_cup_entries
+
+                cup_entries = normalize_cup_entries(raw_cups)
+                cups = [entry["name"] for entry in cup_entries]
+        if cups is not None or cup_every is not None:
+            merged = dict(validated_data.get("settings_json") or current)
+            if cups is not None:
+                merged["cups"] = cups
+            if cup_every is not None:
+                merged["cup_every_league_rounds"] = int(cup_every)
+            validated_data["settings_json"] = merged
+        competition = super().update(instance, validated_data)
+        if cup_entries is not None:
+            from .cups import sync_named_cups
+
+            sync_named_cups(competition, cup_entries)
+        return competition
 
     @transaction.atomic
     def create(self, validated_data: dict) -> Competition:
@@ -1224,6 +1374,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         participant_type = validated_data.pop("participant_type", None)
         unit_count = validated_data.pop("unit_count", None)
         cup_every = validated_data.pop("cup_every_league_rounds", None)
+        cups = validated_data.pop("cups", None)
         user = self.context["request"].user
 
         versus = preset_key == "custom" and scoring_basis == "results"
@@ -1322,11 +1473,23 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         if versus:
             _ensure_match_events(competition)
 
-        if cup_every is not None or competition.format == Competition.Format.LEAGUE_KNOCKOUT:
+        if (
+            cup_every is not None
+            or cups is not None
+            or competition.format == Competition.Format.LEAGUE_KNOCKOUT
+        ):
             settings = dict(competition.settings_json or {})
-            settings["cup_every_league_rounds"] = int(cup_every or 3)
+            settings["cup_every_league_rounds"] = int(
+                cup_every or settings.get("cup_every_league_rounds") or 3
+            )
             competition.settings_json = settings
             competition.save(update_fields=["settings_json", "updated_at"])
+            from .cups import sync_named_cups
+
+            sync_named_cups(
+                competition,
+                [{"name": name} for name in (cups or settings.get("cups") or ["Cup"])],
+            )
 
         return competition
 

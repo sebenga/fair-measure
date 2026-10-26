@@ -112,6 +112,8 @@ import { RealtimeService } from '../../core/realtime.service';
                   <p class="basis">
                     @if (player.rating_locked) {
                       Sent off. Rating stopped.
+                    } @else if (recordedStatLine(player); as figures) {
+                      {{ figures }}
                     } @else {
                       Record player stats, then rate from them
                     }
@@ -527,6 +529,15 @@ export class MatchRatersComponent implements OnInit {
 
   context(player: { role: string; position: string; captain: boolean }): string {
     return [player.captain ? 'Captain' : '', player.role, player.position].filter(Boolean).join(' · ');
+  }
+
+  recordedStatLine(player: {
+    stats?: Array<{ code: string; label: string; count: string; recorded?: boolean; kind?: string }>;
+  }): string {
+    return (player.stats ?? [])
+      .filter((stat) => stat.recorded && stat.kind !== 'minutes')
+      .map((stat) => `${stat.count} ${stat.label.toLowerCase()}`)
+      .join(' · ');
   }
 
   adjust(playerId: string, code: string, delta: number): void {

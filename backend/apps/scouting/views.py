@@ -60,10 +60,9 @@ TAG = ["Scouting"]
 
 
 def _my_profile(user) -> PlayerProfile:
-    profile = PlayerProfile.objects.filter(user=user).first()
-    if profile is None:
-        raise NotFound("You have not created a player profile yet.")
-    return profile
+    from .services import ensure_player_profile
+
+    return ensure_player_profile(user)
 
 
 def _full(profile: PlayerProfile, request: Request, access: str = "owner") -> dict:
@@ -119,7 +118,9 @@ class ScoutingMeView(APIView):
     )
     def get(self, request: Request) -> Response:
         user = request.user
-        profile = PlayerProfile.objects.filter(user=user).first()
+        from .services import ensure_player_profile
+
+        profile = ensure_player_profile(user)
         pending = GuardianLink.objects.filter(
             invited_email__iexact=user.email, status=GuardianLink.Status.PENDING
         ).count()
@@ -153,14 +154,22 @@ class MyProfileView(APIView):
 
     @extend_schema(
         tags=TAG,
-        summary="Create my player profile (makes me a player)",
+        summary="Save scouting settings on my profile",
         request=PlayerProfileSerializer,
         responses={201: PlayerProfileSerializer},
     )
     @transaction.atomic
     def post(self, request: Request) -> Response:
-        if PlayerProfile.objects.filter(user=request.user).exists():
-            raise ValidationError("You already have a player profile. Edit it instead.")
+        existing = PlayerProfile.objects.filter(user=request.user).first()
+        if existing is not None:
+            before = existing.visibility
+            serializer = PlayerProfileSerializer(
+                existing, data=request.data, partial=True, context={"request": request}
+            )
+            serializer.is_valid(raise_exception=True)
+            profile = serializer.save()
+            self._audit_visibility(profile, request.user, before)
+            return Response(_full(profile, request))
         serializer = PlayerProfileSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         profile = serializer.save(user=request.user)
@@ -925,16 +934,19 @@ NOT_OPEN = (
 
 
 def _league(request: Request, pk):
-    """A league open to scouts, or a clear reason why it is not available."""
+    """A league open to scouts, or one this user administers."""
 
     from apps.competitions.views import visible_competitions
 
     from .services import scouting_leagues
 
+    visible = visible_competitions(request.user).filter(pk=pk).first()
+    if visible is not None and has_at_least(visible, request.user, Role.ADMIN):
+        return visible
     league = scouting_leagues(request.user).filter(pk=pk).first()
     if league is not None:
         return league
-    if visible_competitions(request.user).filter(pk=pk).exists():
+    if visible is not None:
         raise PermissionDenied(NOT_OPEN)
     raise NotFound("No competition found.")
 
@@ -1043,6 +1055,7 @@ def _candidate_row(candidate, viewer, in_squad: set, excluded: set) -> dict:
         "team": candidate.team_name,
         "position": candidate.position_label,
         "group_key": candidate.group_key,
+        "group_keys": candidate.group_keys,
         "score": format(candidate.score, "f") if candidate.score is not None else None,
         "available": candidate.available,
         "availability": candidate.availability,
@@ -1380,7 +1393,7 @@ class LeagueSquadPicksView(APIView):
         candidate = next((row for row in pool if str(row.user_id) == wanted), None)
         if candidate is None:
             raise ValidationError(
-                {"user": "That player is not eligible: they need a visible talent profile."}
+                {"user": "That player is not eligible: their profile is not visible to scouts."}
             )
         if squad.picks.filter(user_id=candidate.user_id).exists():
             raise ValidationError({"user": "That player is already in the squad."})

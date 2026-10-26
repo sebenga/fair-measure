@@ -38,6 +38,11 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'competitions/:id/squad',
+        loadComponent: () =>
+          import('./pages/scouting/league-squad.page').then((m) => m.LeagueSquadPage),
+      },
+      {
         path: 'competitions/:id/score',
         loadComponent: () =>
           import('./pages/competitions/competition-score.page').then(

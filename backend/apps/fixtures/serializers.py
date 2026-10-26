@@ -448,6 +448,11 @@ class GenerateFixturesSerializer(serializers.Serializer):
         max_value=40,
         help_text="League and knockout: a cup match day after this many league match days.",
     )
+    cups = serializers.ListField(
+        child=serializers.CharField(max_length=120),
+        required=False,
+        help_text="Named cups. Unique names. Only one cup runs at a time.",
+    )
     participant_ids = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,
@@ -471,6 +476,11 @@ class GenerateFixturesSerializer(serializers.Serializer):
         help_text="Delete existing scheduled fixtures before generating. "
         "Completed fixtures are never deleted.",
     )
+
+    def validate_cups(self, value: list) -> list[str]:
+        from apps.competitions.cups import normalize_cup_names
+
+        return normalize_cup_names(value)
 
 
 class BulkScoreEventSerializer(serializers.Serializer):

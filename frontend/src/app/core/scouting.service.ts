@@ -482,7 +482,7 @@ export const ROLE_GUIDE: Array<{
     key: 'player',
     title: 'Player',
     icon: 'person-outline',
-    summary: 'You own your talent profile and decide who can see it.',
+    summary: 'Scouts see your Fair Measure profile. You decide who can see it.',
     can: [
       'Add sports, positions, measurements and highlight videos',
       'Choose private, scouts only, or public, and change it any time',

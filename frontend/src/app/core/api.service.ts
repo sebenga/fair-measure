@@ -465,6 +465,49 @@ export class ApiService {
     );
   }
 
+  advanceKnockout(competitionId: string) {
+    return this.http.post<{
+      advanced: boolean;
+      detail?: string;
+      round_number?: number;
+      fixtures?: string[];
+    }>(`${this.base}/competitions/${competitionId}/advance`, {});
+  }
+
+  generateDemoLeague(competitionId: string) {
+    return this.http.post<{
+      active: boolean;
+      deleted?: boolean;
+      expires_at?: string;
+      teams: number;
+      fixtures: number;
+      played: number;
+      officials?: number;
+      picks?: number;
+      ratings?: number;
+      squad?: number;
+      fantasy?: number;
+      competition: CompetitionDetail;
+    }>(`${this.base}/competitions/${competitionId}/demo-league`, {});
+  }
+
+  clearDemoLeague(competitionId: string) {
+    return this.http.delete<{
+      active: boolean;
+      deleted?: boolean;
+      teams: number;
+      fixtures: number;
+      competition?: CompetitionDetail;
+    }>(`${this.base}/competitions/${competitionId}/demo-league`);
+  }
+
+  startCup(competitionId: string, body: { name?: string; stage?: string } = {}) {
+    return this.http.post<{
+      stage: { id: string; name: string };
+      fixtures: Fixture[];
+    }>(`${this.base}/competitions/${competitionId}/start-cup`, body);
+  }
+
   setFixtureStatus(competitionId: string, fixtureId: string, status: string) {
     return this.http.post<FixtureDetail>(
       `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/set-status`,

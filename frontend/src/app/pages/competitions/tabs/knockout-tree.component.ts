@@ -381,18 +381,21 @@ export class KnockoutTreeComponent implements OnInit {
   readonly source = computed(() => this.fixtures() ?? this.loaded());
 
   readonly rounds = computed(() => {
-    const grouped = new Map<number, Fixture[]>();
+    const grouped = new Map<string, Fixture[]>();
     for (const fixture of this.source()) {
-      const key = fixture.round_number ?? 1;
+      const key = roundKey(fixture);
       const list = grouped.get(key) ?? [];
       list.push(fixture);
       grouped.set(key, list);
     }
     return [...grouped.entries()]
-      .sort((left, right) => left[0] - right[0])
-      .map(([key, fixtures]) => ({
-        key,
-        label: this.layout() === 'rounds' ? matchdayLabel(fixtures, key) : roundLabel(fixtures.length, key),
+      .sort((left, right) => roundOrder(left[1]) - roundOrder(right[1]))
+      .map(([key, fixtures], index) => ({
+        key: index,
+        label:
+          this.layout() === 'rounds'
+            ? matchdayLabel(fixtures, fixtures[0]?.round_number ?? index + 1)
+            : cupOrRoundLabel(fixtures, fixtures[0]?.round_number ?? index + 1),
         ties: fixtures.map((fixture) => this.asTie(fixture)),
       }));
   });
@@ -444,10 +447,35 @@ export class KnockoutTreeComponent implements OnInit {
   }
 }
 
+function isCupFixture(fixture: Fixture): boolean {
+  const label = (fixture.label || '').trim().toLowerCase();
+  return label.startsWith('cup') || label === 'bye';
+}
+
+function roundKey(fixture: Fixture): string {
+  const track = isCupFixture(fixture) ? 'cup' : 'league';
+  return `${track}-${fixture.round_number ?? 1}`;
+}
+
+function roundOrder(fixtures: Fixture[]): number {
+  const first = fixtures[0];
+  const base = (first?.round_number ?? 1) * 2;
+  return isCupFixture(first) ? base + 1 : base;
+}
+
 function matchdayLabel(fixtures: Fixture[], round: number): string {
   const labels = new Set(fixtures.map((fixture) => fixture.label).filter(Boolean));
   if (labels.size === 1) return [...labels][0];
   return `Matchday ${round}`;
+}
+
+function cupOrRoundLabel(fixtures: Fixture[], round: number): string {
+  if (fixtures.length && fixtures.every(isCupFixture)) {
+    const labels = new Set(fixtures.map((fixture) => fixture.label).filter(Boolean));
+    if (labels.size === 1) return [...labels][0];
+    return `Cup ${roundLabel(fixtures.length, round)}`;
+  }
+  return roundLabel(fixtures.length, round);
 }
 
 function roundLabel(ties: number, round: number): string {

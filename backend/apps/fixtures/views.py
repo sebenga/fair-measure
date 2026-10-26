@@ -315,6 +315,10 @@ class FixtureViewSet(viewsets.ModelViewSet):
             stage=stage,
             cup_every_league_rounds=data.get("cup_every_league_rounds") or 0,
         )
+        if data.get("cups") is not None:
+            from apps.competitions.cups import normalize_cup_names, persist_cup_names
+
+            persist_cup_names(competition, normalize_cup_names(data["cups"]))
 
         with transaction.atomic():
             if data["replace_existing"]:

@@ -1,6 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { AlertController, IonIcon, IonSpinner, ToastController } from '@ionic/angular/standalone';
 
@@ -22,8 +21,8 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
 ];
 
 /**
- * The talent side of the main profile: the talent profile itself, every team the
- * person plays for (accepted invites included), and optional identity documents.
+ * Scouting on the main profile: visibility, teams (accepted invites included),
+ * and optional identity documents. Name and age live on the account above.
  */
 @Component({
   selector: 'fm-profile-talent',
@@ -31,7 +30,7 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
   imports: [DatePipe, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <h3 class="fm-section-title">Talent profile</h3>
+    <h3 class="fm-section-title">Scouting</h3>
     @if (loadingTalent()) {
       <div class="card fm-card"><span class="fm-skeleton" style="width: 55%; height: 18px"></span></div>
     } @else if (talent(); as t) {
@@ -40,7 +39,7 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
           <div>
             <strong>{{ t.first_name }} {{ t.last_name }}</strong>
             <small>
-              {{ t.age_group?.label ?? 'Add your date of birth' }}
+              {{ t.age_group?.label ?? 'Add your date of birth above' }}
               · {{ visibilityLabel(t.effective_visibility) }}
             </small>
           </div>
@@ -48,6 +47,7 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
             {{ t.effective_visibility === 'private' ? 'Hidden from scouts' : 'Visible to scouts' }}
           </span>
         </div>
+        <p class="muted">Scouts use this profile: name, age and the details you save on this page.</p>
         @if (t.sports.length) {
           <div class="chips">
             @for (sport of t.sports; track sport.id) {
@@ -60,19 +60,11 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
           <p class="muted">No sport added yet.</p>
         }
         <div class="actions">
-          <button type="button" class="btn" (click)="go('/tabs/scouting/profile')">Edit talent profile</button>
+          <button type="button" class="btn" (click)="go('/tabs/scouting/profile')">Sports and visibility</button>
           <button type="button" class="btn ghost" (click)="go('/tabs/scouting/players/' + t.id + '/report')">
             My scouting report
           </button>
         </div>
-      </section>
-    } @else {
-      <section class="card fm-card fm-enter">
-        <p class="lede">
-          Add a talent profile to be found by scouts. Your name and date of birth from this page are filled in for
-          you, and nothing is shown until you choose who can see it.
-        </p>
-        <button type="button" class="btn block" (click)="go('/tabs/scouting/profile')">Create my talent profile</button>
       </section>
     }
 
@@ -398,24 +390,10 @@ export class ProfileTalentComponent {
   /** Called by the profile page every time it is shown, so accepted invites appear straight away. */
   refresh(): void {
     this.scouting.catalog().subscribe({ next: (catalog) => this.catalog.set(catalog) });
-    // Ask "me" first so people without a talent profile never trigger a 404.
-    this.scouting.loadMe().subscribe({
-      next: (me) => {
-        if (!me.profile_id) {
-          this.talent.set(null);
-          this.loadingTalent.set(false);
-          return;
-        }
-        this.scouting.myProfile().subscribe({
-          next: (profile) => {
-            this.talent.set(profile);
-            this.loadingTalent.set(false);
-          },
-          error: (err: unknown) => {
-            if (err instanceof HttpErrorResponse && err.status === 404) this.talent.set(null);
-            this.loadingTalent.set(false);
-          },
-        });
+    this.scouting.myProfile().subscribe({
+      next: (profile) => {
+        this.talent.set(profile);
+        this.loadingTalent.set(false);
       },
       error: () => this.loadingTalent.set(false),
     });

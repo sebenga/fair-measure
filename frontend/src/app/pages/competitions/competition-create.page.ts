@@ -12,6 +12,7 @@ import {
   IonIcon,
   IonInput,
   IonItem,
+  IonLabel,
   IonList,
   IonSelect,
   IonSelectOption,
@@ -127,6 +128,7 @@ function presetKind(preset: Preset): PresetKind {
     IonFooter,
     IonList,
     IonItem,
+    IonLabel,
     IonInput,
     IonTextarea,
     IonSelect,
@@ -696,21 +698,7 @@ function presetKind(preset: Preset): PresetKind {
                   }
                 </div>
                 @if (form.controls.format.value === 'league_knockout') {
-                  <ion-list inset="true">
-                    <ion-item>
-                      <ion-input
-                        label="Cup game after every"
-                        labelPlacement="stacked"
-                        type="number"
-                        inputmode="numeric"
-                        min="1"
-                        formControlName="cup_every_league_rounds"
-                      />
-                    </ion-item>
-                  </ion-list>
-                  <p class="hint">
-                    After this many league match days, the schedule inserts a competition (cup) game.
-                  </p>
+                  <ng-container [ngTemplateOutlet]="leagueCupFields" />
                 }
                 <p class="hint">
                   Each match keeps a timeline: who scored, who was booked, and at which minute.
@@ -740,21 +728,7 @@ function presetKind(preset: Preset): PresetKind {
                   }
                 </div>
                 @if (form.controls.format.value === 'league_knockout') {
-                  <ion-list inset="true">
-                    <ion-item>
-                      <ion-input
-                        label="Cup game after every"
-                        labelPlacement="stacked"
-                        type="number"
-                        inputmode="numeric"
-                        min="1"
-                        formControlName="cup_every_league_rounds"
-                      />
-                    </ion-item>
-                  </ion-list>
-                  <p class="hint">
-                    After this many league match days, the schedule inserts a competition (cup) game.
-                  </p>
+                  <ng-container [ngTemplateOutlet]="leagueCupFields" />
                 }
               }
               @if (unitCountOptions(); as choice) {
@@ -795,22 +769,12 @@ function presetKind(preset: Preset): PresetKind {
                 }
               </div>
               @if (form.controls.format.value === 'league_knockout') {
-                <ion-list inset="true">
-                  <ion-item>
-                    <ion-input
-                      label="Cup game after every"
-                      labelPlacement="stacked"
-                      type="number"
-                      inputmode="numeric"
-                      min="1"
-                      formControlName="cup_every_league_rounds"
-                    />
-                  </ion-item>
-                </ion-list>
-                <p class="hint">
-                  After this many league match days, the schedule inserts a competition (cup) game.
-                </p>
+                <ng-container [ngTemplateOutlet]="leagueCupFields" />
               }
+            }
+
+            @if (canOfferSample()) {
+              <ng-container [ngTemplateOutlet]="sampleFields" />
             }
           }
 
@@ -860,18 +824,7 @@ function presetKind(preset: Preset): PresetKind {
             }
 
             @if (!pointsTable() && form.controls.format.value === 'league_knockout') {
-              <ion-list inset="true">
-                <ion-item>
-                  <ion-input
-                    label="Cup game after every"
-                    labelPlacement="stacked"
-                    type="number"
-                    inputmode="numeric"
-                    min="1"
-                    formControlName="cup_every_league_rounds"
-                  />
-                </ion-item>
-              </ion-list>
+              <ng-container [ngTemplateOutlet]="leagueCupFields" />
               <p class="hint">
                 After this many league match days there is a competition game. Change this later when you generate the schedule.
               </p>
@@ -1012,6 +965,10 @@ function presetKind(preset: Preset): PresetKind {
                 }
               </dl>
             </div>
+
+            @if (canOfferSample()) {
+              <ng-container [ngTemplateOutlet]="sampleFields" />
+            }
           }
         }
 
@@ -1019,6 +976,62 @@ function presetKind(preset: Preset): PresetKind {
           <p class="fm-form-error" role="alert">{{ error() }}</p>
         }
       </form>
+
+      <ng-template #sampleFields>
+        <h3 class="fm-section-title">Try it first</h3>
+        <ion-list inset="true">
+          <ion-item>
+            <ion-checkbox
+              labelPlacement="end"
+              justify="start"
+              [checked]="fillSample()"
+              (ionChange)="fillSample.set($any($event).detail.checked === true)"
+            >
+              Generate a one-hour demo {{ sampleNoun() }} after create
+            </ion-checkbox>
+          </ion-item>
+        </ion-list>
+        <p class="hint">
+          Fills teams, officials, picks, fixtures, player ratings, player stats, the league squad and a
+          fantasy league so you can see the product without the full setup. This is a demo
+          {{ sampleNoun() }} and it deletes itself after one hour.
+        </p>
+      </ng-template>
+
+      <ng-template #leagueCupFields>
+        <ion-list inset="true">
+          <ion-item>
+            <ion-input
+              label="Cup game after every"
+              labelPlacement="stacked"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              formControlName="cup_every_league_rounds"
+            />
+          </ion-item>
+          @for (name of cupNames(); track $index) {
+            <ion-item>
+              <ion-input
+                label="Cup name"
+                labelPlacement="stacked"
+                [value]="name"
+                (ionInput)="setCupName($index, $any($event).detail.value)"
+              />
+              @if (cupNames().length > 1) {
+                <ion-button slot="end" fill="clear" (click)="removeCup($index)">Remove</ion-button>
+              }
+            </ion-item>
+          }
+          <ion-item button="true" (click)="addCup()">
+            <ion-label>Add another cup</ion-label>
+          </ion-item>
+        </ion-list>
+        <p class="hint">
+          Each cup needs a unique name. Only one cup runs at a time; the next starts after the current
+          cup is finished.
+        </p>
+      </ng-template>
     </ion-content>
 
     <ion-footer>
@@ -1079,7 +1092,7 @@ export class CompetitionCreatePage implements OnInit {
     {
       value: 'league_knockout',
       label: 'League and knockout',
-      blurb: 'A league table plus cup games. After every few league match days there is a competition game.',
+      blurb: 'A league table plus named cups. Cups run one at a time after every few league match days.',
       icon: 'git-merge-outline',
     },
     {
@@ -1182,6 +1195,23 @@ export class CompetitionCreatePage implements OnInit {
   readonly scoringBasis = signal<'results' | 'criteria'>('criteria');
 
   readonly pointsTable = computed(() => this.scoringBasis() === 'criteria');
+  readonly fillSample = signal(false);
+
+  canOfferSample(): boolean {
+    if (this.pointsTable()) return true;
+    return !!this.form.controls.format.value;
+  }
+
+  sampleNoun(): string {
+    if (this.pointsTable()) return 'competition';
+    if (this.form.controls.format.value === 'knockout') return 'cup';
+    return 'league';
+  }
+
+  samplePeople(): string {
+    if (this.pointsTable() || this.versusEntrants() === 'individual') return 'players';
+    return 'teams';
+  }
 
   readonly namedDrafts = computed(() =>
     this.scoringDrafts().filter((row) => row.name.trim()),
@@ -1199,6 +1229,8 @@ export class CompetitionCreatePage implements OnInit {
 
   readonly timezones = this.buildTimezones();
 
+  readonly cupNames = signal<string[]>(['Cup']);
+
   readonly form = this.fb.nonNullable.group(
     {
       name: ['', [Validators.required, Validators.maxLength(200)]],
@@ -1215,6 +1247,32 @@ export class CompetitionCreatePage implements OnInit {
     },
     { validators: endAfterStart },
   );
+
+  addCup(): void {
+    this.cupNames.update((names) => [...names, '']);
+  }
+
+  removeCup(index: number): void {
+    this.cupNames.update((names) => names.filter((_, current) => current !== index));
+  }
+
+  setCupName(index: number, value: string | null | undefined): void {
+    const next = value ?? '';
+    this.cupNames.update((names) => names.map((name, current) => (current === index ? next : name)));
+  }
+
+  normalizedCups(): string[] {
+    const seen = new Set<string>();
+    const names: string[] = [];
+    for (const raw of this.cupNames()) {
+      const name = raw.trim();
+      const key = name.toLowerCase();
+      if (!name || seen.has(key)) continue;
+      seen.add(key);
+      names.push(name);
+    }
+    return names.length ? names : ['Cup'];
+  }
 
   ngOnInit(): void {
     this.scouting.catalog().subscribe({
@@ -1712,7 +1770,10 @@ export class CompetitionCreatePage implements OnInit {
         sport: raw.sport.trim(),
         format: raw.format,
         ...(raw.format === 'league_knockout'
-          ? { cup_every_league_rounds: Number(raw.cup_every_league_rounds) || 3 }
+          ? {
+              cup_every_league_rounds: Number(raw.cup_every_league_rounds) || 3,
+              cups: this.normalizedCups(),
+            }
           : {}),
         ...(locked ? {} : { scoring_basis: this.scoringBasis(), scoring_categories }),
         ...(this.unitCountOptions() && this.unitCount() ? { unit_count: this.unitCount() } : {}),
@@ -1737,9 +1798,19 @@ export class CompetitionCreatePage implements OnInit {
       })
       .subscribe({
         next: (competition) => {
-          this.saving.set(false);
-          void this.navCtrl.navigateForward(`/tabs/competitions/${competition.id}/setup`, {
-            replaceUrl: true,
+          const goSetup = () => {
+            this.saving.set(false);
+            void this.navCtrl.navigateForward(`/tabs/competitions/${competition.id}/setup`, {
+              replaceUrl: true,
+            });
+          };
+          if (!this.fillSample()) {
+            goSetup();
+            return;
+          }
+          this.api.generateDemoLeague(competition.id).subscribe({
+            next: () => goSetup(),
+            error: () => goSetup(),
           });
         },
         error: (err: unknown) => {

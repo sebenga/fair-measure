@@ -16,7 +16,7 @@ from django.utils import timezone
 
 from . import catalog
 from .models import LeagueSquad, PlayerProfile, SquadPick
-from .services import effective_visibility
+from .services import account_name, effective_visibility, ensure_player_profile
 
 TEN = Decimal("10")
 OTHER_GROUP = {"key": "other", "label": "Position not set", "positions": [], "min": 0}
@@ -32,6 +32,7 @@ class Candidate:
     profile: PlayerProfile
     position_label: str
     group_key: str | None
+    group_keys: list[str]
     available: bool
     availability: str
     games: int = 0
@@ -101,6 +102,12 @@ def template_for(competition) -> dict:
     return catalog.squad_template(league_sport(competition))
 
 
+def _groups_of(candidate: Candidate) -> list[str]:
+    if candidate.group_keys:
+        return candidate.group_keys
+    return [candidate.group_key] if candidate.group_key else []
+
+
 def _position_of(profile: PlayerProfile, roster_position: str, sport_key: str | None):
     """Where the player is picked: the team's roster decides, the profile adds detail.
 
@@ -134,15 +141,39 @@ def _position_of(profile: PlayerProfile, roster_position: str, sport_key: str | 
     return roster_position, None
 
 
+def _positions_played(profile: PlayerProfile, member, sport_key: str | None, labels: list[str]):
+    """Match shirts first; the roster and profile are only a fallback."""
+
+    groups: list[str] = []
+    shown: list[str] = []
+    catalog_labels = {
+        item["key"]: item["label"]
+        for item in (catalog.sport(sport_key or "") or {}).get("positions", [])
+    }
+    for label in labels:
+        group = catalog.group_for_position(sport_key, label)
+        if group and group not in groups:
+            groups.append(group)
+        text = catalog_labels.get(label, label)
+        if text and text not in shown:
+            shown.append(text)
+    if groups:
+        return " · ".join(shown), groups, groups[0]
+    fallback_label, fallback_group = _position_of(profile, member.position, sport_key)
+    return fallback_label, [fallback_group] if fallback_group else [], fallback_group
+
+
 def candidates(competition) -> tuple[list[Candidate], dict]:
     """Every player in the league who has opted in to scouting, ranked.
 
-    Players without a talent profile, or whose profile is private (including
-    under-18s still waiting for a guardian), are only counted, never listed.
+    Rostered players are taken from their account. Private visibility
+    (including under-18s still waiting for a guardian) is only counted,
+    never listed.
     """
 
     from apps.competitions.models import RosterMember
     from apps.fixtures.models import Fixture, FixtureSide, PlayerMatchRating, ScoreEvent
+    from apps.fixtures.played import lineup_positions
 
     sport_key = league_sport(competition)
     roster = list(
@@ -188,27 +219,36 @@ def candidates(competition) -> tuple[list[Candidate], dict]:
             points.get(uid, Decimal("0")) + row["quantity"] * row["scoring_category__points"]
         )
 
+    played_shirts = lineup_positions(competition, {member.id for member in roster})
     counts = {"rostered": len(user_ids), "no_profile": 0, "private": 0, "eligible": 0}
     chosen: dict[object, Candidate] = {}
     for member in roster:
         if member.user_id in chosen:
             continue
         profile = profiles.get(member.user_id)
+        if profile is None and member.user_id:
+            profile = ensure_player_profile(member.user)
+            profiles[member.user_id] = profile
         if profile is None:
             continue
         if effective_visibility(profile) == PlayerProfile.Visibility.PRIVATE:
             continue
         record = records.get(member.participant_id, {"win": 0, "draw": 0, "loss": 0})
-        label, group = _position_of(profile, member.position, sport_key)
+        shirts = played_shirts.get(member.id, [])
+        label, groups, group = _positions_played(profile, member, sport_key, shirts)
+        given, family = account_name(member.user)
         chosen[member.user_id] = Candidate(
             user_id=member.user_id,
-            name=profile.full_name or member.name,
+            name=" ".join(part for part in (given, family) if part)
+            or profile.full_name
+            or member.name,
             roster_member_id=member.id,
             team_id=member.participant_id,
             team_name=member.participant.name,
             profile=profile,
             position_label=label or "",
             group_key=group,
+            group_keys=groups,
             available=profile.availability not in catalog.UNAVAILABLE_FOR_SELECTION,
             availability=profile.availability,
             games=sum(record.values()),
@@ -367,24 +407,25 @@ def generate(squad: LeagueSquad, by=None) -> list[SquadPick]:
         for candidate in available:
             if len(chosen) >= room or counts.get(group["key"], 0) >= group["min"]:
                 break
-            if candidate.user_id not in taken and candidate.group_key == group["key"]:
+            if candidate.user_id not in taken and group["key"] in _groups_of(candidate):
                 take(candidate, group["key"])
 
     limits = {group["key"]: group.get("max", squad.size) for group in template["groups"]}
     for candidate in available:
         if len(chosen) >= room:
             break
-        key = candidate.group_key
-        if candidate.user_id in taken or key is None:
+        if candidate.user_id in taken:
             continue
-        if counts.get(key, 0) < limits.get(key, squad.size):
-            take(candidate, key)
+        for key in _groups_of(candidate):
+            if counts.get(key, 0) < limits.get(key, squad.size):
+                take(candidate, key)
+                break
 
     # Still short: players whose position is not set, so the squad is never left empty.
     for candidate in available:
         if len(chosen) >= room:
             break
-        if candidate.user_id not in taken and candidate.group_key is None:
+        if candidate.user_id not in taken and not _groups_of(candidate):
             take(candidate, OTHER_GROUP["key"])
 
     order_of = {group["key"]: index for index, group in enumerate(groups_of(template))}

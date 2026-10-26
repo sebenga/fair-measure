@@ -107,10 +107,11 @@ def test_closed_leagues_have_no_squad_and_are_hidden_from_scouts(owner):
     closed = _league(owner)
     scout = _scout("scout@open.test")
 
-    for client in (_client(owner), _client(scout)):
-        generate = client.post(f"/api/v1/scouting/leagues/{closed.id}/squad/generate")
-        assert generate.status_code == 403
-        assert "not open to scouts" in str(generate.data)
+    generated = _client(owner).post(f"/api/v1/scouting/leagues/{closed.id}/squad/generate")
+    assert generated.status_code == 200, generated.data
+    blocked = _client(scout).post(f"/api/v1/scouting/leagues/{closed.id}/squad/generate")
+    assert blocked.status_code == 403
+    assert "not open to scouts" in str(blocked.data)
     assert _client(scout).get(f"/api/v1/scouting/leagues/{closed.id}/candidates").status_code == 403
 
     scout_rows = _client(scout).get("/api/v1/scouting/leagues").data

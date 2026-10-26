@@ -272,6 +272,13 @@ def index_search_document(request: Request) -> Response:
     job = request.data.get("job", "")
     data = request.data.get("data") or {}
 
+    if job == "purge-demos":
+        from apps.competitions.demo import delete_demo_if_expired, purge_expired_demos
+
+        if data.get("competition_id"):
+            deleted = delete_demo_if_expired(data["competition_id"])
+            return Response({"purged": True, "deleted": deleted})
+        return Response({"purged": True, "count": purge_expired_demos()})
     if job == "index-competition":
         competition = get_object_or_404(Competition, pk=data.get("competition_id"))
         search_services.index_documents(

@@ -17,7 +17,14 @@ from apps.competitions.models import (
     ScoringCategory,
 )
 from apps.core.permissions import Role
-from apps.fixtures.models import Fixture, FixtureSide, PlayerMatchRating, ScoreEvent
+from apps.fixtures.models import (
+    Fixture,
+    FixtureLineup,
+    FixtureSide,
+    LineupEntry,
+    PlayerMatchRating,
+    ScoreEvent,
+)
 from apps.scouting import catalog
 from apps.scouting.models import (
     LeagueSquad,
@@ -196,6 +203,34 @@ def test_the_roster_position_decides_the_group(league):
     row = next(item for item in ranked.data["results"] if item["user_id"] == str(user.id))
     assert row["group_key"] == second["key"]
     assert row["position"] == second["label"]
+
+
+def test_match_shirts_put_a_player_in_every_line_they_played(league):
+    first, second = TEMPLATE["groups"][0], TEMPLATE["groups"][1]
+    user, _, member = _player(league, 0, "Two Lines", first)
+    member.position = first["positions"][0]
+    member.save()
+
+    for shirt in (first["positions"][0], second["positions"][0]):
+        fixture = _play(league, winner=0)
+        side = fixture.sides.get(participant=member.participant)
+        lineup = FixtureLineup.objects.create(fixture=fixture, side=side)
+        LineupEntry.objects.create(
+            lineup=lineup,
+            player=member,
+            role=LineupEntry.Role.STARTER,
+            slot=0,
+            position=shirt,
+            order=0,
+        )
+
+    ranked = _client(league["owner"]).get(
+        f"/api/v1/scouting/leagues/{league['competition'].id}/candidates"
+    )
+    row = next(item for item in ranked.data["results"] if item["user_id"] == str(user.id))
+    assert first["key"] in row["group_keys"]
+    assert second["key"] in row["group_keys"]
+    assert row["user_id"] == str(user.id)
 
 
 def test_private_profiles_and_minors_without_consent_are_never_picked(league):
@@ -392,3 +427,27 @@ def test_report_leaves_out_leagues_not_open_to_scouts(league):
     grant_role(scout, "scout_admin", organisation=Organisation.objects.create(name="Other"))
     data = _client(scout).get(f"/api/v1/scouting/profiles/{profile.id}/report").data
     assert data["leagues"] == []
+
+
+def test_an_admin_can_amend_the_published_squad(league):
+    _fill_league(league)
+    competition = league["competition"]
+    admin = User.objects.create_user(email="admin@league.test", password="pw-123456789")
+    Membership.objects.create(competition=competition, user=admin, role=Role.ADMIN)
+    owner = _client(league["owner"])
+    owner.post(f"/api/v1/scouting/leagues/{competition.id}/squad/generate")
+    owner.post(f"/api/v1/scouting/leagues/{competition.id}/squad/publish")
+
+    client = _client(admin)
+    squad = client.get(f"/api/v1/scouting/leagues/{competition.id}/squad").data["squad"]
+    assert squad["can_edit"] is True
+    pick = next(row for group in squad["groups"] for row in group["picks"])
+    dropped = client.delete(f"/api/v1/scouting/leagues/{competition.id}/squad/picks/{pick['id']}")
+    assert dropped.status_code == 200, dropped.data
+    left = {row["id"] for group in dropped.data["squad"]["groups"] for row in group["picks"]}
+    assert pick["id"] not in left
+
+    competition.open_to_scouts = False
+    competition.save(update_fields=["open_to_scouts"])
+    assert client.get(f"/api/v1/scouting/leagues/{competition.id}/squad").status_code == 200
+    assert client.get(f"/api/v1/scouting/leagues/{competition.id}/candidates").status_code == 200

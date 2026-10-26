@@ -22,7 +22,7 @@ from .rules import (
     max_per_club_for,
     validate_picks,
 )
-from .scoring import classify_slot, money, points_text, season_totals
+from .scoring import classify_slot, money, points_text, season_totals, slots_from_positions
 
 
 def pool_members(competition):
@@ -40,26 +40,30 @@ def market(competition, *, query: str = "", slot: str = "", club: str = "") -> l
     needle = query.strip().lower()
     for member in members:
         stats = totals.get(member.id) or {}
-        member_slot = stats.get("slot") or classify_slot(member.position)
-        if slot and member_slot != slot:
+        member_slots = list(stats.get("slots") or slots_from_positions([], member.position))
+        member_slot = stats.get("slot") or member_slots[0]
+        if slot and slot not in member_slots:
             continue
         if club and str(member.participant_id) != club:
             continue
         if needle and needle not in member.name.lower() and needle not in member.participant.name.lower():
             continue
         price = stats.get("price") or Decimal("4.5")
-        rows.append(_player_payload(member, member_slot, stats, price))
+        rows.append(_player_payload(member, member_slot, member_slots, stats, price))
     rows.sort(key=lambda row: (-Decimal(row["points"]), Decimal(row["price"]), row["name"].lower()))
     return rows
 
 
-def _player_payload(member: RosterMember, slot: str, stats: dict, price: Decimal) -> dict:
+def _player_payload(
+    member: RosterMember, slot: str, slots: list[str], stats: dict, price: Decimal
+) -> dict:
     return {
         "id": str(member.id),
         "name": member.name,
         "number": member.number,
         "position": member.position,
         "slot": slot,
+        "slots": slots,
         "team_id": str(member.participant_id),
         "team_name": member.participant.name,
         "team_short": member.participant.short_name or member.participant.name[:3].upper(),
@@ -85,9 +89,14 @@ def parse_picks(competition, raw_picks) -> list[dict]:
         if member is None:
             raise ValidationError({"picks": f"Player {player_id or index} is not in this competition."})
         stats = totals.get(member.id) or {}
-        slot = str(item.get("slot") or stats.get("slot") or classify_slot(member.position))
+        allowed = list(stats.get("slots") or slots_from_positions([], member.position))
+        slot = str(item.get("slot") or (allowed[0] if allowed else classify_slot(member.position)))
         if slot not in FantasySlot.values:
             raise ValidationError({"picks": f"{member.name} has an unknown position."})
+        if slot not in allowed:
+            raise ValidationError(
+                {"picks": f"{member.name} has not played as a {slot} in this competition."}
+            )
         price = stats.get("price") or Decimal("4.5")
         parsed.append(
             {
@@ -178,7 +187,13 @@ def team_payload(team: FantasyTeam, totals: dict | None = None) -> dict:
             vice_id = pick.player_id
         rows.append(
             {
-                **_player_payload(pick.player, pick.slot, stats, pick.price),
+                **_player_payload(
+                    pick.player,
+                    pick.slot,
+                    list(stats.get("slots") or slots_from_positions([], pick.player.position)),
+                    stats,
+                    pick.price,
+                ),
                 "pick_id": str(pick.id),
                 "is_starter": pick.is_starter,
                 "is_captain": pick.is_captain,
@@ -265,7 +280,8 @@ def auto_pick(competition) -> list[dict]:
 
     by_slot: dict[str, list[dict]] = defaultdict(list)
     for player in available:
-        by_slot[player["slot"]].append(player)
+        for shirt in player.get("slots") or [player["slot"]]:
+            by_slot[shirt].append(player)
 
     chosen: list[dict] = []
     used_ids: set[str] = set()
@@ -295,7 +311,7 @@ def auto_pick(competition) -> list[dict]:
                 continue
             used_ids.add(pick["id"])
             club_counts[pick["team_id"]] += 1
-            chosen.append(pick)
+            chosen.append({**pick, "slot": slot})
             still_need[slot] -= 1
             progressed = True
         if not progressed:

@@ -619,7 +619,16 @@ export class MatchReportPage implements OnInit {
   line(player: LineupPlayer): string {
     const number = player.number !== null ? `${player.number}. ` : '';
     const position = player.position ? ` (${player.position})` : '';
-    return `${number}${player.name}${position}`;
+    const raw = player.rating;
+    const value = raw == null || raw === '' ? NaN : Number(raw);
+    const rating = Number.isFinite(value) ? ` · ${value.toFixed(1)}` : '';
+    const stats = (player.stats ?? [])
+      .filter((row) => Number(row.count) > 0)
+      .slice(0, 4)
+      .map((row) => `${Number(row.count)} ${row.label}`)
+      .join(', ');
+    const figures = stats ? ` · ${stats}` : '';
+    return `${number}${player.name}${position}${rating}${figures}`;
   }
 
   edit(): void {

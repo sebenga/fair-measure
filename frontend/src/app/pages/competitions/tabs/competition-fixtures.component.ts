@@ -27,6 +27,7 @@ import { extractErrorMessage } from '../../../core/error-message';
 import type { CompetitionDetail, Fixture, FixtureHighlight, MatchRating } from '../../../core/models';
 import { RealtimeService } from '../../../core/realtime.service';
 import { ResultsService } from '../../../core/results.service';
+import { cupNameOf, isCupFixture } from './cup';
 import { KnockoutTreeComponent } from './knockout-tree.component';
 
 type Filter = 'upcoming' | 'results' | 'all';
@@ -72,8 +73,20 @@ interface FixtureGroup {
     </div>
 
     @if (structureLayout(); as layout) {
-      @if (fixtures().length) {
-        <fm-knockout-tree [fixtures]="fixtures()" [layout]="layout" (select)="openFixture($event)" />
+      @if (layout === 'both') {
+        @if (leagueFixtures().length) {
+          <h3 class="fm-section-title">League</h3>
+          <fm-knockout-tree [fixtures]="leagueFixtures()" layout="rounds" (select)="openFixture($event)" />
+        }
+        @if (cupGroups().length) {
+          <p class="cup-hint">Cups have unique names and run one at a time.</p>
+        }
+        @for (group of cupGroups(); track group.id) {
+          <h3 class="fm-section-title">{{ group.name }}</h3>
+          <fm-knockout-tree [fixtures]="group.fixtures" layout="bracket" (select)="openFixture($event)" />
+        }
+      } @else if (visibleFixtures().length) {
+        <fm-knockout-tree [fixtures]="visibleFixtures()" [layout]="layout" (select)="openFixture($event)" />
       }
     }
 
@@ -96,12 +109,14 @@ interface FixtureGroup {
         <p>{{ error() }}</p>
         <ion-button fill="clear" (click)="load()">Try again</ion-button>
       </div>
-    } @else if (groups().length === 0 && !(structureLayout() && fixtures().length)) {
+    } @else if (groups().length === 0 && !(structureLayout() && visibleFixtures().length)) {
       <div class="fm-empty">
         <ion-icon name="calendar-outline" aria-hidden="true" />
         <h3>{{ emptyTitle() }}</h3>
         <p>
-          @if (canManage()) {
+          @if (track() === 'cup') {
+            Cup ties appear after the schedule is generated.
+          } @else if (canManage()) {
             Add participants, then generate a schedule from the setup screen.
           } @else {
             Nothing scheduled here yet.
@@ -131,7 +146,9 @@ interface FixtureGroup {
               } @else {
                 <span class="time tbd">TBD</span>
               }
-              @if (fixture.round_number) {
+              @if (isCup(fixture)) {
+                <span class="round cup">{{ cupName(fixture) }}</span>
+              } @else if (fixture.round_number) {
                 <span class="round">R{{ fixture.round_number }}</span>
               }
             </div>
@@ -243,6 +260,12 @@ interface FixtureGroup {
         padding: 12px 16px 4px;
       }
 
+      .cup-hint {
+        margin: 0 20px 4px;
+        font-size: 0.78rem;
+        color: var(--ion-color-medium);
+      }
+
       .skeleton-card {
         display: flex;
         gap: 14px;
@@ -307,6 +330,11 @@ interface FixtureGroup {
           font-size: 0.65rem;
           color: var(--ion-color-medium);
           text-transform: uppercase;
+        }
+
+        .round.cup {
+          color: var(--ion-color-primary);
+          font-weight: 700;
           letter-spacing: 0.05em;
         }
       }
@@ -471,6 +499,7 @@ export class CompetitionFixturesComponent implements OnInit {
   private readonly toasts = inject(ToastController);
 
   readonly competition = input.required<CompetitionDetail>();
+  readonly track = input<'all' | 'league' | 'cup'>('all');
 
   readonly fixtures = signal<Fixture[]>([]);
   readonly loading = signal(true);
@@ -486,18 +515,54 @@ export class CompetitionFixturesComponent implements OnInit {
     return this.competition().format === 'knockout';
   }
 
-  structureLayout(): 'bracket' | 'rounds' | null {
+  isCup(fixture: Fixture): boolean {
+    return isCupFixture(fixture, this.competition().stages);
+  }
+
+  cupName(fixture: Fixture): string {
+    return cupNameOf(fixture, this.competition().stages);
+  }
+
+  readonly cupGroups = computed(() => {
+    const stages = this.competition().stages.filter((stage) => stage.kind === 'knockout');
+    const groups = stages
+      .map((stage) => ({
+        id: stage.id,
+        name: stage.name,
+        fixtures: this.cupFixtures().filter((fixture) => fixture.stage === stage.id),
+      }))
+      .filter((group) => group.fixtures.length);
+    const seen = new Set(groups.flatMap((group) => group.fixtures.map((fixture) => fixture.id)));
+    const leftover = this.cupFixtures().filter((fixture) => !seen.has(fixture.id));
+    if (leftover.length) groups.push({ id: 'cup', name: 'Cup', fixtures: leftover });
+    return groups;
+  });
+
+  readonly leagueFixtures = computed(() => this.fixtures().filter((fixture) => !this.isCup(fixture)));
+
+  readonly cupFixtures = computed(() => this.fixtures().filter((fixture) => this.isCup(fixture)));
+
+  readonly visibleFixtures = computed(() => {
+    const track = this.track();
+    if (track === 'league') return this.leagueFixtures();
+    if (track === 'cup') return this.cupFixtures();
+    return this.fixtures();
+  });
+
+  structureLayout(): 'bracket' | 'rounds' | 'both' | null {
     if (this.resultType()) return null;
+    const track = this.track();
+    if (track === 'cup') return 'bracket';
+    if (track === 'league') return 'rounds';
     const format = this.competition().format;
     if (format === 'knockout') return 'bracket';
-    if (format === 'league' || format === 'ladder' || format === 'group_knockout' || format === 'league_knockout') {
-      return 'rounds';
-    }
+    if (format === 'league_knockout') return 'both';
+    if (format === 'league' || format === 'ladder' || format === 'group_knockout') return 'rounds';
     return null;
   }
 
   readonly groups = computed<FixtureGroup[]>(() => {
-    const filtered = this.fixtures().filter((fixture) => this.matchesFilter(fixture));
+    const filtered = this.visibleFixtures().filter((fixture) => this.matchesFilter(fixture));
     const buckets = new Map<string, FixtureGroup>();
 
     for (const fixture of filtered) {
@@ -508,6 +573,14 @@ export class CompetitionFixturesComponent implements OnInit {
         buckets.set(key, bucket);
       }
       bucket.fixtures.push(fixture);
+    }
+
+    for (const bucket of buckets.values()) {
+      if (bucket.fixtures.length && bucket.fixtures.every((fixture) => this.isCup(fixture))) {
+        const names = new Set(bucket.fixtures.map((fixture) => this.cupName(fixture)));
+        const name = names.size === 1 ? [...names][0] : 'Cup';
+        bucket.label = `${name} · ${bucket.label}`;
+      }
     }
 
     const groups = [...buckets.values()];
@@ -522,7 +595,9 @@ export class CompetitionFixturesComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    if (this.isKnockout()) this.filter.set('all');
+    if (this.isKnockout() || this.track() === 'cup' || this.competition().format === 'league_knockout') {
+      this.filter.set('all');
+    }
     this.load();
 
     this.realtime
@@ -644,6 +719,7 @@ export class CompetitionFixturesComponent implements OnInit {
   }
 
   emptyTitle(): string {
+    if (this.track() === 'cup' && this.filter() === 'all') return 'No cup fixtures yet';
     switch (this.filter()) {
       case 'upcoming':
         return 'Nothing scheduled';

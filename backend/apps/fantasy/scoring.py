@@ -13,6 +13,7 @@ from typing import Iterable
 
 from apps.competitions.models import RosterMember
 from apps.fixtures.models import Fixture, PlayerAppearance, PlayerMatchRating, ScoreEvent
+from apps.fixtures.played import lineup_position_by_match, lineup_positions
 
 from .models import FantasySlot
 from .rules import BASE_PRICES
@@ -64,6 +65,23 @@ def classify_slot(position: str) -> str:
     ):
         return FantasySlot.MID
     return FantasySlot.MID
+
+
+def slots_from_positions(positions: list[str], fallback: str = "") -> list[str]:
+    """Fantasy shirts this player can fill, most-played line first.
+
+    One player can be both DEF and MID. They stay one person — the same id
+    appears in both lists.
+    """
+
+    slots: list[str] = []
+    for label in positions:
+        slot = classify_slot(label)
+        if slot not in slots:
+            slots.append(slot)
+    if not slots:
+        slots.append(classify_slot(fallback))
+    return slots
 
 
 def _qty(event: ScoreEvent) -> Decimal:
@@ -142,7 +160,12 @@ def season_totals(competition) -> dict[object, dict]:
         return {}
 
     by_id = {member.id: member for member in members}
-    slots = {member.id: classify_slot(member.position) for member in members}
+    shirts = lineup_positions(competition, by_id)
+    match_shirts = lineup_position_by_match(competition, by_id)
+    slots = {
+        member.id: slots_from_positions(shirts.get(member.id, []), member.position)
+        for member in members
+    }
 
     fixtures = list(
         Fixture.objects.filter(competition=competition, status__in=COUNTED)
@@ -155,8 +178,9 @@ def season_totals(competition) -> dict[object, dict]:
                 "points": Decimal("0"),
                 "event_points": Decimal("0"),
                 "minutes": 0,
-                "slot": slots[member.id],
-                "price": BASE_PRICES[slots[member.id]],
+                "slot": slots[member.id][0],
+                "slots": slots[member.id],
+                "price": BASE_PRICES[slots[member.id][0]],
             }
             for member in members
         }
@@ -172,44 +196,47 @@ def season_totals(competition) -> dict[object, dict]:
             conceded[(fixture.id, side.participant_id)] = max(others) if others else Decimal("0")
 
     events_by_player: dict[tuple[object, object], list[ScoreEvent]] = defaultdict(list)
-    played: set[tuple[object, object]] = set()
+    appeared: set[tuple[object, object]] = set()
     for event in ScoreEvent.objects.filter(
         fixture_id__in=fixture_ids, player_id__in=by_id
     ).select_related("scoring_category"):
         events_by_player[(event.fixture_id, event.player_id)].append(event)
-        played.add((event.fixture_id, event.player_id))
+        appeared.add((event.fixture_id, event.player_id))
 
     for rating in PlayerMatchRating.objects.filter(fixture_id__in=fixture_ids, player_id__in=by_id):
-        played.add((rating.fixture_id, rating.player_id))
+        appeared.add((rating.fixture_id, rating.player_id))
 
     appearances: dict[tuple[object, object], PlayerAppearance] = {}
     for row in PlayerAppearance.objects.filter(fixture_id__in=fixture_ids, player_id__in=by_id):
         appearances[(row.fixture_id, row.player_id)] = row
-        played.add((row.fixture_id, row.player_id))
+        appeared.add((row.fixture_id, row.player_id))
 
     totals: dict[object, dict] = {
         member.id: {
             "points": Decimal("0"),
             "event_points": Decimal("0"),
             "minutes": 0,
-            "slot": slots[member.id],
-            "price": BASE_PRICES[slots[member.id]],
+            "slot": slots[member.id][0],
+            "slots": slots[member.id],
+            "price": BASE_PRICES[slots[member.id][0]],
         }
         for member in members
     }
 
     for member in members:
-        slot = slots[member.id]
+        primary = slots[member.id][0]
         season = Decimal("0")
         minutes_total = 0
         last = Decimal("0")
         for fixture in fixtures:
             key = (fixture.id, member.id)
-            mins = _minutes_for(appearances.get(key), fixture, key in played)
+            mins = _minutes_for(appearances.get(key), fixture, key in appeared)
             minutes_total += mins
             against = conceded.get((fixture.id, member.participant_id), Decimal("0"))
+            shirt = match_shirts.get(key)
+            match_slot = classify_slot(shirt) if shirt else primary
             match_pts = player_match_points(
-                slot=slot,
+                slot=match_slot,
                 minutes=mins,
                 events=events_by_player.get(key, ()),
                 conceded=against,
@@ -220,7 +247,7 @@ def season_totals(competition) -> dict[object, dict]:
         totals[member.id]["points"] = season
         totals[member.id]["event_points"] = last
         totals[member.id]["minutes"] = minutes_total
-        totals[member.id]["price"] = _price_for(slot, season)
+        totals[member.id]["price"] = _price_for(primary, season)
 
     return totals
 

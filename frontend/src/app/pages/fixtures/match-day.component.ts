@@ -72,9 +72,9 @@ interface Draft {
 
     <ng-template #sheetView let-side>
       @if (side.lineup; as lineup) {
-        @if (lineup.slots.length) {
+        @if (pitchSlots(side).length) {
           <div class="pitch" [attr.aria-label]="side.name + ' line-up'">
-            @for (row of rows(lineup.slots); track $index) {
+            @for (row of rows(pitchSlots(side)); track $index) {
               <div class="pitch-row">
                 @for (slot of row; track slot.index) {
                   @if (starterAt(side, slot.index); as player) {
@@ -85,15 +85,13 @@ interface Draft {
                       [style.--kit]="kit(side.participant_id)[0]"
                       [style.--kit-ink]="kit(side.participant_id)[1]"
                     >
+                      @if (lineup.captain_id === player.player_id) {
+                        <i class="badge" aria-label="Captain">C</i>
+                      }
                       <span class="kit">{{ player.number ?? '' }}</span>
                       <span class="who">
                         <b>{{ shortName(player.name) }}</b>
-                        @if (lineup.captain_id === player.player_id) {
-                          <ion-icon name="ribbon-outline" class="mark" aria-label="Captain" />
-                        }
-                        @if (sheetMeta(player); as meta) {
-                          <small>{{ meta }}</small>
-                        }
+                        <small>{{ shirtMeta(player) }}</small>
                       </span>
                     </div>
                   } @else {
@@ -113,38 +111,36 @@ interface Draft {
                 <span class="num">{{ player.number ?? '' }}</span>
                 <span class="who">
                   <b>{{ player.name }}</b>
-                  @if (sheetMeta(player); as meta) {
-                    <small>{{ meta }}</small>
-                  }
+                  <small>{{ shirtMeta(player) }}</small>
                 </span>
                 @if (lineup.captain_id === player.player_id) {
-                  <ion-icon name="ribbon-outline" class="mark" aria-label="Captain" />
+                  <i class="badge inline" aria-label="Captain">C</i>
                 }
               </li>
             }
           </ul>
         }
-        <p class="hint">Bench</p>
-        <div class="bench-row">
-          @for (player of lineup.bench; track player.player_id) {
-            <div
-              class="shirt bench-shirt"
-              [class.used]="player.on_field || player.subbed_off"
-              [style.--kit]="kit(side.participant_id)[0]"
-              [style.--kit-ink]="kit(side.participant_id)[1]"
-            >
-              <span class="kit slim">{{ player.number ?? '' }}</span>
-              <span class="who">
-                <b>{{ shortName(player.name) }}</b>
-                @if (sheetMeta(player); as meta) {
-                  <small>{{ meta }}</small>
-                }
-              </span>
-            </div>
-          } @empty {
-            <p class="muted">No substitutes named.</p>
-          }
-        </div>
+        <section class="bench">
+          <h3>Substitutes</h3>
+          <div class="bench-row">
+            @for (player of lineup.bench; track player.player_id) {
+              <div
+                class="shirt bench-shirt"
+                [class.used]="player.on_field || player.subbed_off"
+                [style.--kit]="kit(side.participant_id)[0]"
+                [style.--kit-ink]="kit(side.participant_id)[1]"
+              >
+                <span class="kit slim">{{ player.number ?? '' }}</span>
+                <span class="who">
+                  <b>{{ shortName(player.name) }}</b>
+                  <small>{{ shirtMeta(player) }}</small>
+                </span>
+              </div>
+            } @empty {
+              <p class="muted">No substitutes named.</p>
+            }
+          </div>
+        </section>
       } @else {
         <p class="muted">{{ side.name }} have not picked their team yet.</p>
       }
@@ -167,7 +163,7 @@ interface Draft {
         Both teams must submit a team sheet of at least {{ sheetMinimum() }} before kickoff, and every
         named player needs a shirt number. Officials must be picked on Setup.
       </p>
-      <div class="fm-team-columns" [class.many]="sides().length > 2" [class.editing]="!!draft()">
+      <div class="lineup-stack" [class.editing]="!!draft()">
         @for (side of sides(); track side.side_id) {
           <div class="fm-card sheet" [class.edit]="draft()?.sideId === side.side_id">
             <span class="fm-team-head">
@@ -432,19 +428,24 @@ interface Draft {
         letter-spacing: 0;
         color: var(--ion-color-medium);
       }
+      .lineup-stack {
+        display: grid;
+        gap: 16px;
+        margin: 0 16px 16px;
+      }
       @media (max-width: 419px) {
         .pitch {
           gap: 12px;
-          padding: 12px 8px 14px;
+          padding: 14px 8px 16px;
+          min-height: 0;
         }
         .kit {
-          width: 36px;
-          height: 40px;
-          font-size: 0.85rem;
+          width: 44px;
+          height: 48px;
         }
         .kit.slim {
-          width: 32px;
-          height: 36px;
+          width: 38px;
+          height: 42px;
         }
       }
       .record {
@@ -467,41 +468,38 @@ interface Draft {
         cursor: not-allowed;
       }
       .pitch {
-        display: flex;
-        flex-direction: column;
+        position: relative;
+        display: grid;
         gap: 14px;
-        padding: 16px 10px 18px;
-        border-radius: 16px;
+        min-height: 420px;
+        padding: 18px 10px 22px;
+        border-radius: 20px;
         background:
-          radial-gradient(circle at 50% 8%, rgb(255 255 255 / 0.14), transparent 28%),
-          repeating-linear-gradient(0deg, rgb(255 255 255 / 0.06) 0 28px, transparent 28px 56px),
-          linear-gradient(180deg, #15803d, #166534);
+          radial-gradient(circle at 50% 50%, rgb(255 255 255 / 10%) 0 18%, transparent 19%),
+          linear-gradient(#2f8f46, #1f6b34 48%, #2f8f46);
+        box-shadow: inset 0 0 0 3px rgb(255 255 255 / 18%);
         color: #fff;
       }
       .pitch-row {
         display: flex;
         justify-content: center;
+        flex-wrap: wrap;
         align-items: flex-start;
-        gap: 8px;
+        gap: 10px;
       }
       .shirt {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 8px;
+        display: grid;
+        justify-items: center;
+        gap: 4px;
         position: relative;
-        min-width: 0;
-        flex: 1 1 0;
-        max-width: 76px;
-        overflow: hidden;
+        width: 76px;
+        padding: 0;
       }
       .kit {
-        position: relative;
         display: grid;
         place-items: center;
-        flex: 0 0 auto;
-        width: 42px;
-        height: 46px;
+        width: 52px;
+        height: 56px;
         border-radius: 10px 10px 14px 14px;
         background: var(--kit, #1d4ed8);
         color: var(--kit-ink, #fff);
@@ -511,8 +509,8 @@ interface Draft {
         box-shadow: 0 6px 14px rgb(0 0 0 / 25%);
       }
       .kit.slim {
-        width: 36px;
-        height: 40px;
+        width: 44px;
+        height: 48px;
         font-size: 0.85rem;
       }
       .kit.hollow {
@@ -522,15 +520,12 @@ interface Draft {
         box-shadow: none;
       }
       .who {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
+        display: grid;
         width: 100%;
         min-width: 0;
-        padding: 5px 4px 6px;
-        border-radius: 7px;
-        background: rgb(15 23 42 / 88%);
+        padding: 4px 4px 5px;
+        border-radius: 8px;
+        background: rgb(15 23 42 / 82%);
         color: #fff;
         text-align: center;
       }
@@ -545,20 +540,33 @@ interface Draft {
       }
       .who b {
         font-size: 0.68rem;
-        line-height: 1.15;
+        line-height: 1.2;
       }
       .who small {
         font-size: 0.58rem;
-        font-weight: 650;
-        letter-spacing: 0.01em;
-        opacity: 0.9;
+        opacity: 0.85;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
+        line-height: 1.2;
       }
-      .mark {
-        flex: 0 0 auto;
-        width: 14px;
-        height: 14px;
-        font-size: 14px;
-        color: #facc15;
+      .badge {
+        position: absolute;
+        top: -4px;
+        right: 8px;
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        background: #f5c400;
+        color: #111;
+        font-size: 0.62rem;
+        font-weight: 800;
+        font-style: normal;
+        display: grid;
+        place-items: center;
+      }
+      .badge.inline {
+        position: static;
       }
       .shirt.off {
         opacity: 0.55;
@@ -567,25 +575,25 @@ interface Draft {
         display: grid;
         justify-items: center;
         gap: 6px;
-        flex: 1 1 0;
-        min-width: 0;
-        max-width: 76px;
+        width: 76px;
         color: rgb(255 255 255 / 85%);
         text-align: center;
       }
       .empty small {
         font-size: 0.62rem;
       }
+      .bench h3 {
+        margin: 0 0 8px;
+        font-size: 0.92rem;
+      }
+      .bench-shirt {
+        width: 92px;
+      }
       .bench-row {
         display: flex;
         gap: 8px;
         overflow-x: auto;
         padding: 4px 0 8px;
-      }
-      .bench-shirt {
-        flex: 0 0 72px;
-        max-width: 72px;
-        overflow: hidden;
       }
       .list .mark {
         color: var(--ion-color-warning, #facc15);
@@ -889,7 +897,9 @@ export class MatchDayComponent implements OnInit {
 
   shortName(name: string): string {
     const parts = name.trim().split(/\s+/);
-    return parts.length > 1 ? parts.slice(1).join(' ') : name;
+    if (parts.length < 2) return name;
+    const initial = parts[0].charAt(0).toUpperCase();
+    return `${initial}. ${parts[parts.length - 1]}`;
   }
 
   kit(teamId: string): [string, string] {
@@ -903,11 +913,84 @@ export class MatchDayComponent implements OnInit {
   }
 
   ratingLabel(player: LineupPlayer): string {
-    return player.rating ? player.rating : '';
+    const raw = player.rating;
+    if (raw == null || raw === '') return '';
+    const value = Number(raw);
+    return Number.isFinite(value) ? value.toFixed(1) : String(raw);
   }
 
-  sheetMeta(player: LineupPlayer): string {
-    return [this.minutesLabel(player), this.ratingLabel(player)].filter(Boolean).join(' · ');
+  shirtMeta(player: LineupPlayer): string {
+    return [this.ratingLabel(player), this.statLabel(player), this.minutesLabel(player)]
+      .filter(Boolean)
+      .join(' · ') || '—';
+  }
+
+  statLabel(player: LineupPlayer): string {
+    return (player.stats ?? [])
+      .filter((row) => Number(row.count) > 0)
+      .slice(0, 4)
+      .map((row) => `${Number(row.count)}${this.statAbbrev(row)}`)
+      .join(' ');
+  }
+
+  private statAbbrev(row: { code: string; label: string }): string {
+    const code = (row.code || '').toLowerCase();
+    const short: Record<string, string> = {
+      goal: 'G',
+      'own-goal': 'OG',
+      assist: 'A',
+      shot: 'Sh',
+      'shot-on-target': 'SoT',
+      tackle: 'T',
+      interception: 'Int',
+      save: 'Sv',
+      'yellow-card': 'YC',
+      'red-card': 'RC',
+    };
+    return short[code] || row.label.slice(0, 2);
+  }
+
+  pitchSlots(side: TeamSheetSide): FormationSlot[] {
+    const lineup = side.lineup;
+    if (!lineup) return [];
+    if (lineup.slots.length) return lineup.slots;
+    return this.slotsFromStarters(lineup.starters.length, lineup.formation);
+  }
+
+  private slotsFromStarters(count: number, formation: string): FormationSlot[] {
+    const rows = this.parseShape(formation) || this.guessShape(count);
+    if (!rows.length) return [];
+    const slots: FormationSlot[] = [{ index: 0, row: 0, column: 0, columns: 1, label: 'GK' }];
+    rows.forEach((width, rowIndex) => {
+      for (let column = 0; column < width; column += 1) {
+        slots.push({
+          index: slots.length,
+          row: rowIndex + 1,
+          column,
+          columns: width,
+          label: '',
+        });
+      }
+    });
+    return slots;
+  }
+
+  private parseShape(formation: string): number[] | null {
+    const rows = formation
+      .split('-')
+      .map((part) => Number(part.trim()))
+      .filter((count) => Number.isFinite(count) && count > 0);
+    return rows.length ? rows : null;
+  }
+
+  private guessShape(count: number): number[] {
+    if (count >= 11) return [4, 3, 3];
+    if (count === 10) return [4, 3, 2];
+    if (count === 8) return [3, 3, 1];
+    if (count === 7) return [2, 3, 1];
+    if (count === 6) return [2, 2, 1];
+    if (count === 5) return [2, 2];
+    return count > 1 ? [count - 1] : [];
   }
 
   rows(slots: FormationSlot[]): FormationSlot[][] {
@@ -917,7 +1000,11 @@ export class MatchDayComponent implements OnInit {
   }
 
   starterAt(side: TeamSheetSide, slot: number) {
-    return side.lineup?.starters.find((player) => player.slot === slot) ?? null;
+    const starters = side.lineup?.starters ?? [];
+    const bySlot = starters.find((player) => player.slot === slot);
+    if (bySlot) return bySlot;
+    const unslotted = starters.every((player) => player.slot === null);
+    return unslotted ? (starters[slot] ?? null) : null;
   }
 
   reasonLabel(key: string): string {

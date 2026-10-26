@@ -317,6 +317,26 @@ def governance(preset: Preset) -> dict:
     return {key: preset.get(key, "") for key in GOVERNANCE_KEYS}
 
 
+DEFAULT_TEAM_SHEET = {
+    "starters": None,
+    "bench_max": None,
+    "max_substitutions": None,
+    "rolling_substitutions": False,
+    "keeper": "",
+    "lines": [],
+    "formations": [],
+}
+
+
+def _team_sheet_settings(preset: Preset) -> dict:
+    """Every team competition stores a team sheet. Individual sports leave it empty."""
+
+    sheet = dict(preset.get("team_sheet") or {})
+    if (preset.get("participant_type") or "team") != "team":
+        return sheet
+    return {**DEFAULT_TEAM_SHEET, **sheet}
+
+
 def public_preset(key: str, preset: Preset) -> dict:
     categories = _categories(preset.get("score_types") or [])
     contest = preset.get("contest_type", HEAD_TO_HEAD)
@@ -362,7 +382,7 @@ def public_preset(key: str, preset: Preset) -> dict:
         "result_type": preset.get("result_type"),
         "official_results": bool(preset.get("official_results")),
         "unit_count_options": dict(preset.get("unit_count_options") or {}),
-        "team_sheet": dict(preset.get("team_sheet") or {}),
+        "team_sheet": _team_sheet_settings(preset),
         "category": preset.get("category") or "",
         "family": preset.get("family") or "",
         "variant": preset.get("variant") or "",
@@ -524,7 +544,7 @@ def apply_preset(competition, preset_key: str, *, unit_count: int | None = None)
             "match_awards": list(preset.get("match_awards") or []),
             "player_stats": list(preset.get("player_stats") or []),
             "roster_numbers": list(preset.get("roster_numbers") or []),
-            "team_sheet": dict(preset.get("team_sheet") or {}),
+            "team_sheet": _team_sheet_settings(preset),
             "unit_count": preset.get("unit_count"),
             "category": preset.get("category") or "",
             "family": preset.get("family") or "",

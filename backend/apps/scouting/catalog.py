@@ -255,7 +255,7 @@ SQUADS: dict[str, dict] = {
                 "key": "forwards",
                 "label": "Forwards",
                 "positions": ["winger", "striker"],
-                "aliases": ["forward", "attacker", "fw", "st", "wing"],
+                "aliases": ["forward", "attacker", "fw", "fwd", "st", "wing"],
                 "min": 4,
                 "max": 6,
             },

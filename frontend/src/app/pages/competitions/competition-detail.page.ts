@@ -33,12 +33,13 @@ import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail, TeamPick } from '../../core/models';
 import { isPointsTable } from '../../core/models';
 import { RealtimeService, competitionRoom } from '../../core/realtime.service';
+import { CompetitionCupComponent } from './tabs/competition-cup.component';
 import { CompetitionFantasyComponent } from './tabs/competition-fantasy.component';
 import { CompetitionFeedComponent } from './tabs/competition-feed.component';
 import { CompetitionFixturesComponent } from './tabs/competition-fixtures.component';
 import { CompetitionStandingsComponent } from './tabs/competition-standings.component';
 
-type Tab = 'feed' | 'fixtures' | 'standings' | 'fantasy';
+type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
 
 @Component({
   selector: 'fm-competition-detail',
@@ -57,6 +58,7 @@ type Tab = 'feed' | 'fixtures' | 'standings' | 'fantasy';
     IonSpinner,
     CompetitionFeedComponent,
     CompetitionFixturesComponent,
+    CompetitionCupComponent,
     CompetitionStandingsComponent,
     CompetitionFantasyComponent,
   ],
@@ -108,6 +110,11 @@ type Tab = 'feed' | 'fixtures' | 'standings' | 'fantasy';
               <ion-label>Fixtures</ion-label>
             </ion-segment-button>
           }
+          @if (showsCup()) {
+            <ion-segment-button value="cup" (click)="selectTab('cup')">
+              <ion-label>Cup</ion-label>
+            </ion-segment-button>
+          }
           @if (competition()?.format !== 'knockout') {
             <ion-segment-button value="standings" (click)="selectTab('standings')">
               <ion-label>Table</ion-label>
@@ -131,6 +138,11 @@ type Tab = 'feed' | 'fixtures' | 'standings' | 'fantasy';
           <ion-button fill="clear" (click)="load()">Try again</ion-button>
         </div>
       } @else if (competition(); as comp) {
+        @if (demoExpiryLabel(); as expiry) {
+          <div class="pick-banner">
+            <p>This is a one-hour demo. It deletes at {{ expiry }}.</p>
+          </div>
+        }
         @for (pick of myPicks(); track pick.id) {
           <div class="pick-banner">
             <p><strong>{{ pick.team_name }}</strong> picked you. Accept to join the team.</p>
@@ -160,12 +172,18 @@ type Tab = 'feed' | 'fixtures' | 'standings' | 'fantasy';
           } @else if (howItScores()) {
             <p class="how-points fm-enter">{{ howItScores() }}</p>
           }
-          @if (comp.open_to_scouts) {
+          @if (comp.open_to_scouts || canManage()) {
             <button type="button" class="scouted fm-enter" (click)="openSquad()">
               <ion-icon name="ribbon-outline" aria-hidden="true" />
               <span>
-                <strong>Open to scouts</strong>
-                <small>See the league squad: its best players, picked by position.</small>
+                <strong>{{ canManage() ? 'League squad' : 'Open to scouts' }}</strong>
+                <small>
+                  {{
+                    canManage()
+                      ? 'Amend the league squad: add, drop or move players by position.'
+                      : 'See the league squad: its best players, picked by position.'
+                  }}
+                </small>
               </span>
               <ion-icon name="chevron-forward-outline" aria-hidden="true" />
             </button>
@@ -214,6 +232,11 @@ type Tab = 'feed' | 'fixtures' | 'standings' | 'fantasy';
           @case ('fixtures') {
             @if (showsFixtures()) {
               <fm-competition-fixtures [competition]="comp" />
+            }
+          }
+          @case ('cup') {
+            @if (showsCup()) {
+              <fm-competition-cup [competition]="comp" (changed)="competition.set($event)" />
             }
           }
           @case ('standings') {
@@ -477,6 +500,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
     if (
       requestedTab === 'feed' ||
       requestedTab === 'fixtures' ||
+      requestedTab === 'cup' ||
       requestedTab === 'standings' ||
       requestedTab === 'fantasy'
     ) {
@@ -488,7 +512,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
 
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       const tab = params.get('tab');
-      if (tab === 'feed' || tab === 'fixtures' || tab === 'standings' || tab === 'fantasy') {
+      if (tab === 'feed' || tab === 'fixtures' || tab === 'cup' || tab === 'standings' || tab === 'fantasy') {
         this.tab.set(tab);
       }
     });
@@ -591,15 +615,38 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
     return typeof value === 'string' ? value : '';
   }
 
+  demoExpiryLabel(): string {
+    const settings = this.competition()?.settings_json?.['demo_league'];
+    const raw =
+      settings && typeof settings === 'object'
+        ? (settings as { active?: boolean; expires_at?: string }).expires_at
+        : undefined;
+    if (!raw || !(settings as { active?: boolean }).active) return '';
+    const when = new Date(raw);
+    return Number.isNaN(when.getTime()) ? '' : when.toLocaleString();
+  }
+
   showsFixtures(): boolean {
     const structure = this.competition()?.settings_json?.['match_structure'];
     if (Array.isArray(structure) && structure.length > 0) return true;
     return !this.pointsLeague();
   }
 
+  showsCup(): boolean {
+    const format = this.competition()?.format;
+    return format === 'league' || format === 'league_knockout' || format === 'group_knockout';
+  }
+
   selectTab(value: string | undefined): void {
     if (value === 'fixtures' && !this.showsFixtures()) return;
-    if (value !== 'feed' && value !== 'fixtures' && value !== 'standings' && value !== 'fantasy') {
+    if (value === 'cup' && !this.showsCup()) return;
+    if (
+      value !== 'feed' &&
+      value !== 'fixtures' &&
+      value !== 'cup' &&
+      value !== 'standings' &&
+      value !== 'fantasy'
+    ) {
       return;
     }
     if (value === this.tab()) return;
@@ -717,7 +764,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   }
 
   openSquad(): void {
-    void this.router.navigateByUrl(`/tabs/scouting/leagues/${this.competitionId}`);
+    void this.router.navigate(['/tabs/competitions', this.competitionId, 'squad']);
   }
 
   async confirmDelete(): Promise<void> {

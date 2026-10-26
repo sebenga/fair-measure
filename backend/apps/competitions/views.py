@@ -52,6 +52,8 @@ from .serializers import (
     draft_payload,
     next_draft_team,
     offer_team_pick,
+    retract_draft_pick,
+    team_entry_is_open,
     team_entry_mode,
     PointsPolicySerializer,
     RosterMemberSerializer,
@@ -106,6 +108,9 @@ class CompetitionViewSet(viewsets.ModelViewSet):
     ordering = ["-created_at"]
 
     def get_queryset(self) -> QuerySet[Competition]:
+        from .demo import purge_expired_demos
+
+        purge_expired_demos()
         queryset = visible_competitions(self.request.user).annotate(
             participant_count=Count("participants", distinct=True)
         )
@@ -192,9 +197,11 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         if competition.format not in {"knockout", "league_knockout"}:
             raise ValidationError("Only knockout competitions have a bracket to advance.")
 
+        from .cups import active_cup_stage, running_cup_stage
+
         cup_stage = None
         if competition.format == "league_knockout":
-            cup_stage = competition.stages.filter(kind="knockout").order_by("display_order").first()
+            cup_stage = running_cup_stage(competition) or active_cup_stage(competition)
         cup_fixtures = Fixture.objects.filter(competition=competition)
         if cup_stage is not None:
             cup_fixtures = cup_fixtures.filter(stage=cup_stage)
@@ -226,7 +233,7 @@ class CompetitionViewSet(viewsets.ModelViewSet):
                     competition=competition,
                     stage=cup_stage,
                     round_number=(latest or 0) + 1,
-                    label=f"Cup round {(latest or 0) + 1}",
+                    label=f"{(cup_stage.name if cup_stage else 'Cup')} round {(latest or 0) + 1}",
                     scheduled_at=next_kickoff,
                     status=Fixture.Status.SCHEDULED,
                 )
@@ -260,6 +267,96 @@ class CompetitionViewSet(viewsets.ModelViewSet):
 
         return Response(
             {"advanced": True, "round_number": (latest or 0) + 1, "fixtures": created},
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        tags=["Competitions"],
+        summary="Start the next named cup after the current one finishes",
+        request={"application/json": {"type": "object", "properties": {"name": {"type": "string"}, "stage": {"type": "string"}}}},
+        responses={201: dict},
+    )
+    @action(detail=True, methods=["post"], url_path="start-cup")
+    def start_cup(self, request: Request, pk: str | None = None) -> Response:
+        from apps.fixtures.models import Fixture
+        from apps.fixtures.serializers import FixtureListSerializer
+        from apps.fixtures.services import start_named_cup
+
+        from .cups import ensure_league_and_cup_stages
+
+        competition = self.get_object()
+        if not has_at_least(competition, request.user, Role.ADMIN):
+            raise PermissionDenied("Only competition admins can start a cup.")
+        if competition.format not in {"league_knockout", "league"}:
+            raise ValidationError("Named cups belong on a league.")
+
+        _, cups = ensure_league_and_cup_stages(competition)
+        raw_stage = request.data.get("stage")
+        raw_name = str(request.data.get("name") or "").strip()
+        stage = None
+        if raw_stage:
+            stage = next((item for item in cups if str(item.id) == str(raw_stage)), None)
+        elif raw_name:
+            stage = next((item for item in cups if item.name.casefold() == raw_name.casefold()), None)
+        else:
+            stage = next((item for item in cups if not item.fixtures.exists()), None)
+        if stage is None:
+            raise ValidationError({"name": "Choose a cup that has not started yet."})
+
+        participants = list(competition.participants.filter(is_active=True).order_by("seed", "name"))
+        try:
+            created = start_named_cup(competition, stage, participants)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+
+        queryset = (
+            Fixture.objects.filter(id__in=[fixture.id for fixture in created])
+            .prefetch_related("sides__participant")
+            .order_by("scheduled_at", "round_number")
+        )
+        return Response(
+            {
+                "stage": {"id": str(stage.id), "name": stage.name},
+                "fixtures": FixtureListSerializer(queryset, many=True).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        tags=["Competitions"],
+        summary="Fill a one-hour demo competition, or delete it",
+        request=None,
+        responses={200: dict, 201: dict},
+    )
+    @action(detail=True, methods=["post", "delete"], url_path="demo-league")
+    def demo_league(self, request: Request, pk: str | None = None) -> Response:
+        from .demo import clear_demo_league, generate_demo_league
+
+        competition = self.get_object()
+        if not has_at_least(competition, request.user, Role.ADMIN):
+            raise PermissionDenied("Only competition admins can change the demo league.")
+        if request.method == "DELETE":
+            payload = clear_demo_league(competition)
+            return Response(payload, status=status.HTTP_200_OK)
+        payload = generate_demo_league(competition, request.user)
+        competition.refresh_from_db()
+        publish_event(
+            "fixtures.generated",
+            {"competition_id": str(competition.id), "count": payload["fixtures"]},
+            [competition_room(competition.id)],
+        )
+        publish_event(
+            "competition.updated",
+            {"competition_id": str(competition.id)},
+            [competition_room(competition.id)],
+        )
+        return Response(
+            {
+                **payload,
+                "competition": CompetitionDetailSerializer(
+                    competition, context=self.get_serializer_context()
+                ).data,
+            },
             status=status.HTTP_201_CREATED,
         )
 
@@ -539,6 +636,16 @@ class ParticipantViewSet(CompetitionScopedViewSet):
             {"participant_id": str(serializer.instance.id)},
         )
         self._announce("created", serializer.instance)
+
+    def perform_destroy(self, instance) -> None:
+        self._assert_can_write()
+        competition = self.get_competition()
+        if team_entry_mode(competition) in {"pick", "draft"} and team_entry_is_open(competition):
+            if not (instance.metadata or {}).get("demo"):
+                raise ValidationError(
+                    {"name": "Teams are already set. Start picking or drafting on those teams."}
+                )
+        super().perform_destroy(instance)
 
 
 @extend_schema(
@@ -825,17 +932,10 @@ class TeamPickListCreateView(APIView):
         participant = get_object_or_404(Participant, pk=participant_pk, competition=competition)
         if not _can_manage_team(request, participant):
             raise PermissionDenied("You cannot pick players for this team.")
-        if team_entry_mode(competition) == "draft":
-            needed = squad_size_for(competition)
-            if participant.roster.filter(is_active=True).count() < needed:
-                raise ValidationError(
-                    {
-                        "team_entry": (
-                            f"Draft this team to {needed} players first. "
-                            "Then you can add more as it grows."
-                        )
-                    }
-                )
+        if not team_entry_is_open(competition):
+            raise ValidationError(
+                {"team_entry": "Add every team first, then start picking or drafting."}
+            )
         user_id = request.data.get("user")
         if not user_id:
             raise ValidationError({"user": "Choose a profile."})
@@ -928,20 +1028,39 @@ class TeamDraftView(APIView):
             raise ValidationError({"team_entry": "This competition picks teams directly."})
         if not has_at_least(competition, request.user, Role.ADMIN):
             raise PermissionDenied("You cannot run the draft.")
+        if not team_entry_is_open(competition):
+            raise ValidationError(
+                {"team_entry": "Add every team first, then start the draft."}
+            )
         user_id = request.data.get("user")
         if not user_id:
             raise ValidationError({"user": "Choose a profile to draft."})
-        needed = squad_size_for(competition)
+        existing = (
+            RosterMember.objects.filter(
+                participant__competition=competition,
+                participant__kind=Participant.Kind.TEAM,
+                user_id=user_id,
+                is_active=True,
+            )
+            .select_related("participant", "user")
+            .first()
+        )
+        if existing is not None:
+            pick = retract_draft_pick(existing, request.user)
+            payload = {"undrafted": True, **draft_payload(competition)}
+            if pick is not None:
+                payload["pick"] = TeamPickSerializer(pick).data
+            return Response(payload)
         team = next_draft_team(
             list(
                 competition.participants.filter(kind=Participant.Kind.TEAM, is_active=True).order_by(
                     "name"
                 )
             ),
-            needed,
+            squad_size_for(competition),
         )
         if team is None:
-            raise ValidationError({"user": f"Every team already has {needed} players."})
+            raise ValidationError({"user": "Name a team before you draft."})
         user = get_object_or_404(get_user_model(), pk=user_id)
         pick = offer_team_pick(team, user, request.user)
         return Response(

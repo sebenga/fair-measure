@@ -110,11 +110,60 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
           @case ('entrants') {
             <h3 class="fm-section-title">Entrants ({{ participants().length }})</h3>
 
+            @if (canManage()) {
+              <div class="add-row demo-league">
+                @if (demoActive()) {
+                  <p class="hint">
+                    This is a one-hour demo {{ sampleNoun() }}. Teams, officials
+                    @if (!pointsTable()) {
+                      , picks, fixtures, player ratings, player stats, the league squad and fantasy
+                    } @else {
+                      and results
+                    }
+                    are already filled in. The whole competition deletes
+                    @if (demoExpiryLabel()) {
+                      at {{ demoExpiryLabel() }}
+                    } @else {
+                      after one hour
+                    }.
+                  </p>
+                  <div class="demo-actions">
+                    <ion-button size="small" fill="outline" [disabled]="busy()" (click)="generateDemoLeague()">
+                      Refresh demo
+                    </ion-button>
+                    <ion-button size="small" fill="clear" [disabled]="busy()" (click)="clearDemoLeague()">
+                      Delete demo
+                    </ion-button>
+                  </div>
+                } @else {
+                  <p class="hint">
+                    Skip the admin work and generate a one-hour demo {{ sampleNoun() }} with
+                    {{ samplePeople() }}, officials
+                    @if (!pointsTable()) {
+                      , picks, fixtures, player ratings, player stats, a league squad and fantasy
+                    }
+                    already in place. It deletes itself after an hour.
+                  </p>
+                  <ion-button
+                    size="small"
+                    [disabled]="busy() || hasRealEntrants()"
+                    (click)="generateDemoLeague()"
+                  >
+                    Generate a demo {{ sampleNoun() }}
+                  </ion-button>
+                  @if (hasRealEntrants()) {
+                    <p class="hint">A demo has to start empty. Remove your own {{ samplePeople() }} first.</p>
+                  }
+                }
+              </div>
+            }
+
             @if (entrantKind() === 'team' && !isCombination()) {
               @if (!teamEntry()) {
                 <p class="hint">
-                  Choose how teams are filled. A team needs {{ squadSize() }} players. A competition uses
-                  one method — pick teams, or draft. You cannot switch later.
+                  Choose how teams are filled. A team needs at least {{ squadSize() }} players, and you
+                  can pick or draft more than that. A competition uses one method — pick teams, or draft.
+                  You cannot switch later.
                 </p>
                 <div class="entry-modes">
                   <button type="button" (click)="setTeamEntry('pick')" [disabled]="busy()">
@@ -126,18 +175,21 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                 </div>
               } @else {
                 <p class="hint">
-                  @if (teamEntry() === 'pick') {
-                    This league picks teams. A team needs at least {{ squadSize() }} players to start,
-                    and each profile accepts before they count. You can add more later if the team grows.
+                  @if (!entryOpen()) {
+                    Name every team first. When the list is complete, start
+                    {{ teamEntry() === 'pick' ? 'picking' : 'the draft' }}.
+                  } @else if (teamEntry() === 'pick') {
+                    Teams are set. Open a team and pick at least {{ squadSize() }} profiles. You can pick
+                    more than that. They accept before they count.
                   } @else {
-                    This league drafts players. A team needs at least {{ squadSize() }} players to start.
-                    Drafted profiles join when they are picked. You can add more later if the team grows.
+                    Teams are set. Draft at least {{ squadSize() }} players onto each team. You can keep
+                    drafting after that. They join when they are drafted.
                   }
                 </p>
               }
             }
 
-            @if (isCombination()) {
+            @if (isCombination() && !demoActive()) {
               <form class="add-row combo-form" (submit)="addCombination($event)">
                 <p class="hint">
                   Each entrant is a horse with its rider. Results belong to the pair; the table also keeps
@@ -183,7 +235,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   <ion-button type="button" size="small" fill="clear" (click)="openHorses()">Register a horse</ion-button>
                 </div>
               </form>
-            } @else if (entrantKind() !== 'team' || teamEntry()) {
+            } @else if (!demoActive() && (entrantKind() !== 'team' || (teamEntry() && !entryOpen()))) {
               <form class="add-row" (submit)="addParticipant($event)">
                 <p class="hint">
                   @if (profileEntrants() && pointsTable()) {
@@ -196,38 +248,15 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                     Add each person by name. They play each other, and the table ranks them on match results.
                   } @else if (entrantKind() === 'pair') {
                     Name the pair first. Open it and pick two profiles. Each person accepts before they are in.
+                  } @else if (teamEntry() && !entryOpen()) {
+                    Add the team name only. Do not pick or draft players until every team is on the list.
                   } @else if (teamEntry() === 'draft') {
-                    Name each team. Players are drafted onto them, one pick at a time, until every team has
-                    {{ squadSize() }}. They join as soon as they are drafted. Add more later on the team if it grows.
-                  } @else {
-                    Name the team and select at least {{ squadSize() }} profiles. They accept before they join.
-                    Add more later on the team if it grows.
+                    Players are drafted onto the teams, one pick at a time. A team needs at least
+                    {{ squadSize() }} to start, and you can keep drafting after that.
+                  } @else if (teamEntry() === 'pick') {
+                    Open a team to pick players. A team needs at least {{ squadSize() }} to start.
                   }
                 </p>
-                @if (teamEntry() === 'pick') {
-                  <ion-searchbar
-                    placeholder="Search profiles"
-                    [debounce]="150"
-                    (ionInput)="profileQuery.set($any($event.detail.value) ?? '')"
-                  />
-                  <p class="hint">{{ selectedProfileIds().length }} of {{ squadSize() }} selected</p>
-                  <ion-list class="profiles" lines="none">
-                    @for (profile of visibleProfiles(); track profile.id) {
-                      <ion-item>
-                        <ion-checkbox
-                          slot="start"
-                          [checked]="selectedProfileIds().includes(profile.id)"
-                          [disabled]="profileBlocked(profile.id) || busy()"
-                          (ionChange)="toggleProfile(profile.id, $event)"
-                        />
-                        <ion-label>
-                          <h2>{{ profile.display_name || profile.email }}</h2>
-                          <p>{{ profileNote(profile) }}</p>
-                        </ion-label>
-                      </ion-item>
-                    }
-                  </ion-list>
-                }
                 @if (profileEntrants()) {
                   <ion-searchbar
                     placeholder="Search profiles"
@@ -272,16 +301,30 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
               </form>
             }
 
-            @if (teamEntry() === 'draft' && draftBoard(); as board) {
+            @if (teamEntry() && !entryOpen() && participants().length >= 2) {
+              <div class="add-row">
+                <p class="hint">
+                  {{ participants().length }} teams are named. Start
+                  {{ teamEntry() === 'pick' ? 'picking' : 'the draft' }} when this is the full list.
+                </p>
+                <ion-button type="button" [disabled]="busy()" (click)="openTeamEntry()">
+                  {{ teamEntry() === 'pick' ? 'Start picking' : 'Start the draft' }}
+                </ion-button>
+              </div>
+            }
+
+            @if (teamEntry() === 'draft' && entryOpen() && draftBoard(); as board) {
               <h3 class="fm-section-title">Draft</h3>
               @if (board.on_the_clock) {
-                <p class="hint">On the clock: {{ board.on_the_clock.name }}. Draft a profile onto that team.</p>
-              } @else if (!board.teams.length) {
-                <p class="hint">Name the teams first, then draft profiles onto them.</p>
-              } @else {
                 <p class="hint">
-                  Every team has {{ squadSize() }} players drafted. Open a team to add more if it grows.
+                  On the clock: {{ board.on_the_clock.name }}. Draft a profile onto that team.
+                  Click Draft again to undo a pick.
+                  @if (board.complete) {
+                    Every team has the minimum of {{ squadSize() }}. You can keep drafting.
+                  }
                 </p>
+              } @else {
+                <p class="hint">Name the teams first, then draft profiles onto them.</p>
               }
               <ion-list inset="true">
                 @for (team of board.teams; track team.id) {
@@ -299,7 +342,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   </ion-item>
                 }
               </ion-list>
-              @if (board.on_the_clock) {
+              @if (board.teams.length) {
                 <ion-searchbar
                   placeholder="Search profiles"
                   [debounce]="150"
@@ -315,7 +358,8 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                       <ion-button
                         slot="end"
                         size="small"
-                        [disabled]="profileBlocked(profile.id) || busy()"
+                        [fill]="draftedTeam(profile.id) ? 'outline' : 'solid'"
+                        [disabled]="draftBusy(profile.id)"
                         (click)="draftProfile(profile)"
                       >
                         Draft
@@ -343,7 +387,12 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                 @for (participant of participants(); track participant.id) {
                   <ion-item>
                     <ion-label>
-                      <h2>{{ participant.name }}</h2>
+                      <h2>
+                        {{ participant.name }}
+                        @if (isDemo(participant)) {
+                          <small>Demo</small>
+                        }
+                      </h2>
                       <p>
                         @if (teamEntry() === 'draft' && participant.kind === 'team') {
                           @if (participant.roster.length >= squadSize()) {
@@ -376,15 +425,17 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                     >
                       Profile
                     </ion-button>
-                    <ion-button
-                      slot="end"
-                      fill="clear"
-                      color="danger"
-                      size="small"
-                      (click)="removeParticipant(participant)"
-                    >
-                      <ion-icon slot="icon-only" name="trash-outline" aria-label="Remove" />
-                    </ion-button>
+                    @if (!teamEntry() || !entryOpen() || isDemo(participant)) {
+                      <ion-button
+                        slot="end"
+                        fill="clear"
+                        color="danger"
+                        size="small"
+                        (click)="removeParticipant(participant)"
+                      >
+                        <ion-icon slot="icon-only" name="trash-outline" aria-label="Remove" />
+                      </ion-button>
+                    }
                   </ion-item>
                 }
               </ion-list>
@@ -716,8 +767,31 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                       name="cupEvery"
                     />
                   </ion-item>
+                  @for (name of cupNames(); track $index) {
+                    <ion-item>
+                      <ion-input
+                        label="Cup name"
+                        labelPlacement="stacked"
+                        [ngModel]="name"
+                        (ngModelChange)="setCupName($index, $event)"
+                        [name]="'cupName' + $index"
+                      />
+                      @if (cupNames().length > 1) {
+                        <ion-button slot="end" fill="clear" (click)="removeCupName($index)">Remove</ion-button>
+                      }
+                    </ion-item>
+                  }
+                  <ion-item button="true" (click)="addCupName()">
+                    <ion-label>Add another cup</ion-label>
+                  </ion-item>
+                  <ion-item>
+                    <ion-button slot="start" size="small" [disabled]="busy()" (click)="saveCups()">
+                      Save cups
+                    </ion-button>
+                  </ion-item>
                   <p class="hint">
-                    After this many league match days the schedule inserts a competition (cup) game.
+                    Cups need unique names and run one at a time. Add or rename them here, then save.
+                    The next cup starts after the current one is finished.
                   </p>
                 }
 
@@ -975,7 +1049,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
             <p class="hint">
               Opening the league lets scouts follow it. Its results feed scouting reports, and it can name its
               own squad of the best players, picked by position like a national team. Players still decide who
-              sees their talent profile, and under-18s stay hidden until a guardian agrees. The feed and table
+              sees their profile, and under-18s stay hidden until a guardian agrees. The feed and table
               stay as private or public as they are now.
             </p>
             <ion-list inset="true">
@@ -1006,13 +1080,20 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
             </ion-list>
             <p class="hint">Scouts can search for players by the level they play at: the highest level of their teams' competitions.</p>
 
-            @if (comp.open_to_scouts) {
+            @if (canManage()) {
               <div class="add-row">
+                <p class="hint">
+                  Admins can pick, change and republish the league squad at any time — add or drop
+                  players, move them between positions, then publish again.
+                </p>
                 <ion-button size="small" (click)="openSquad()">
                   <ion-icon slot="start" name="shirt-outline" aria-hidden="true" />
-                  League squad
+                  Amend league squad
                 </ion-button>
               </div>
+            }
+
+            @if (comp.open_to_scouts) {
 
               <h3 class="fm-section-title">League scouts</h3>
               <p class="hint">
@@ -1173,6 +1254,8 @@ export class CompetitionSetupPage implements OnInit {
     cup_every_league_rounds: 3,
   };
 
+  readonly cupNames = signal<string[]>(['Cup']);
+
   ngOnInit(): void {
     this.competitionId = this.route.snapshot.paramMap.get('id') ?? '';
     this.load();
@@ -1203,6 +1286,10 @@ export class CompetitionSetupPage implements OnInit {
           this.generate.method = 'league_knockout';
           const every = Number(competition.settings_json?.['cup_every_league_rounds']);
           if (Number.isFinite(every) && every > 0) this.generate.cup_every_league_rounds = every;
+          const stored = competition.settings_json?.['cups'];
+          if (Array.isArray(stored) && stored.length) {
+            this.cupNames.set(stored.map((item) => String(item)).filter(Boolean));
+          }
         }
         const limit = competition.settings_json?.['time_limit_minutes'];
         const overtime = competition.settings_json?.['overtime_minutes'];
@@ -1335,7 +1422,7 @@ export class CompetitionSetupPage implements OnInit {
   }
 
   openSquad(): void {
-    void this.router.navigateByUrl(`/tabs/scouting/leagues/${this.competitionId}`);
+    void this.router.navigate(['/tabs/competitions', this.competitionId, 'squad']);
   }
 
   backHref(): string {
@@ -1376,6 +1463,120 @@ export class CompetitionSetupPage implements OnInit {
     if (this.entrantKind() !== 'team') return null;
     const value = this.competition()?.settings_json?.['team_entry'];
     return value === 'pick' || value === 'draft' ? value : null;
+  }
+
+  entryOpen(): boolean {
+    if (!this.teamEntry()) return true;
+    return this.competition()?.settings_json?.['team_entry_open'] === true;
+  }
+
+  isDemo(participant: Participant): boolean {
+    return participant.metadata?.['demo'] === true;
+  }
+
+  demoActive(): boolean {
+    const settings = this.competition()?.settings_json?.['demo_league'];
+    if (settings && typeof settings === 'object' && (settings as { active?: boolean }).active) {
+      return true;
+    }
+    return this.participants().some((participant) => this.isDemo(participant));
+  }
+
+  demoExpiryLabel(): string {
+    const settings = this.competition()?.settings_json?.['demo_league'];
+    const raw =
+      settings && typeof settings === 'object'
+        ? (settings as { expires_at?: string }).expires_at
+        : undefined;
+    if (!raw) return '';
+    const when = new Date(raw);
+    return Number.isNaN(when.getTime()) ? '' : when.toLocaleString();
+  }
+
+  hasRealEntrants(): boolean {
+    return this.participants().some((participant) => !this.isDemo(participant));
+  }
+
+  sampleNoun(): string {
+    const format = this.competition()?.format;
+    if (this.pointsTable()) return 'competition';
+    if (format === 'knockout') return 'cup';
+    return 'league';
+  }
+
+  samplePeople(): string {
+    const kind = this.entrantKind();
+    if (kind === 'individual') return 'players';
+    if (kind === 'pair') return 'pairs';
+    if (this.isCombination()) return 'combinations';
+    return 'teams';
+  }
+
+  async generateDemoLeague(): Promise<void> {
+    if (this.busy() || this.hasRealEntrants()) return;
+    const updating = this.demoActive();
+    const alert = await this.alerts.create({
+      header: updating ? 'Refresh the demo?' : `Generate a demo ${this.sampleNoun()}?`,
+      message: updating
+        ? `This rebuilds the demo ${this.samplePeople()}, officials and fixtures and restarts the one-hour timer.`
+        : `This turns the competition into a one-hour demo. ${this.samplePeople()}, officials${this.pointsTable() ? '' : ', picks, fixtures, player ratings, player stats, the league squad and fantasy'} are filled in. The whole thing deletes after an hour.`,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: updating ? 'Refresh' : 'Generate demo', role: 'confirm' },
+      ],
+    });
+    await alert.present();
+    const { role } = await alert.onDidDismiss();
+    if (role !== 'confirm') return;
+    this.busy.set(true);
+    this.api.generateDemoLeague(this.competitionId).subscribe({
+      next: async (result) => {
+        this.busy.set(false);
+        if (result.competition) {
+          this.competition.set(result.competition);
+          this.participants.set(result.competition.participants);
+        } else {
+          this.load();
+        }
+        await this.toast(
+          result.fixtures
+            ? `Demo ready: ${result.teams} ${this.samplePeople()}, ratings, player stats, league squad and fantasy. It deletes in one hour.`
+            : `Demo ready: ${result.teams} ${this.samplePeople()}. It deletes in one hour.`,
+          'success',
+        );
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not generate the sample league.'), 'danger');
+      },
+    });
+  }
+
+  async clearDemoLeague(): Promise<void> {
+    if (this.busy() || !this.demoActive()) return;
+    const alert = await this.alerts.create({
+      header: 'Delete this demo?',
+      message: `The whole demo ${this.sampleNoun()} is deleted, including ${this.samplePeople()}, officials and fixtures.`,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Delete demo', role: 'destructive' },
+      ],
+    });
+    await alert.present();
+    const { role } = await alert.onDidDismiss();
+    if (role !== 'confirm') return;
+    this.busy.set(true);
+    this.api.clearDemoLeague(this.competitionId).subscribe({
+      next: async () => {
+        this.busy.set(false);
+        await this.toast('Demo deleted.', 'success');
+        void this.router.navigate(['/tabs/competitions'], { replaceUrl: true });
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not delete the demo league.'), 'danger');
+      },
+    });
   }
 
   canManage(): boolean {
@@ -1526,9 +1727,69 @@ export class CompetitionSetupPage implements OnInit {
   });
 
   canAddParticipant(): boolean {
-    if (!this.newParticipantName.trim()) return false;
-    if (this.teamEntry() === 'pick') return this.selectedProfileIds().length >= this.squadSize();
-    return true;
+    if (this.teamEntry() && this.entryOpen()) return false;
+    return !!this.newParticipantName.trim();
+  }
+
+  addCupName(): void {
+    this.cupNames.update((names) => [...names, '']);
+  }
+
+  removeCupName(index: number): void {
+    this.cupNames.update((names) => names.filter((_, current) => current !== index));
+  }
+
+  setCupName(index: number, value: string): void {
+    this.cupNames.update((names) => names.map((name, current) => (current === index ? value : name)));
+  }
+
+  normalizedCups(): string[] {
+    return this.cupPayload().map((row) => row.name);
+  }
+
+  cupPayload(): Array<{ id?: string; name: string }> {
+    const stages = (this.competition()?.stages ?? []).filter((stage) => stage.kind === 'knockout');
+    const seen = new Set<string>();
+    const rows: Array<{ id?: string; name: string }> = [];
+    this.cupNames().forEach((raw, index) => {
+      const name = raw.trim();
+      const key = name.toLowerCase();
+      if (!name || seen.has(key)) return;
+      seen.add(key);
+      const match =
+        stages.find((stage) => stage.name.toLowerCase() === key) ?? stages[index];
+      rows.push(match ? { id: match.id, name } : { name });
+    });
+    return rows.length ? rows : [{ name: 'Cup' }];
+  }
+
+  saveCups(): void {
+    const competition = this.competition();
+    if (!competition || this.busy()) return;
+    this.busy.set(true);
+    this.api.updateCompetition(this.competitionId, { cups: this.cupPayload() }).subscribe({
+      next: () => {
+        this.api.getCompetition(this.competitionId).subscribe({
+          next: (updated) => {
+            this.busy.set(false);
+            this.competition.set(updated);
+            const stored = updated.settings_json?.['cups'];
+            if (Array.isArray(stored) && stored.length) {
+              this.cupNames.set(stored.map((item) => String(item)).filter(Boolean));
+            }
+            void this.toast('Cups saved.', 'success');
+          },
+          error: async (err: unknown) => {
+            this.busy.set(false);
+            await this.toast(extractErrorMessage(err, 'Saved, but could not reload the competition.'), 'warning');
+          },
+        });
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not save those cups.'), 'danger');
+      },
+    });
   }
 
   setTeamEntry(mode: 'pick' | 'draft'): void {
@@ -1552,12 +1813,39 @@ export class CompetitionSetupPage implements OnInit {
         this.selectedProfileIds.set([]);
         this.busy.set(false);
         this.ensureProfiles();
-        if (mode === 'draft') this.loadDraft();
-        else this.draftBoard.set(null);
+        this.draftBoard.set(null);
       },
       error: async (err: unknown) => {
         this.busy.set(false);
         await this.toast(extractErrorMessage(err, 'Could not save that choice.'), 'danger');
+      },
+    });
+  }
+
+  openTeamEntry(): void {
+    const competition = this.competition();
+    if (!competition || this.busy() || this.entryOpen() || this.participants().length < 2) return;
+    this.busy.set(true);
+    const settings = {
+      ...(competition.settings_json ?? {}),
+      team_entry_open: true,
+    };
+    this.api.updateCompetition(this.competitionId, { settings_json: settings }).subscribe({
+      next: (updated) => {
+        const settingsJson =
+          updated.settings_json && Object.keys(updated.settings_json).length
+            ? updated.settings_json
+            : settings;
+        this.competition.update((current) =>
+          current ? { ...current, settings_json: settingsJson } : current,
+        );
+        this.busy.set(false);
+        this.ensureProfiles();
+        if (this.teamEntry() === 'draft') this.loadDraft();
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not start picking or drafting.'), 'danger');
       },
     });
   }
@@ -1567,10 +1855,21 @@ export class CompetitionSetupPage implements OnInit {
   }
 
   profileNote(profile: ProfileSummary): string {
+    const team = this.draftedTeam(profile.id);
+    if (team) return `Drafted to ${team}. Click Draft again to take them off.`;
     if (this.reservedIds().has(profile.id)) {
       return this.profileEntrants() ? 'Already entered' : 'Already picked in this league';
     }
     return profile.email;
+  }
+
+  draftedTeam(id: string): string | null {
+    return this.draftBoard()?.picks?.find((pick) => pick.user === id)?.team_name ?? null;
+  }
+
+  draftBusy(id: string): boolean {
+    if (this.busy()) return true;
+    return this.profileBlocked(id) && !this.draftedTeam(id);
   }
 
   toggleProfile(id: string, event: CustomEvent<{ checked: boolean }>): void {
@@ -1584,17 +1883,24 @@ export class CompetitionSetupPage implements OnInit {
   }
 
   draftProfile(profile: ProfileSummary): void {
-    if (this.profileBlocked(profile.id) || this.busy()) return;
+    if (this.draftBusy(profile.id)) return;
+    const takingOff = !!this.draftedTeam(profile.id);
     this.busy.set(true);
     this.api.draftPlayer(this.competitionId, profile.id).subscribe({
-      next: (board) => {
+      next: async (board) => {
         this.draftBoard.set(board);
         this.busy.set(false);
         this.refreshEntrants();
+        if (board.undrafted || takingOff) {
+          await this.toast(`${profile.display_name || profile.email} is off the board.`, 'success');
+        }
       },
       error: async (err: unknown) => {
         this.busy.set(false);
-        await this.toast(extractErrorMessage(err, 'Could not draft that profile.'), 'danger');
+        await this.toast(
+          extractErrorMessage(err, takingOff ? 'Could not undraft that profile.' : 'Could not draft that profile.'),
+          'danger',
+        );
       },
     });
   }
@@ -1719,7 +2025,6 @@ export class CompetitionSetupPage implements OnInit {
       .createParticipant(this.competitionId, {
         name,
         kind: this.entrantKind() === 'individual' ? 'individual' : 'team',
-        member_ids: this.teamEntry() === 'pick' ? this.selectedProfileIds() : [],
       })
       .subscribe({
       next: (participant) => {
@@ -1727,10 +2032,7 @@ export class CompetitionSetupPage implements OnInit {
         this.newParticipantName = '';
         this.selectedProfileIds.set([]);
         this.busy.set(false);
-        if (this.teamEntry() === 'draft') {
-          this.loadDraft();
-          return;
-        }
+        if (this.teamEntry()) return;
         if (participant.kind === 'team') {
           void this.router.navigate([
             '/tabs/competitions',
@@ -1951,7 +2253,10 @@ export class CompetitionSetupPage implements OnInit {
         double_round: this.generate.double_round,
         replace_existing: this.generate.replace_existing,
         ...(this.generate.method === 'league_knockout'
-          ? { cup_every_league_rounds: Number(this.generate.cup_every_league_rounds) || 3 }
+          ? {
+              cup_every_league_rounds: Number(this.generate.cup_every_league_rounds) || 3,
+              cups: this.normalizedCups(),
+            }
           : {}),
       })
       .subscribe({
