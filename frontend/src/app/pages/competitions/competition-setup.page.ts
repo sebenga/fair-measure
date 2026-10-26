@@ -111,27 +111,30 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
             <h3 class="fm-section-title">Entrants ({{ participants().length }})</h3>
 
             @if (entrantKind() === 'team' && !isCombination()) {
-              <p class="hint">
-                Choose how teams are filled. A team needs {{ squadSize() }} players, and each player accepts before they count.
-              </p>
-              <div class="entry-modes">
-                <button
-                  type="button"
-                  [class.selected]="teamEntry() === 'pick'"
-                  (click)="setTeamEntry('pick')"
-                  [disabled]="busy()"
-                >
-                  Pick teams
-                </button>
-                <button
-                  type="button"
-                  [class.selected]="teamEntry() === 'draft'"
-                  (click)="setTeamEntry('draft')"
-                  [disabled]="busy()"
-                >
-                  Draft
-                </button>
-              </div>
+              @if (!teamEntry()) {
+                <p class="hint">
+                  Choose how teams are filled. A team needs {{ squadSize() }} players. A competition uses
+                  one method — pick teams, or draft. You cannot switch later.
+                </p>
+                <div class="entry-modes">
+                  <button type="button" (click)="setTeamEntry('pick')" [disabled]="busy()">
+                    Pick teams
+                  </button>
+                  <button type="button" (click)="setTeamEntry('draft')" [disabled]="busy()">
+                    Draft
+                  </button>
+                </div>
+              } @else {
+                <p class="hint">
+                  @if (teamEntry() === 'pick') {
+                    This league picks teams. A team needs at least {{ squadSize() }} players to start,
+                    and each profile accepts before they count. You can add more later if the team grows.
+                  } @else {
+                    This league drafts players. A team needs at least {{ squadSize() }} players to start.
+                    Drafted profiles join when they are picked. You can add more later if the team grows.
+                  }
+                </p>
+              }
             }
 
             @if (isCombination()) {
@@ -194,9 +197,11 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   } @else if (entrantKind() === 'pair') {
                     Name the pair first. Open it and pick two profiles. Each person accepts before they are in.
                   } @else if (teamEntry() === 'draft') {
-                    Name each team. Players are drafted onto them, one pick at a time, until every team has {{ squadSize() }}.
+                    Name each team. Players are drafted onto them, one pick at a time, until every team has
+                    {{ squadSize() }}. They join as soon as they are drafted. Add more later on the team if it grows.
                   } @else {
                     Name the team and select at least {{ squadSize() }} profiles. They accept before they join.
+                    Add more later on the team if it grows.
                   }
                 </p>
                 @if (teamEntry() === 'pick') {
@@ -274,7 +279,9 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
               } @else if (!board.teams.length) {
                 <p class="hint">Name the teams first, then draft profiles onto them.</p>
               } @else {
-                <p class="hint">Every team has {{ squadSize() }} players drafted.</p>
+                <p class="hint">
+                  Every team has {{ squadSize() }} players drafted. Open a team to add more if it grows.
+                </p>
               }
               <ion-list inset="true">
                 @for (team of board.teams; track team.id) {
@@ -282,9 +289,10 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                     <ion-label>
                       <h2>{{ team.name }}</h2>
                       <p>
-                        {{ team.accepted }} of {{ board.squad_size }} accepted
-                        @if (team.pending) {
-                          · {{ team.pending }} waiting
+                        @if (team.accepted >= board.squad_size) {
+                          {{ team.accepted }} drafted
+                        } @else {
+                          {{ team.accepted }} of {{ board.squad_size }} drafted
                         }
                       </p>
                     </ion-label>
@@ -337,8 +345,18 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                     <ion-label>
                       <h2>{{ participant.name }}</h2>
                       <p>
-                        @if (teamEntry() && participant.kind === 'team') {
-                          {{ participant.roster.length }} of {{ squadSize() }} accepted
+                        @if (teamEntry() === 'draft' && participant.kind === 'team') {
+                          @if (participant.roster.length >= squadSize()) {
+                            {{ participant.roster.length }} drafted
+                          } @else {
+                            {{ participant.roster.length }} of {{ squadSize() }} drafted
+                          }
+                        } @else if (teamEntry() && participant.kind === 'team') {
+                          @if (participant.roster.length >= squadSize()) {
+                            {{ participant.roster.length }} accepted
+                          } @else {
+                            {{ participant.roster.length }} of {{ squadSize() }} accepted
+                          }
                           @if (participant.pending_count) {
                             · {{ participant.pending_count }} waiting
                           }
@@ -672,15 +690,36 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                     interface="popover"
                     [(ngModel)]="generate.method"
                     name="method"
+                    [disabled]="!!competition()?.format && competition()!.format !== 'freeform'"
                   >
                     <ion-select-option value="round_robin">
-                      Round robin — everyone plays everyone
+                      League — everyone plays everyone
                     </ion-select-option>
                     <ion-select-option value="knockout">
                       Knockout — single elimination
                     </ion-select-option>
+                    <ion-select-option value="league_knockout">
+                      League and knockout
+                    </ion-select-option>
                   </ion-select>
                 </ion-item>
+
+                @if (generate.method === 'league_knockout') {
+                  <ion-item>
+                    <ion-input
+                      label="Cup game after every"
+                      labelPlacement="stacked"
+                      type="number"
+                      inputmode="numeric"
+                      min="1"
+                      [(ngModel)]="generate.cup_every_league_rounds"
+                      name="cupEvery"
+                    />
+                  </ion-item>
+                  <p class="hint">
+                    After this many league match days the schedule inserts a competition (cup) game.
+                  </p>
+                }
 
                 <ion-item>
                   <ion-input
@@ -1131,6 +1170,7 @@ export class CompetitionSetupPage implements OnInit {
     minutes_between_fixtures: 0,
     double_round: false,
     replace_existing: false,
+    cup_every_league_rounds: 3,
   };
 
   ngOnInit(): void {
@@ -1157,6 +1197,12 @@ export class CompetitionSetupPage implements OnInit {
         }
         if (competition.starts_on) {
           this.generate.starts_on = competition.starts_on;
+        }
+        if (competition.format === 'knockout') this.generate.method = 'knockout';
+        if (competition.format === 'league_knockout') {
+          this.generate.method = 'league_knockout';
+          const every = Number(competition.settings_json?.['cup_every_league_rounds']);
+          if (Number.isFinite(every) && every > 0) this.generate.cup_every_league_rounds = every;
         }
         const limit = competition.settings_json?.['time_limit_minutes'];
         const overtime = competition.settings_json?.['overtime_minutes'];
@@ -1481,13 +1527,13 @@ export class CompetitionSetupPage implements OnInit {
 
   canAddParticipant(): boolean {
     if (!this.newParticipantName.trim()) return false;
-    if (this.teamEntry() === 'pick') return this.selectedProfileIds().length >= 14;
+    if (this.teamEntry() === 'pick') return this.selectedProfileIds().length >= this.squadSize();
     return true;
   }
 
   setTeamEntry(mode: 'pick' | 'draft'): void {
     const competition = this.competition();
-    if (!competition || this.busy() || this.teamEntry() === mode) return;
+    if (!competition || this.busy() || this.teamEntry()) return;
     this.busy.set(true);
     const settings = {
       ...(competition.settings_json ?? {}),
@@ -1904,6 +1950,9 @@ export class CompetitionSetupPage implements OnInit {
         minutes_between_fixtures: Number(this.generate.minutes_between_fixtures) || 0,
         double_round: this.generate.double_round,
         replace_existing: this.generate.replace_existing,
+        ...(this.generate.method === 'league_knockout'
+          ? { cup_every_league_rounds: Number(this.generate.cup_every_league_rounds) || 3 }
+          : {}),
       })
       .subscribe({
         next: async (fixtures) => {

@@ -490,7 +490,9 @@ export class CompetitionFixturesComponent implements OnInit {
     if (this.resultType()) return null;
     const format = this.competition().format;
     if (format === 'knockout') return 'bracket';
-    if (format === 'league' || format === 'ladder' || format === 'group_knockout') return 'rounds';
+    if (format === 'league' || format === 'ladder' || format === 'group_knockout' || format === 'league_knockout') {
+      return 'rounds';
+    }
     return null;
   }
 

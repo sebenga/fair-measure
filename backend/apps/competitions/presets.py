@@ -64,6 +64,7 @@ SCORING_LOCKED_MESSAGE = "This preset locks scoring. Duplicate the competition t
 FORMAT_TO_MODEL = {
     "league": "league",
     "knockout": "knockout",
+    "league_knockout": "league_knockout",
     "groups_knockout": "group_knockout",
     "round_robin": "league",
     "ladder": "ladder",
@@ -83,6 +84,8 @@ def format_allowed(settings: dict | None, model_format: str | None) -> bool:
     allowed = allowed_model_formats(settings)
     if allowed is None or not model_format or model_format == "freeform":
         return True
+    if model_format == "league_knockout":
+        return "league_knockout" in allowed or {"league", "knockout"} <= allowed
     return model_format in allowed
 
 

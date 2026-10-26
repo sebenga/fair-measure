@@ -110,6 +110,7 @@ from .services import (
     ScheduleOptions,
     award_criterion,
     generate_knockout,
+    generate_league_and_knockout,
     generate_round_robin,
     record_result,
 )
@@ -275,7 +276,12 @@ class FixtureViewSet(viewsets.ModelViewSet):
         if len(participants) < 2:
             raise ValidationError("Add at least two participants before generating fixtures.")
 
-        scheduled_as = "knockout" if data["method"] == "knockout" else "league"
+        if data["method"] == "knockout":
+            scheduled_as = "knockout"
+        elif data["method"] == "league_knockout":
+            scheduled_as = "league_knockout"
+        else:
+            scheduled_as = "league"
         if not format_allowed(competition.settings_json, scheduled_as):
             raise ValidationError(
                 f"This kind of competition cannot be scheduled as a {scheduled_as.replace('_', ' ')}."
@@ -290,8 +296,9 @@ class FixtureViewSet(viewsets.ModelViewSet):
             ]
             if short:
                 names = ", ".join(short)
+                needed_as = "accepted" if team_entry_mode(competition) == "pick" else "drafted"
                 raise ValidationError(
-                    f"Each team needs {needed} accepted players before a schedule. Still short: {names}."
+                    f"Each team needs {needed} {needed_as} players before a schedule. Still short: {names}."
                 )
 
         stage = None
@@ -306,6 +313,7 @@ class FixtureViewSet(viewsets.ModelViewSet):
             double_round=data["double_round"],
             location=data.get("location", ""),
             stage=stage,
+            cup_every_league_rounds=data.get("cup_every_league_rounds") or 0,
         )
 
         with transaction.atomic():
@@ -317,6 +325,8 @@ class FixtureViewSet(viewsets.ModelViewSet):
 
             if data["method"] == "knockout":
                 created = generate_knockout(competition, participants, options)
+            elif data["method"] == "league_knockout":
+                created = generate_league_and_knockout(competition, participants, options)
             else:
                 created = generate_round_robin(competition, participants, options)
 

@@ -115,8 +115,9 @@ def schedule_next(
             if person.roster.filter(is_active=True).count() < needed
         ]
         if short:
+            needed_as = "accepted" if team_entry_mode(competition) == "pick" else "drafted"
             raise ValidationError(
-                f"Each team needs {needed} accepted players before a schedule. Still short: {', '.join(short)}."
+                f"Each team needs {needed} {needed_as} players before a schedule. Still short: {', '.join(short)}."
             )
 
     settings = competition.settings_json or {}

@@ -2,7 +2,13 @@
 
 export type Role = 'owner' | 'admin' | 'scorer' | 'member';
 
-export type CompetitionFormat = 'league' | 'knockout' | 'group_knockout' | 'ladder' | 'freeform';
+export type CompetitionFormat =
+  | 'league'
+  | 'knockout'
+  | 'league_knockout'
+  | 'group_knockout'
+  | 'ladder'
+  | 'freeform';
 
 export type CompetitionStatus = 'draft' | 'active' | 'completed' | 'archived';
 
@@ -790,7 +796,7 @@ export function teamSheetOf(competition: {
   return raw as TeamSheet;
 }
 
-/** Fewest accepted players a team needs for this competition. */
+/** Fewest players a team needs for this competition. Picked players must accept; drafted players count at once. */
 export function squadSizeOf(competition: {
   settings_json?: Record<string, unknown>;
 }): number {
@@ -952,7 +958,7 @@ export interface NextSeasonResponse {
 }
 
 export interface GenerateFixturesRequest {
-  method: 'round_robin' | 'knockout';
+  method: 'round_robin' | 'knockout' | 'league_knockout';
   participant_ids?: string[];
   stage_id?: string | null;
   starts_on: string;
@@ -962,4 +968,5 @@ export interface GenerateFixturesRequest {
   double_round?: boolean;
   location?: string;
   replace_existing?: boolean;
+  cup_every_league_rounds?: number;
 }

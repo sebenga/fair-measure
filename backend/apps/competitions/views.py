@@ -7,6 +7,7 @@ from decimal import Decimal
 from django.db.models import Count, Prefetch, Q, QuerySet
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import generics, status, viewsets
@@ -188,21 +189,25 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         competition = self.get_object()
         if not has_at_least(competition, request.user, Role.ADMIN):
             raise PermissionDenied("Only competition admins can advance a bracket.")
-        if competition.format != "knockout":
+        if competition.format not in {"knockout", "league_knockout"}:
             raise ValidationError("Only knockout competitions have a bracket to advance.")
 
+        cup_stage = None
+        if competition.format == "league_knockout":
+            cup_stage = competition.stages.filter(kind="knockout").order_by("display_order").first()
+        cup_fixtures = Fixture.objects.filter(competition=competition)
+        if cup_stage is not None:
+            cup_fixtures = cup_fixtures.filter(stage=cup_stage)
+
         latest = (
-            Fixture.objects.filter(competition=competition)
-            .order_by("-round_number")
+            cup_fixtures.order_by("-round_number")
             .values_list("round_number", flat=True)
             .first()
         )
         if latest is None:
             raise ValidationError("There is no round to advance.")
         current = list(
-            Fixture.objects.filter(competition=competition, round_number=latest).order_by(
-                "created_at"
-            )
+            cup_fixtures.filter(round_number=latest).order_by("created_at")
         )
         winners = round_winners(current)
         if not winners:
@@ -210,13 +215,19 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         if len(winners) < 2:
             return Response({"advanced": False, "detail": "The bracket is complete."})
 
+        reserved = list((competition.settings_json or {}).get("cup_slot_datetimes") or [])
+        raw_kickoff = reserved.pop(0) if reserved else None
+        next_kickoff = parse_datetime(raw_kickoff) if isinstance(raw_kickoff, str) else raw_kickoff
         pairs, bye = pair_advancers(winners)
         created = []
         with transaction.atomic():
             for home_id, away_id in pairs:
                 fixture = Fixture.objects.create(
                     competition=competition,
+                    stage=cup_stage,
                     round_number=(latest or 0) + 1,
+                    label=f"Cup round {(latest or 0) + 1}",
+                    scheduled_at=next_kickoff,
                     status=Fixture.Status.SCHEDULED,
                 )
                 FixtureSide.objects.create(
@@ -226,10 +237,16 @@ class CompetitionViewSet(viewsets.ModelViewSet):
                     fixture=fixture, participant_id=away_id, position=1, is_home=False
                 )
                 created.append(str(fixture.id))
+            if reserved or next_kickoff is not None:
+                settings = dict(competition.settings_json or {})
+                settings["cup_slot_datetimes"] = reserved
+                competition.settings_json = settings
+                competition.save(update_fields=["settings_json", "updated_at"])
             if bye is not None and pairs:
                 # A bye waits in the following round against the next winner.
                 fixture = Fixture.objects.create(
                     competition=competition,
+                    stage=cup_stage,
                     round_number=(latest or 0) + 1,
                     label="Bye",
                     status=Fixture.Status.COMPLETED,
@@ -808,6 +825,17 @@ class TeamPickListCreateView(APIView):
         participant = get_object_or_404(Participant, pk=participant_pk, competition=competition)
         if not _can_manage_team(request, participant):
             raise PermissionDenied("You cannot pick players for this team.")
+        if team_entry_mode(competition) == "draft":
+            needed = squad_size_for(competition)
+            if participant.roster.filter(is_active=True).count() < needed:
+                raise ValidationError(
+                    {
+                        "team_entry": (
+                            f"Draft this team to {needed} players first. "
+                            "Then you can add more as it grows."
+                        )
+                    }
+                )
         user_id = request.data.get("user")
         if not user_id:
             raise ValidationError({"user": "Choose a profile."})

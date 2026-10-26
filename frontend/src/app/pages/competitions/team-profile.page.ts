@@ -96,7 +96,7 @@ import { squadSizeOf } from '../../core/models';
             <p class="hint">{{ current.description }}</p>
           }
 
-          <h3 class="fm-section-title">Members ({{ current.roster.length }}{{ squadLabel() }})</h3>
+          <h3 class="fm-section-title">Members ({{ current.roster.length }})</h3>
           @if (usesHandicap()) {
             <p class="hint">
               Team handicap: <strong>{{ teamHandicap() }}</strong>. Each player runs from
@@ -106,9 +106,11 @@ import { squadSizeOf } from '../../core/models';
           }
           <p class="hint">
             @if (teamEntry() === 'draft') {
-              Players join through the draft. A player accepts before they count toward the {{ squadSize() }}.
+              Players join through the draft. A team needs at least {{ squadSize() }} to start. A drafted
+              player is on the team straight away. Add more later if the team grows.
             } @else if (teamEntry() === 'pick') {
-              {{ current.roster.length }} of {{ squadSize() }} players have accepted.
+              {{ current.roster.length }} accepted. A team needs at least {{ squadSize() }} to start, and
+              they must accept before they count. Add more later if the team grows.
             } @else {
               A player joins after they accept a pick. Someone already on a team, or waiting on another pick, stays unavailable.
             }
@@ -118,7 +120,13 @@ import { squadSizeOf } from '../../core/models';
             <div class="fm-empty">
               <ion-icon name="people-outline" aria-hidden="true" />
               <h3>No members yet</h3>
-              <p>Pick a profile. They accept before they are on the team.</p>
+              <p>
+                @if (teamEntry() === 'draft') {
+                  Draft profiles onto this team from Setup. After it has {{ squadSize() }}, you can add more here.
+                } @else {
+                  Pick a profile. They accept before they are on the team. You can add more later if the team grows.
+                }
+              </p>
             </div>
           } @else {
             <ion-list inset="true">
@@ -209,8 +217,15 @@ import { squadSizeOf } from '../../core/models';
             </ion-list>
           }
 
-          @if (canManage() && teamEntry() !== 'draft') {
-            <h3 class="fm-section-title">Pick a profile</h3>
+          @if (canManage() && teamEntry() === 'draft' && current.roster.length < squadSize()) {
+            <p class="hint">
+              Finish the draft from Setup first. After this team has {{ squadSize() }}, you can add more here.
+            </p>
+          }
+
+          @if (canManage() && (teamEntry() !== 'draft' || canGrowTeam())) {
+            <h3 class="fm-section-title">{{ teamEntry() === 'draft' ? 'Add a player' : 'Pick a profile' }}</h3>
+            <p class="hint">You can add more players as the team grows.</p>
             <ion-searchbar
               placeholder="Search profiles"
               [debounce]="150"
@@ -229,7 +244,7 @@ import { squadSizeOf } from '../../core/models';
                     [disabled]="profileBlocked(profile.id) || busy()"
                     (click)="$event.stopPropagation(); $event.preventDefault(); pickProfile(profile)"
                   >
-                    Pick
+                    {{ teamEntry() === 'draft' ? 'Add' : 'Pick' }}
                   </ion-button>
                 </ion-item>
               }
@@ -246,11 +261,15 @@ import { squadSizeOf } from '../../core/models';
                 placeholder="Email of a Fair Measure account"
               />
               <ion-button type="submit" size="small" [disabled]="busy() || !inviteEmail.trim()">
-                Pick by email
+                {{ teamEntry() === 'draft' ? 'Add by email' : 'Pick by email' }}
               </ion-button>
             </form>
             <ion-note class="footnote">
-              They join the team as soon as you pick them.
+              @if (teamEntry() === 'draft') {
+                They join as soon as you add them.
+              } @else {
+                They accept before they join the team.
+              }
             </ion-note>
           }
         }
@@ -315,8 +334,9 @@ export class TeamProfilePage implements OnInit {
     return value === 'pick' || value === 'draft' ? value : null;
   }
 
-  squadLabel(): string {
-    return this.teamEntry() ? ` of ${this.squadSize()}` : '';
+  canGrowTeam(): boolean {
+    if (this.teamEntry() !== 'draft') return true;
+    return (this.team()?.roster.length ?? 0) >= this.squadSize();
   }
 
   playingNumbers(): number[] {

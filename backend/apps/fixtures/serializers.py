@@ -439,7 +439,15 @@ class FixtureWriteSerializer(serializers.ModelSerializer):
 
 
 class GenerateFixturesSerializer(serializers.Serializer):
-    method = serializers.ChoiceField(choices=["round_robin", "knockout"], default="round_robin")
+    method = serializers.ChoiceField(
+        choices=["round_robin", "knockout", "league_knockout"], default="round_robin"
+    )
+    cup_every_league_rounds = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=40,
+        help_text="League and knockout: a cup match day after this many league match days.",
+    )
     participant_ids = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,

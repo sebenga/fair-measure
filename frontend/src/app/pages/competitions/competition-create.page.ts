@@ -675,8 +675,9 @@ function presetKind(preset: Preset): PresetKind {
                 }
 
                 <h3 class="fm-section-title">Format</h3>
+                <p class="hint">Choose league, knockout, or both. You must pick one.</p>
                 <div class="formats">
-                  @for (option of versusFormats; track option.value) {
+                  @for (option of structureFormats; track option.value) {
                     <button
                       type="button"
                       class="format"
@@ -694,6 +695,23 @@ function presetKind(preset: Preset): PresetKind {
                     </button>
                   }
                 </div>
+                @if (form.controls.format.value === 'league_knockout') {
+                  <ion-list inset="true">
+                    <ion-item>
+                      <ion-input
+                        label="Cup game after every"
+                        labelPlacement="stacked"
+                        type="number"
+                        inputmode="numeric"
+                        min="1"
+                        formControlName="cup_every_league_rounds"
+                      />
+                    </ion-item>
+                  </ion-list>
+                  <p class="hint">
+                    After this many league match days, the schedule inserts a competition (cup) game.
+                  </p>
+                }
                 <p class="hint">
                   Each match keeps a timeline: who scored, who was booked, and at which minute.
                   Yellow and red cards sit next to your scoring criteria. Rate players during the match.
@@ -701,6 +719,44 @@ function presetKind(preset: Preset): PresetKind {
               }
             } @else if (scoringLocked()) {
               <p class="hint">{{ lockedStructureHint() }}</p>
+              @if (!pointsTable()) {
+                <div class="formats">
+                  @for (option of structureChoices(); track option.value) {
+                    <button
+                      type="button"
+                      class="format"
+                      [class.selected]="form.controls.format.value === option.value"
+                      (click)="chooseFormat(option.value)"
+                    >
+                      <ion-icon [name]="option.icon" aria-hidden="true" />
+                      <div>
+                        <strong>{{ option.label }}</strong>
+                        <p>{{ option.blurb }}</p>
+                      </div>
+                      @if (form.controls.format.value === option.value) {
+                        <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                      }
+                    </button>
+                  }
+                </div>
+                @if (form.controls.format.value === 'league_knockout') {
+                  <ion-list inset="true">
+                    <ion-item>
+                      <ion-input
+                        label="Cup game after every"
+                        labelPlacement="stacked"
+                        type="number"
+                        inputmode="numeric"
+                        min="1"
+                        formControlName="cup_every_league_rounds"
+                      />
+                    </ion-item>
+                  </ion-list>
+                  <p class="hint">
+                    After this many league match days, the schedule inserts a competition (cup) game.
+                  </p>
+                }
+              }
               @if (unitCountOptions(); as choice) {
                 <h3 class="fm-section-title">{{ unitName(choice.unit) }}s per match</h3>
                 <p class="hint">Chosen now and locked once the competition is created.</p>
@@ -720,7 +776,7 @@ function presetKind(preset: Preset): PresetKind {
               }
             } @else {
               <div class="formats">
-                @for (option of formatChoices(); track option.value) {
+                @for (option of structureChoices(); track option.value) {
                   <button
                     type="button"
                     class="format"
@@ -738,6 +794,23 @@ function presetKind(preset: Preset): PresetKind {
                   </button>
                 }
               </div>
+              @if (form.controls.format.value === 'league_knockout') {
+                <ion-list inset="true">
+                  <ion-item>
+                    <ion-input
+                      label="Cup game after every"
+                      labelPlacement="stacked"
+                      type="number"
+                      inputmode="numeric"
+                      min="1"
+                      formControlName="cup_every_league_rounds"
+                    />
+                  </ion-item>
+                </ion-list>
+                <p class="hint">
+                  After this many league match days, the schedule inserts a competition (cup) game.
+                </p>
+              }
             }
           }
 
@@ -784,6 +857,24 @@ function presetKind(preset: Preset): PresetKind {
 
             @if (form.hasError('dateOrder')) {
               <p class="fm-form-error" role="alert">The end date is before the start date.</p>
+            }
+
+            @if (!pointsTable() && form.controls.format.value === 'league_knockout') {
+              <ion-list inset="true">
+                <ion-item>
+                  <ion-input
+                    label="Cup game after every"
+                    labelPlacement="stacked"
+                    type="number"
+                    inputmode="numeric"
+                    min="1"
+                    formControlName="cup_every_league_rounds"
+                  />
+                </ion-item>
+              </ion-list>
+              <p class="hint">
+                After this many league match days there is a competition game. Change this later when you generate the schedule.
+              </p>
             }
 
             @if (!pointsTable()) {
@@ -982,8 +1073,14 @@ export class CompetitionCreatePage implements OnInit {
     {
       value: 'knockout',
       label: 'Knockout',
-      blurb: 'Single elimination. Lose and you are out.',
+      blurb: 'Single elimination. Lose and you are out. There is no league table.',
       icon: 'git-network-outline',
+    },
+    {
+      value: 'league_knockout',
+      label: 'League and knockout',
+      blurb: 'A league table plus cup games. After every few league match days there is a competition game.',
+      icon: 'git-merge-outline',
     },
     {
       value: 'group_knockout',
@@ -1004,6 +1101,10 @@ export class CompetitionCreatePage implements OnInit {
       icon: 'sparkles-outline',
     },
   ];
+
+  readonly structureFormats = this.formats.filter((option) =>
+    option.value === 'league' || option.value === 'knockout' || option.value === 'league_knockout',
+  );
 
   readonly versusFormats = this.formats.filter((option) => option.value !== 'freeform');
 
@@ -1104,6 +1205,7 @@ export class CompetitionCreatePage implements OnInit {
       description: [''],
       sport: [''],
       format: ['league' as CompetitionFormat, [Validators.required]],
+      cup_every_league_rounds: [3, [Validators.min(1)]],
       starts_on: [''],
       ends_on: [''],
       timezone: [localTimezone()],
@@ -1225,12 +1327,12 @@ export class CompetitionCreatePage implements OnInit {
     if (this.isCustom()) {
       return this.pointsTable()
         ? 'Choose how the table is built. Points accumulation collects points without a match schedule.'
-        : 'Choose how the table is built. A VS competition plays fixtures and ranks on match results.';
+        : 'Choose league, knockout, or both. A VS competition plays fixtures and ranks on match results.';
     }
     if (this.scoringLocked()) {
-      return 'This follows the official structure for the preset. It cannot be changed.';
+      return 'Scoring follows the official rules. Choose whether this is a league, a knockout, or both.';
     }
-    return 'This decides how fixtures are generated. You can still add one-off matches later.';
+    return 'Choose league, knockout, or both. You can still add one-off matches later.';
   }
 
   lockedStructureHint(): string {
@@ -1240,10 +1342,7 @@ export class CompetitionCreatePage implements OnInit {
       const order = preset.accumulation_ranking === 'lowest_first' ? 'lowest total first' : 'highest first';
       return `Entrants do not play each other. The table ranks by points accumulated from the scoring rules above, ${order}.`;
     }
-    if (preset.format === 'knockout') {
-      return 'Knockout. The winner of each fixture advances until a champion is decided. There is no league table.';
-    }
-    return 'League. A win is worth 3 points, a draw 1, and a loss 0. The table ranks by points, then the sport’s tie-breakers.';
+    return 'Choose league, knockout, or league and knockout. Scoring stays as the official rules.';
   }
 
   showTypeLabel(): boolean {
@@ -1395,8 +1494,15 @@ export class CompetitionCreatePage implements OnInit {
     const allowed = this.activePreset()?.formats_allowed;
     if (!allowed?.length) return this.formats;
     const mapped = new Set(allowed.map((value) => this.modelFormat(value)));
+    if (mapped.has('league') && mapped.has('knockout')) mapped.add('league_knockout');
     const choices = this.formats.filter((option) => mapped.has(option.value));
     return choices.length ? choices : this.formats;
+  }
+
+  structureChoices(): FormatOption[] {
+    const allowed = new Set(this.formatChoices().map((option) => option.value));
+    const choices = this.structureFormats.filter((option) => allowed.has(option.value));
+    return choices.length ? choices : this.structureFormats;
   }
 
   private modelFormat(value: string): CompetitionFormat {
@@ -1405,6 +1511,7 @@ export class CompetitionCreatePage implements OnInit {
     if (
       value === 'league' ||
       value === 'knockout' ||
+      value === 'league_knockout' ||
       value === 'group_knockout' ||
       value === 'ladder' ||
       value === 'freeform'
@@ -1604,6 +1711,9 @@ export class CompetitionCreatePage implements OnInit {
         description: raw.description.trim(),
         sport: raw.sport.trim(),
         format: raw.format,
+        ...(raw.format === 'league_knockout'
+          ? { cup_every_league_rounds: Number(raw.cup_every_league_rounds) || 3 }
+          : {}),
         ...(locked ? {} : { scoring_basis: this.scoringBasis(), scoring_categories }),
         ...(this.unitCountOptions() && this.unitCount() ? { unit_count: this.unitCount() } : {}),
         ...(this.isCustom() && !this.pointsTable()

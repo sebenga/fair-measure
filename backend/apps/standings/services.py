@@ -639,6 +639,8 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
     )
     if stage is not None:
         fixtures = fixtures.filter(stage=stage)
+    elif competition.format == Competition.Format.LEAGUE_KNOCKOUT:
+        fixtures = fixtures.exclude(stage__kind=Stage.Kind.KNOCKOUT)
 
     form_by_participant: dict[str, list[str]] = defaultdict(list)
 

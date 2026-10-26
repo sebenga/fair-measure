@@ -1190,7 +1190,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
 
   isKnockout(): boolean {
     const format = this.competition()?.format;
-    return format === 'knockout' || format === 'group_knockout';
+    return format === 'knockout' || format === 'group_knockout' || format === 'league_knockout';
   }
 
   /** League, cup and ladder matches keep a named, timed timeline and ratings. */
@@ -1198,7 +1198,13 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     const competition = this.competition();
     if (!competition) return false;
     const format = competition.format;
-    if (format !== 'league' && format !== 'knockout' && format !== 'group_knockout' && format !== 'ladder') {
+    if (
+      format !== 'league' &&
+      format !== 'knockout' &&
+      format !== 'league_knockout' &&
+      format !== 'group_knockout' &&
+      format !== 'ladder'
+    ) {
       return false;
     }
     return (competition.settings_json?.['table_mode'] as string | undefined) !== 'points';

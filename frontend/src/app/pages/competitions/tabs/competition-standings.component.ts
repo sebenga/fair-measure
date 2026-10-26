@@ -780,7 +780,7 @@ export class CompetitionStandingsComponent implements OnInit {
   showsRounds(): boolean {
     if (this.pointsTable() || this.seriesTable()) return false;
     const format = this.competition().format;
-    return format === 'league' || format === 'ladder' || format === 'group_knockout';
+    return format === 'league' || format === 'ladder' || format === 'group_knockout' || format === 'league_knockout';
   }
 
   showsBonus(): boolean {

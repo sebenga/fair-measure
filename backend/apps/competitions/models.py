@@ -28,6 +28,7 @@ class Competition(BaseModel):
     class Format(models.TextChoices):
         LEAGUE = "league", _("League")
         KNOCKOUT = "knockout", _("Knockout")
+        LEAGUE_KNOCKOUT = "league_knockout", _("League and knockout")
         GROUP_KNOCKOUT = "group_knockout", _("Groups then knockout")
         LADDER = "ladder", _("Ladder")
         FREEFORM = "freeform", _("Freeform")

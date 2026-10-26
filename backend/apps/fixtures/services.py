@@ -23,6 +23,7 @@ class ScheduleOptions:
     double_round: bool = False  # home and away
     location: str = ""
     stage: Stage | None = None
+    cup_every_league_rounds: int = 0
 
 
 Pairing = tuple[Participant, Participant]
@@ -159,6 +160,171 @@ def generate_round_robin(
             )
             created.append(fixture)
 
+    return created
+
+
+def knockout_round_count(team_count: int) -> int:
+    """How many knockout rounds a field of this size needs, including byes."""
+
+    if team_count < 2:
+        return 0
+    size = 1
+    while size < team_count:
+        size *= 2
+    return int(math.log2(size))
+
+
+def interleave_match_days(league_rounds: int, cup_rounds: int, every: int) -> list[str]:
+    """League match days, with a cup day after every `every` league days."""
+
+    every = max(1, every)
+    sequence: list[str] = []
+    league_left = league_rounds
+    cup_left = cup_rounds
+    since_cup = 0
+    while league_left or cup_left:
+        if league_left and (since_cup < every or not cup_left):
+            sequence.append("league")
+            league_left -= 1
+            since_cup += 1
+        elif cup_left:
+            sequence.append("cup")
+            cup_left -= 1
+            since_cup = 0
+        else:
+            break
+    return sequence
+
+
+def league_and_cup_stages(competition: Competition) -> tuple[Stage, Stage]:
+    league = competition.stages.filter(kind=Stage.Kind.LEAGUE).order_by("display_order").first()
+    if league is None:
+        league = Stage.objects.create(
+            competition=competition, name="League", kind=Stage.Kind.LEAGUE, display_order=0
+        )
+    cup = competition.stages.filter(kind=Stage.Kind.KNOCKOUT).order_by("display_order").first()
+    if cup is None:
+        cup = Stage.objects.create(
+            competition=competition, name="Cup", kind=Stage.Kind.KNOCKOUT, display_order=1
+        )
+    return league, cup
+
+
+def _write_pair_round(
+    *,
+    competition: Competition,
+    stage: Stage | None,
+    pairs: list[tuple[Participant, Participant | None]],
+    round_number: int,
+    label: str,
+    kickoff: datetime | None,
+    options: ScheduleOptions,
+) -> list[Fixture]:
+    created: list[Fixture] = []
+    played = 0
+    for index, (home, away) in enumerate(pairs):
+        if away is None:
+            bye = Fixture.objects.create(
+                competition=competition,
+                stage=stage,
+                round_number=round_number,
+                label=f"{label} — match {index + 1} (bye)",
+                status=Fixture.Status.COMPLETED,
+                completed_at=timezone.now(),
+            )
+            side = FixtureSide.objects.create(
+                fixture=bye, participant=home, position=0, is_home=True
+            )
+            side.outcome = FixtureSide.Outcome.WIN
+            side.save(update_fields=["outcome", "updated_at"])
+            created.append(bye)
+            continue
+        when = None
+        if kickoff is not None:
+            when = kickoff + timedelta(minutes=options.minutes_between_fixtures * played)
+        played += 1
+        fixture = Fixture.objects.create(
+            competition=competition,
+            stage=stage,
+            round_number=round_number,
+            label=f"{label} — match {index + 1}",
+            scheduled_at=when,
+            location=options.location,
+        )
+        FixtureSide.objects.bulk_create(
+            [
+                FixtureSide(fixture=fixture, participant=home, position=0, is_home=True),
+                FixtureSide(fixture=fixture, participant=away, position=1, is_home=False),
+            ]
+        )
+        created.append(fixture)
+    return created
+
+
+@transaction.atomic
+def generate_league_and_knockout(
+    competition: Competition, participants: list[Participant], options: ScheduleOptions
+) -> list[Fixture]:
+    """League rounds with a cup match day after every N league match days."""
+
+    from apps.competitions.serializers import cup_every_league_rounds
+
+    league_rounds = round_robin_rounds(participants)
+    if options.double_round:
+        league_rounds += [[(away, home) for home, away in pairs] for pairs in league_rounds]
+    if not league_rounds:
+        return []
+
+    every = options.cup_every_league_rounds or cup_every_league_rounds(competition)
+    cup_rounds = knockout_round_count(len(participants))
+    sequence = interleave_match_days(len(league_rounds), cup_rounds, every)
+    slots = _slot_datetimes(options, len(sequence))
+    league_stage, cup_stage = league_and_cup_stages(competition)
+
+    created: list[Fixture] = []
+    league_index = 0
+    cup_index = 0
+    reserved_cup: list[str] = []
+    first_cup_pairs = knockout_slots(participants)
+
+    for step, kind in enumerate(sequence):
+        kickoff = slots[step] if step < len(slots) else None
+        if kind == "league":
+            pairs = [(home, away) for home, away in league_rounds[league_index]]
+            created.extend(
+                _write_pair_round(
+                    competition=competition,
+                    stage=league_stage,
+                    pairs=[(home, away) for home, away in pairs],
+                    round_number=league_index + 1,
+                    label=f"League round {league_index + 1}",
+                    kickoff=kickoff,
+                    options=options,
+                )
+            )
+            league_index += 1
+            continue
+        if cup_index == 0:
+            created.extend(
+                _write_pair_round(
+                    competition=competition,
+                    stage=cup_stage,
+                    pairs=first_cup_pairs,
+                    round_number=1,
+                    label="Cup round 1",
+                    kickoff=kickoff,
+                    options=options,
+                )
+            )
+        elif kickoff is not None:
+            reserved_cup.append(kickoff.isoformat())
+        cup_index += 1
+
+    settings = dict(competition.settings_json or {})
+    settings["cup_every_league_rounds"] = every
+    settings["cup_slot_datetimes"] = reserved_cup
+    competition.settings_json = settings
+    competition.save(update_fields=["settings_json", "updated_at"])
     return created
 
 

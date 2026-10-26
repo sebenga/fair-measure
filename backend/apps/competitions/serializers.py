@@ -36,7 +36,7 @@ from .presets import (
 )
 
 MATCH_EVENT_CATEGORIES = (YELLOW_CARD, RED_CARD)
-HEAD_TO_HEAD_FORMATS = {"league", "knockout", "group_knockout", "ladder"}
+HEAD_TO_HEAD_FORMATS = {"league", "knockout", "league_knockout", "group_knockout", "ladder"}
 
 
 def _ensure_match_events(competition) -> None:
@@ -381,7 +381,7 @@ MIN_TEAM_PLAYERS = 14
 
 
 def squad_size_for(competition) -> int:
-    """Fewest accepted players a team needs. Comes from the preset's team sheet."""
+    """Fewest players a team needs. Comes from the preset's team sheet."""
 
     settings = getattr(competition, "settings_json", None) or {}
     sheet = settings.get("team_sheet") or {}
@@ -400,6 +400,17 @@ def squad_size_for(competition) -> int:
     if starters > 0:
         return starters
     return MIN_TEAM_PLAYERS
+
+
+def cup_every_league_rounds(competition) -> int:
+    """How many league match days run before a cup game. Defaults to 3."""
+
+    settings = getattr(competition, "settings_json", None) or {}
+    try:
+        every = int(settings.get("cup_every_league_rounds") or 3)
+    except (TypeError, ValueError):
+        every = 3
+    return max(1, every)
 
 
 def team_entry_mode(competition) -> str | None:
@@ -466,8 +477,19 @@ def draft_payload(competition) -> dict:
     }
 
 
+def _pick_joins_immediately(competition, user, actor) -> bool:
+    """Drafted players join at once. So does anyone who picks themselves."""
+    if getattr(actor, "id", None) == getattr(user, "id", None):
+        return True
+    return team_entry_mode(competition) == "draft"
+
+
 def offer_team_pick(participant: Participant, user, actor) -> TeamPick:
-    """Put a profile on a team. The team accepts as soon as they are picked."""
+    """Put a profile on a team.
+
+    Drafted players are valid as soon as they are picked. A profile added when
+    you pick a team stays pending until they accept.
+    """
     if participant.kind != Participant.Kind.TEAM:
         raise serializers.ValidationError({"user": "Pick profiles onto a team."})
 
@@ -503,7 +525,9 @@ def offer_team_pick(participant: Participant, user, actor) -> TeamPick:
     ).first()
     if pending is not None:
         if pending.participant_id == participant.id:
-            return confirm_team_pick(pending, actor)
+            if _pick_joins_immediately(participant.competition, user, actor):
+                return confirm_team_pick(pending, actor)
+            return pending
         raise serializers.ValidationError(
             {"user": "That profile already has a pick waiting in this league."}
         )
@@ -513,7 +537,10 @@ def offer_team_pick(participant: Participant, user, actor) -> TeamPick:
         user=user,
         invited_by=actor if getattr(actor, "is_authenticated", False) else None,
     )
-    return confirm_team_pick(pick, actor)
+    if _pick_joins_immediately(participant.competition, user, actor):
+        return confirm_team_pick(pick, actor)
+    _notify_team_invite(pick, actor, accepted=False)
+    return pick
 
 
 def _notify_team_invite(pick: TeamPick, actor, *, accepted: bool) -> None:
@@ -546,7 +573,7 @@ def _notify_team_invite(pick: TeamPick, actor, *, accepted: bool) -> None:
 
 
 def confirm_team_pick(pick: TeamPick, actor=None) -> TeamPick:
-    """Move a pending pick onto the roster. Used when a team auto-accepts."""
+    """Move a pending pick onto the roster. Draft and self-picks use this."""
 
     if pick.status != TeamPick.Status.PENDING:
         raise serializers.ValidationError({"status": "This pick is already settled."})
@@ -997,6 +1024,13 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         write_only=True,
         help_text="Presets that offer it: how many periods a match has. Locked after creation.",
     )
+    cup_every_league_rounds = serializers.IntegerField(
+        required=False,
+        write_only=True,
+        min_value=1,
+        max_value=40,
+        help_text="League and knockout: play a cup match day after this many league match days.",
+    )
 
     def validate_league_points(self, value: dict) -> dict:
         unknown = set(value) - {"win", "draw", "loss"}
@@ -1038,6 +1072,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
             "table_bonus",
             "participant_type",
             "unit_count",
+            "cup_every_league_rounds",
         ]
         read_only_fields = ["id", "slug"]
 
@@ -1114,6 +1149,20 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         settings = attrs.get("settings_json")
         if isinstance(settings, dict):
             _validate_game_time(settings, self.instance)
+            current_mode = team_entry_mode(self.instance) if self.instance is not None else None
+            incoming_mode = settings.get("team_entry")
+            if current_mode in {"pick", "draft"}:
+                if incoming_mode in {"pick", "draft"} and incoming_mode != current_mode:
+                    raise serializers.ValidationError(
+                        {
+                            "team_entry": (
+                                "This competition already fills teams by "
+                                f"{'picking' if current_mode == 'pick' else 'drafting'}. "
+                                "A league uses one method."
+                            )
+                        }
+                    )
+                settings["team_entry"] = current_mode
         return attrs
 
     def update(self, instance: Competition, validated_data: dict) -> Competition:
@@ -1134,6 +1183,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         "team_entry",
         "profile_entrants",
         "level",
+        "cup_every_league_rounds",
     )
 
     def _update(self, instance: Competition, validated_data: dict) -> Competition:
@@ -1173,6 +1223,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         table_bonus = validated_data.pop("table_bonus", None)
         participant_type = validated_data.pop("participant_type", None)
         unit_count = validated_data.pop("unit_count", None)
+        cup_every = validated_data.pop("cup_every_league_rounds", None)
         user = self.context["request"].user
 
         versus = preset_key == "custom" and scoring_basis == "results"
@@ -1235,7 +1286,13 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
                 if settings["participant_type"] == "individual":
                     settings["profile_entrants"] = True
                 settings["league_points"] = {key: float(value) for key, value in points.items()}
-                settings["formats_allowed"] = ["league", "knockout", "groups_knockout", "ladder"]
+                settings["formats_allowed"] = [
+                    "league",
+                    "knockout",
+                    "league_knockout",
+                    "groups_knockout",
+                    "ladder",
+                ]
                 if table_bonus is not None:
                     table_bonus["scoring_code"] = _resolve_bonus_scoring_code(
                         competition, table_bonus.get("scoring_code") or ""
@@ -1264,6 +1321,12 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
 
         if versus:
             _ensure_match_events(competition)
+
+        if cup_every is not None or competition.format == Competition.Format.LEAGUE_KNOCKOUT:
+            settings = dict(competition.settings_json or {})
+            settings["cup_every_league_rounds"] = int(cup_every or 3)
+            competition.settings_json = settings
+            competition.save(update_fields=["settings_json", "updated_at"])
 
         return competition
 
