@@ -38,7 +38,7 @@ def test_register_rejects_a_duplicate_email(anon_api, user):
 def test_login_then_read_me(anon_api, user):
     login = anon_api.post(
         "/api/v1/auth/login",
-        {"email": "owner@example.com", "password": "s3cret-password"},
+        {"email": "  OWNER@example.com  ", "password": "s3cret-password"},
         format="json",
     )
     assert login.status_code == 200

@@ -1,0 +1,17 @@
+{
+  "name": "Fair Measure",
+  "short_name": "Fair Measure",
+  "description": "Build any competition you can describe, then run it.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f766e",
+  "icons": [
+    {
+      "src": "assets/icon/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

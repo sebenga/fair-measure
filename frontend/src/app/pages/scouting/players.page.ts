@@ -11,6 +11,7 @@ import {
   IonToolbar,
 } from '@ionic/angular/standalone';
 
+import { extractErrorMessage } from '../../core/error-message';
 import type { ProfileCard, ScoutingCatalog } from '../../core/scouting.models';
 import { ScoutingService, groupBySport } from '../../core/scouting.service';
 
@@ -50,6 +51,13 @@ import { ScoutingService, groupBySport } from '../../core/scouting.service';
         @for (n of [0, 1, 2, 3]; track n) {
           <div class="fm-card card"><span class="fm-skeleton" style="width: 60%; height: 18px"></span></div>
         }
+      } @else if (error()) {
+        <div class="fm-empty">
+          <ion-icon name="alert-circle-outline" aria-hidden="true" />
+          <h3>Could not load players</h3>
+          <p>{{ error() }}</p>
+          <button type="button" class="btn" (click)="load()">Try again</button>
+        </div>
       } @else {
         @for (group of groups(); track group.key) {
           <h3 class="fm-section-title sport-title">
@@ -146,6 +154,7 @@ export class ScoutingPlayersPage {
   readonly players = signal<ProfileCard[]>([]);
   readonly count = signal(0);
   readonly loading = signal(true);
+  readonly error = signal<string | null>(null);
   readonly sport = signal('');
 
   /** Players grouped by sport code, in catalogue order. */
@@ -188,15 +197,19 @@ export class ScoutingPlayersPage {
     void this.router.navigateByUrl(`/tabs/scouting/players/${id}`);
   }
 
-  private load(): void {
+  load(): void {
     this.loading.set(true);
+    this.error.set(null);
     this.scouting.listProfiles({ q: this.query, sport: this.sport() }).subscribe({
       next: (page) => {
         this.players.set(page.results);
         this.count.set(page.count);
         this.loading.set(false);
       },
-      error: () => this.loading.set(false),
+      error: (err: unknown) => {
+        this.error.set(extractErrorMessage(err, 'Could not load players.'));
+        this.loading.set(false);
+      },
     });
   }
 }

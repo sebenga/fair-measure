@@ -837,6 +837,18 @@ export function isPointsTable(competition: {
   );
 }
 
+/** Fantasy picks a squad from club rosters. Only team-sport leagues have those. */
+export function showsFantasy(competition: {
+  settings_json?: Record<string, unknown>;
+  scoring_basis?: 'results' | 'criteria';
+  points_policy?: Pick<PointsPolicy, 'win_points' | 'draw_points' | 'loss_points'>;
+}): boolean {
+  const type = String(competition.settings_json?.['participant_type'] ?? 'team');
+  if (type !== 'team') return false;
+  if (competition.scoring_basis === 'criteria') return false;
+  return !isPointsTable(competition);
+}
+
 export function tableBonusOf(competition: {
   settings_json?: Record<string, unknown>;
 }): TableBonus | null {

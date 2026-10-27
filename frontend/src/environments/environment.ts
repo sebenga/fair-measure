@@ -3,6 +3,7 @@ export const environment = {
   apiBaseUrl: 'http://localhost:8000/api/v1',
   realtimeUrl: 'http://localhost:4000',
   googleClientId: '',
+  features: { horses: true },
 
   /**
    * Web push config. Copy these from the Firebase console (Project settings →

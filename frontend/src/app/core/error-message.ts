@@ -18,6 +18,10 @@ export function extractErrorMessage(error: unknown, fallback = 'Something went w
     return 'Could not reach the server. Check your connection and try again.';
   }
 
+  if (typeof error.error === 'string' && error.error.includes('<html')) {
+    return 'The server sent a page instead of data. Retry in a moment.';
+  }
+
   const body = error.error as Partial<ApiError> | undefined;
   const envelope = body?.error;
   if (!envelope) {

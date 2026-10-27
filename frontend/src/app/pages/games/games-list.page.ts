@@ -39,6 +39,13 @@ import { GamesService } from '../../core/games.service';
 
       @if (loading()) {
         <div class="centered"><ion-spinner name="crescent" /></div>
+      } @else if (error()) {
+        <div class="fm-empty">
+          <ion-icon name="alert-circle-outline" aria-hidden="true" />
+          <h3>Could not load Games</h3>
+          <p>{{ error() }}</p>
+          <button type="button" class="btn" (click)="reload()">Try again</button>
+        </div>
       } @else {
         <ul class="list section">
           @for (games of list(); track games.id) {
@@ -120,6 +127,7 @@ export class GamesListPage {
   ];
   readonly list = signal<Games[]>([]);
   readonly loading = signal(true);
+  readonly error = signal<string | null>(null);
   readonly busy = signal(false);
   readonly name = signal('');
   readonly edition = signal('');
@@ -132,12 +140,21 @@ export class GamesListPage {
   readonly placingPoints = signal('5, 3, 1');
 
   ionViewWillEnter(): void {
+    this.reload();
+  }
+
+  reload(): void {
+    this.loading.set(true);
+    this.error.set(null);
     this.games.list().subscribe({
       next: (rows) => {
         this.list.set(rows);
         this.loading.set(false);
       },
-      error: () => this.loading.set(false),
+      error: (err: unknown) => {
+        this.error.set(extractErrorMessage(err, 'Could not load Games.'));
+        this.loading.set(false);
+      },
     });
   }
 

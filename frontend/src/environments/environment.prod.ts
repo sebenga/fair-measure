@@ -3,6 +3,7 @@ export const environment = {
   apiBaseUrl: 'https://api.fairmeasure.app/api/v1',
   realtimeUrl: 'https://realtime.fairmeasure.app',
   googleClientId: '',
+  features: { horses: false },
 
   firebase: {
     apiKey: '',

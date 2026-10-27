@@ -24,6 +24,19 @@ from .rules import (
 )
 from .scoring import classify_slot, money, points_text, season_totals, slots_from_positions
 
+UNAVAILABLE = "Fantasy is only for team sports such as soccer and rugby."
+
+
+def available(competition) -> bool:
+    """Fantasy needs club rosters: soccer, rugby and other team-sport leagues."""
+
+    settings = competition.settings_json or {}
+    if (settings.get("participant_type") or "team") != "team":
+        return False
+    if settings.get("scoring_basis") == "criteria" or settings.get("table_mode") == "points":
+        return False
+    return True
+
 
 def pool_members(competition):
     return (

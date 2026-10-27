@@ -31,7 +31,7 @@ import { forkJoin } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail, TeamPick } from '../../core/models';
-import { isPointsTable } from '../../core/models';
+import { isPointsTable, showsFantasy } from '../../core/models';
 import { RealtimeService, competitionRoom } from '../../core/realtime.service';
 import { CompetitionCupComponent } from './tabs/competition-cup.component';
 import { CompetitionFantasyComponent } from './tabs/competition-fantasy.component';
@@ -89,7 +89,8 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
           }
           @if (canManage()) {
             <ion-button (click)="openSetup()">
-              <ion-icon slot="icon-only" name="options-outline" aria-label="Setup" />
+              <ion-icon slot="start" name="options-outline" aria-hidden="true" />
+              Setup
             </ion-button>
           }
           @if (isOwner()) {
@@ -120,9 +121,11 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
               <ion-label>Table</ion-label>
             </ion-segment-button>
           }
-          <ion-segment-button value="fantasy" (click)="selectTab('fantasy')">
-            <ion-label>Fantasy</ion-label>
-          </ion-segment-button>
+          @if (showsFantasyTab()) {
+            <ion-segment-button value="fantasy" (click)="selectTab('fantasy')">
+              <ion-label>Fantasy</ion-label>
+            </ion-segment-button>
+          }
         </ion-segment>
       </ion-toolbar>
     </ion-header>
@@ -141,6 +144,12 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
         @if (demoExpiryLabel(); as expiry) {
           <div class="pick-banner">
             <p>This is a one-hour demo. It deletes at {{ expiry }}.</p>
+          </div>
+        }
+        @if (canManage()) {
+          <div class="pick-banner">
+            <p>Change teams, scoring, fixtures or officials from setup.</p>
+            <ion-button size="small" (click)="openSetup()">Open setup</ion-button>
           </div>
         }
         @for (pick of myPicks(); track pick.id) {
@@ -552,6 +561,9 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
         if (isPointsTable(competition) && this.tab() === 'fixtures') {
           this.selectTab('standings');
         }
+        if (!showsFantasy(competition) && this.tab() === 'fantasy') {
+          this.selectTab('feed');
+        }
         this.loading.set(false);
       },
       error: (err: unknown) => {
@@ -637,9 +649,15 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
     return format === 'league' || format === 'league_knockout' || format === 'group_knockout';
   }
 
+  showsFantasyTab(): boolean {
+    const competition = this.competition();
+    return competition ? showsFantasy(competition) : false;
+  }
+
   selectTab(value: string | undefined): void {
     if (value === 'fixtures' && !this.showsFixtures()) return;
     if (value === 'cup' && !this.showsCup()) return;
+    if (value === 'fantasy' && !this.showsFantasyTab()) return;
     if (
       value !== 'feed' &&
       value !== 'fixtures' &&

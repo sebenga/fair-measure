@@ -81,6 +81,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "apps.core.security.SecurityHeadersMiddleware",
     "apps.core.spa.SpaFallbackMiddleware",
 ]
 
@@ -175,7 +176,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "apps.core.pagination.DefaultPagination",
     "PAGE_SIZE": 25,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-    "DEFAULT_THROTTLE_RATES": {"anon": "60/min", "user": "1000/hour"},
+    "DEFAULT_THROTTLE_RATES": {"anon": "60/min", "user": "1000/hour", "auth": "5/min"},
     "EXCEPTION_HANDLER": "apps.core.exceptions.api_exception_handler",
 }
 
@@ -293,6 +294,23 @@ MEILISEARCH_API_KEY = env("MEILISEARCH_API_KEY")
 REALTIME_EVENT_CHANNEL = env("REALTIME_EVENT_CHANNEL", "fm:events")
 JOB_INBOX_KEY = env("JOB_INBOX_KEY", "fm:jobs:inbox")
 INTERNAL_API_TOKEN = env("INTERNAL_API_TOKEN")
+HEALTH_KEY = env("HEALTH_KEY")
+
+# Angular ships hashed JS. Styles stay 'unsafe-inline' because Ionic sets
+# element styles. {{CSP_NONCE}} is replaced when we serve index.html.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self' 'nonce-{nonce}'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob: https:; "
+    "font-src 'self' data:; "
+    "connect-src 'self' https: wss: ws:; "
+    "media-src 'self' blob: https:; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'none'; "
+    "form-action 'self'"
+)
 
 # --- Logging ----------------------------------------------------------------
 
@@ -301,9 +319,13 @@ LOGGING = {
     "disable_existing_loggers": False,
     "formatters": {
         "verbose": {"format": "[{levelname}] {asctime} {name}: {message}", "style": "{"},
+        "json": {"()": "apps.core.jsonlog.JsonFormatter"},
     },
     "handlers": {
-        "console": {"class": "logging.StreamHandler", "formatter": "verbose"},
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": env("LOG_FORMAT", "json"),
+        },
     },
     "root": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")},
     "loggers": {

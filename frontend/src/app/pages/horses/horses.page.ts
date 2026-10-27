@@ -60,8 +60,9 @@ const EMPTY: Draft = {
 
     <ion-content>
       <p class="lede">
-        Register the horses you own, train or ride. A competition admin enters a horse with its rider; results are
-        then kept for the horse, the rider and the trainer separately.
+        Preview — this tab is off in production until horse results ship. Register the horses you own,
+        train or ride. A competition admin enters a horse with its rider; results are then kept for
+        the horse, the rider and the trainer separately.
       </p>
 
       @if (loading()) {

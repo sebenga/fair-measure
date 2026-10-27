@@ -4,6 +4,15 @@
   padding: 64px 0;
 }
 
+.setup-nav {
+  margin: 12px 16px 4px;
+
+  ion-button {
+    margin: 0;
+    --border-radius: 12px;
+  }
+}
+
 .entry-modes {
   display: flex;
   gap: 8px;

@@ -15,6 +15,7 @@ const source = `export const environment = {
   apiBaseUrl: ${JSON.stringify(apiBaseUrl)},
   realtimeUrl: ${JSON.stringify(realtimeUrl)},
   googleClientId: ${JSON.stringify(process.env.FRONTEND_GOOGLE_CLIENT_ID || "")},
+  features: { horses: ${process.env.FRONTEND_HORSES === "true"} },
 
   firebase: {
     apiKey: ${JSON.stringify(process.env.FRONTEND_FIREBASE_API_KEY || "")},

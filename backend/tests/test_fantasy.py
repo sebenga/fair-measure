@@ -284,3 +284,27 @@ def test_a_player_who_played_two_lines_is_listed_in_both_slots(api, competition)
     def_row = next(item for item in defenders.data["players"] if item["id"] == str(member.id))
     mid_row = next(item for item in mids.data["players"] if item["id"] == str(member.id))
     assert def_row["id"] == mid_row["id"]
+
+
+def test_fantasy_is_only_for_team_sport_leagues(api, user):
+    from apps.competitions.models import Competition, Membership
+    from apps.core.permissions import Role
+
+    singles = Competition.objects.create(
+        name="City Open",
+        owner=user,
+        sport="tennis",
+        settings_json={"participant_type": "individual", "scoring_basis": "results"},
+    )
+    Membership.objects.create(competition=singles, user=user, role=Role.OWNER)
+    blocked = api.get(f"/api/v1/competitions/{singles.id}/fantasy")
+    assert blocked.status_code == 400
+
+    table = Competition.objects.create(
+        name="Sales ladder",
+        owner=user,
+        sport="custom",
+        settings_json={"participant_type": "team", "scoring_basis": "criteria"},
+    )
+    Membership.objects.create(competition=table, user=user, role=Role.OWNER)
+    assert api.get(f"/api/v1/competitions/{table.id}/fantasy").status_code == 400

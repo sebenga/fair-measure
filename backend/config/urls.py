@@ -11,7 +11,7 @@ from drf_spectacular.views import (
 )
 
 from apps.core.spa import spa_index
-from apps.core.views import health_check
+from apps.core.views import health_check, version
 
 api_v1 = [
     path("auth/", include("apps.accounts.urls")),
@@ -32,6 +32,7 @@ api_v1 = [
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("healthz", health_check, name="health"),
+    path("api/v1/version", version, name="version"),
     path("api/v1/", include(api_v1)),
     # Called by the BullMQ workers only; protected by INTERNAL_API_TOKEN and
     # excluded from the public schema.
@@ -50,3 +51,5 @@ urlpatterns = [
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+handler404 = "apps.core.spa.not_found"

@@ -14,10 +14,86 @@
       name="description"
       content="Build any competition you can describe, then run it: custom scoring, live results, league tables and a feed."
     />
+    <meta property="og:title" content="Fair Measure" />
+    <meta
+      property="og:description"
+      content="Build any competition you can describe, then run it: custom scoring, live results, league tables and a feed."
+    />
     <link rel="icon" type="image/svg+xml" href="assets/icon/favicon.svg" />
     <link rel="manifest" href="manifest.webmanifest" />
+    <style>
+      #fm-boot {
+        min-height: 100dvh;
+        display: grid;
+        place-content: center;
+        gap: 12px;
+        padding: 32px 24px;
+        font-family: system-ui, sans-serif;
+        text-align: center;
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+      #fm-boot .mark {
+        width: 56px;
+        height: 56px;
+        margin: 0 auto;
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        background: #0f766e;
+        font-weight: 800;
+      }
+      #fm-boot p,
+      #fm-boot h1 {
+        margin: 0;
+        max-width: 28rem;
+      }
+      #fm-boot h1 {
+        font-size: 1.2rem;
+      }
+      #fm-boot .bars {
+        width: 160px;
+        height: 8px;
+        margin: 8px auto 0;
+        border-radius: 99px;
+        background: #1e293b;
+        overflow: hidden;
+      }
+      #fm-boot .bars span {
+        display: block;
+        height: 100%;
+        width: 40%;
+        background: #14b8a6;
+        animation: fm-boot-slide 1.1s ease-in-out infinite;
+      }
+      #fm-boot button {
+        margin: 8px auto 0;
+        padding: 10px 18px;
+        border: 0;
+        border-radius: 10px;
+        background: #0f766e;
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+      }
+      @keyframes fm-boot-slide {
+        0% {
+          transform: translateX(-40%);
+        }
+        100% {
+          transform: translateX(260%);
+        }
+      }
+    </style>
   </head>
   <body>
-    <fm-root></fm-root>
+    <fm-root>
+      <div id="fm-boot">
+        <div class="mark" aria-hidden="true">FM</div>
+        <p>Loading Fair Measure…</p>
+        <div class="bars" aria-hidden="true"><span></span></div>
+      </div>
+    </fm-root>
+    <script src="assets/boot.js"></script>
   </body>
 </html>

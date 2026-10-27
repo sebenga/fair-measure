@@ -113,9 +113,19 @@ class FairMeasureTokenObtainPairSerializer(TokenObtainPairSerializer):
         return token
 
     def validate(self, attrs: dict) -> dict:
+        attrs = self._normalise_email(attrs)
         data = super().validate(attrs)
         data["user"] = UserSerializer(self.user).data
         return data
+
+    def _normalise_email(self, attrs: dict) -> dict:
+        identifier = (attrs.get(self.username_field) or "").strip()
+        match = User.objects.filter(email__iexact=identifier).first()
+        if match is not None:
+            attrs[self.username_field] = match.email
+        else:
+            attrs[self.username_field] = User.objects.normalize_email(identifier).lower()
+        return attrs
 
 
 class GoogleAuthSerializer(serializers.Serializer):

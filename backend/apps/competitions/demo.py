@@ -909,7 +909,9 @@ def _pick_league_squad(competition: Competition, actor) -> int:
 
 
 def _fill_fantasy(competition: Competition, actor) -> int:
-    if _participant_type(competition) != "team" or _is_points_table(competition):
+    from apps.fantasy.services import available
+
+    if not available(competition):
         return 0
     from rest_framework.exceptions import ValidationError as ApiValidationError
 

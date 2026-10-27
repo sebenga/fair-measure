@@ -1,9 +1,10 @@
 """Test settings: no external services required."""
 
 from .base import *  # noqa: F403
-from .base import BASE_DIR, SIMPLE_JWT
+from .base import BASE_DIR, REST_FRAMEWORK, SIMPLE_JWT
 
 DEBUG = False
+ALLOWED_HOSTS = ["*"]
 
 # HS256 wants at least 32 bytes. Tests shouldn't depend on whatever happens to
 # be in the developer's .env, so pin a key that is long enough here.
@@ -14,6 +15,11 @@ DATABASES = {
 }
 
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+
+REST_FRAMEWORK = {
+    **REST_FRAMEWORK,
+    "DEFAULT_THROTTLE_RATES": {"anon": "10000/min", "user": "10000/min", "auth": "10000/min"},
+}
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 

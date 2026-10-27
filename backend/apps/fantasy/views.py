@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -15,7 +16,10 @@ TAG = ["Fantasy"]
 
 
 def _competition(request: Request, competition_pk):
-    return get_object_or_404(visible_competitions(request.user), pk=competition_pk)
+    competition = get_object_or_404(visible_competitions(request.user), pk=competition_pk)
+    if not services.available(competition):
+        raise ValidationError(services.UNAVAILABLE)
+    return competition
 
 
 class FantasyTeamView(APIView):

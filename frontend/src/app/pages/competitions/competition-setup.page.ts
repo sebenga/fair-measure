@@ -84,6 +84,12 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
           <ion-back-button [defaultHref]="backHref()" />
         </ion-buttons>
         <ion-title>Setup</ion-title>
+        <ion-buttons slot="end">
+          <ion-button (click)="openCompetition()">
+            <ion-icon slot="start" name="trophy-outline" aria-hidden="true" />
+            Open competition
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
       <ion-toolbar>
         <ion-segment [value]="section()" (ionChange)="setSection($any($event).detail.value)">
@@ -106,6 +112,12 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
       @if (loading()) {
         <div class="centered"><ion-spinner name="crescent" /></div>
       } @else if (competition(); as comp) {
+        <div class="setup-nav">
+          <ion-button expand="block" (click)="openCompetition()">
+            <ion-icon slot="start" name="trophy-outline" aria-hidden="true" />
+            Open competition
+          </ion-button>
+        </div>
         @switch (section()) {
           @case ('entrants') {
             <h3 class="fm-section-title">Entrants ({{ participants().length }})</h3>
@@ -115,8 +127,10 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                 @if (demoActive()) {
                   <p class="hint">
                     This is a one-hour demo {{ sampleNoun() }}. Teams, officials
-                    @if (!pointsTable()) {
+                    @if (!pointsTable() && entrantKind() === 'team') {
                       , picks, fixtures, player ratings, player stats, the league squad and fantasy
+                    } @else if (!pointsTable()) {
+                      , picks and fixtures
                     } @else {
                       and results
                     }
@@ -139,8 +153,10 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   <p class="hint">
                     Skip the admin work and generate a one-hour demo {{ sampleNoun() }} with
                     {{ samplePeople() }}, officials
-                    @if (!pointsTable()) {
+                    @if (!pointsTable() && entrantKind() === 'team') {
                       , picks, fixtures, player ratings, player stats, a league squad and fantasy
+                    } @else if (!pointsTable()) {
+                      , picks and fixtures
                     }
                     already in place. It deletes itself after an hour.
                   </p>
@@ -1425,6 +1441,10 @@ export class CompetitionSetupPage implements OnInit {
     void this.router.navigate(['/tabs/competitions', this.competitionId, 'squad']);
   }
 
+  openCompetition(): void {
+    void this.router.navigate(['/tabs/competitions', this.competitionId]);
+  }
+
   backHref(): string {
     return `/tabs/competitions/${this.competitionId}`;
   }
@@ -1512,6 +1532,14 @@ export class CompetitionSetupPage implements OnInit {
     return 'teams';
   }
 
+  demoExtras(): string {
+    if (this.pointsTable()) return '';
+    if (this.entrantKind() === 'team') {
+      return ', picks, fixtures, player ratings, player stats, the league squad and fantasy';
+    }
+    return ', picks and fixtures';
+  }
+
   async generateDemoLeague(): Promise<void> {
     if (this.busy() || this.hasRealEntrants()) return;
     const updating = this.demoActive();
@@ -1519,7 +1547,7 @@ export class CompetitionSetupPage implements OnInit {
       header: updating ? 'Refresh the demo?' : `Generate a demo ${this.sampleNoun()}?`,
       message: updating
         ? `This rebuilds the demo ${this.samplePeople()}, officials and fixtures and restarts the one-hour timer.`
-        : `This turns the competition into a one-hour demo. ${this.samplePeople()}, officials${this.pointsTable() ? '' : ', picks, fixtures, player ratings, player stats, the league squad and fantasy'} are filled in. The whole thing deletes after an hour.`,
+        : `This turns the competition into a one-hour demo. ${this.samplePeople()}, officials${this.demoExtras()} are filled in. The whole thing deletes after an hour.`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         { text: updating ? 'Refresh' : 'Generate demo', role: 'confirm' },
@@ -1540,7 +1568,7 @@ export class CompetitionSetupPage implements OnInit {
         }
         await this.toast(
           result.fixtures
-            ? `Demo ready: ${result.teams} ${this.samplePeople()}, ratings, player stats, league squad and fantasy. It deletes in one hour.`
+            ? `Demo ready: ${result.teams} ${this.samplePeople()}${this.entrantKind() === 'team' ? ', ratings, player stats, league squad and fantasy' : ''}. It deletes in one hour.`
             : `Demo ready: ${result.teams} ${this.samplePeople()}. It deletes in one hour.`,
           'success',
         );

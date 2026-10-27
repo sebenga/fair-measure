@@ -992,8 +992,13 @@ function presetKind(preset: Preset): PresetKind {
           </ion-item>
         </ion-list>
         <p class="hint">
-          Fills teams, officials, picks, fixtures, player ratings, player stats, the league squad and a
-          fantasy league so you can see the product without the full setup. This is a demo
+          Fills {{ samplePeople() }}, officials
+          @if (!pointsTable() && versusEntrants() === 'team') {
+            , picks, fixtures, player ratings, player stats, the league squad and a fantasy league
+          } @else if (!pointsTable()) {
+            , picks and fixtures
+          }
+          so you can see the product without the full setup. This is a demo
           {{ sampleNoun() }} and it deletes itself after one hour.
         </p>
       </ng-template>

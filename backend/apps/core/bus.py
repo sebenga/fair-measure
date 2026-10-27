@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 import uuid
 from typing import Any
@@ -29,16 +30,50 @@ logger = logging.getLogger(__name__)
 _client: redis.Redis | None = None
 
 
+def redis_configured() -> bool:
+    """False when REDIS_URL is missing or still the local default on Render."""
+
+    url = (settings.REDIS_URL or "").strip()
+    if not url:
+        return False
+    if "localhost" in url or "127.0.0.1" in url:
+        return not bool(os.environ.get("RENDER"))
+    return True
+
+
+def reset_redis() -> None:
+    global _client
+    if _client is None:
+        return
+    try:
+        _client.close()
+    except Exception:
+        pass
+    _client = None
+
+
+def _from_url() -> redis.Redis:
+    import ssl
+
+    kwargs: dict = {
+        "decode_responses": True,
+        "socket_connect_timeout": 2,
+        "socket_timeout": 2,
+        "retry_on_timeout": True,
+        "health_check_interval": 30,
+    }
+    url = settings.REDIS_URL
+    # Render Key Value is TLS (rediss://). Their cert chain is not always in
+    # the slim image, so we verify the host but not a custom CA.
+    if url.startswith("rediss://"):
+        kwargs["ssl_cert_reqs"] = ssl.CERT_NONE
+    return redis.Redis.from_url(url, **kwargs)
+
+
 def get_redis() -> redis.Redis:
     global _client
     if _client is None:
-        _client = redis.Redis.from_url(
-            settings.REDIS_URL,
-            decode_responses=True,
-            socket_connect_timeout=2,
-            socket_timeout=2,
-            health_check_interval=30,
-        )
+        _client = _from_url()
     return _client
 
 
@@ -94,6 +129,7 @@ def publish_event(
         try:
             get_redis().publish(settings.REALTIME_EVENT_CHANNEL, message)
         except redis.RedisError:
+            reset_redis()
             logger.warning("Realtime event %s dropped: Redis unavailable", event)
 
     if immediate:
@@ -134,6 +170,7 @@ def enqueue_job(
         try:
             get_redis().lpush(settings.JOB_INBOX_KEY, message)
         except redis.RedisError:
+            reset_redis()
             logger.warning("Job %s/%s dropped: Redis unavailable", queue, name)
 
     if immediate:

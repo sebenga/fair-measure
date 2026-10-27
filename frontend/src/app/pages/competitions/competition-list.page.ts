@@ -20,6 +20,7 @@ import {
   type RefresherCustomEvent,
 } from '@ionic/angular/standalone';
 
+import { AuthService } from '../../core/auth.service';
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { Competition, TeamPick } from '../../core/models';
@@ -50,15 +51,19 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
   template: `
     <ion-header translucent="true">
       <ion-toolbar>
-        <ion-title>My leagues</ion-title>
+        <ion-title>{{ auth.isAuthenticated() ? 'My leagues' : 'Leagues' }}</ion-title>
         <ion-buttons slot="end">
-          <ion-button type="button" routerLink="/tabs/games" routerDirection="forward">
-            <ion-icon slot="start" name="trophy-outline" aria-hidden="true" />
-            Games
-          </ion-button>
-          <ion-button type="button" routerLink="/tabs/competitions/new" routerDirection="forward">
-            <ion-icon slot="icon-only" name="add-outline" aria-label="New competition" />
-          </ion-button>
+          @if (auth.isAuthenticated()) {
+            <ion-button type="button" routerLink="/tabs/games" routerDirection="forward">
+              <ion-icon slot="start" name="trophy-outline" aria-hidden="true" />
+              Games
+            </ion-button>
+            <ion-button type="button" routerLink="/tabs/competitions/new" routerDirection="forward">
+              <ion-icon slot="icon-only" name="add-outline" aria-label="New competition" />
+            </ion-button>
+          } @else {
+            <ion-button type="button" routerLink="/login">Sign in</ion-button>
+          }
         </ion-buttons>
       </ion-toolbar>
     </ion-header>
@@ -105,13 +110,22 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
       } @else if (competitions().length === 0) {
         <div class="fm-empty">
           <ion-icon name="trophy-outline" aria-hidden="true" />
-          <h3>No competitions yet</h3>
+          <h3>{{ auth.isAuthenticated() ? 'No competitions yet' : 'See how a league runs' }}</h3>
           <p>
-            A league can hold several competitions — an official sport, or one
-            with scoring you define. Create one, then add more from here.
+            @if (auth.isAuthenticated()) {
+              A league can hold several competitions — an official sport, or one
+              with scoring you define. Create one, then add more from here.
+            } @else {
+              Public leagues show up here. Sign in to create your own scoring,
+              fixtures and feed.
+            }
           </p>
-          <ion-button type="button" routerLink="/tabs/competitions/new" routerDirection="forward">
-            Create a competition
+          <ion-button
+            type="button"
+            [routerLink]="auth.isAuthenticated() ? '/tabs/competitions/new' : '/register'"
+            routerDirection="forward"
+          >
+            {{ auth.isAuthenticated() ? 'Create a competition' : 'Create an account' }}
           </ion-button>
         </div>
       } @else {
@@ -136,6 +150,7 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
 
       </div>
 
+      @if (auth.isAuthenticated()) {
       <ion-fab slot="fixed" vertical="bottom" horizontal="end">
         <ion-fab-button
           type="button"
@@ -146,6 +161,7 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
           <ion-icon name="add-outline" />
         </ion-fab-button>
       </ion-fab>
+      }
     </ion-content>
   `,
   styles: [
@@ -191,6 +207,7 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
 })
 export class CompetitionListPage {
   private readonly api = inject(ApiService);
+  readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly alerts = inject(AlertController);
   private readonly toasts = inject(ToastController);
@@ -206,11 +223,17 @@ export class CompetitionListPage {
     this.load(this.competitions().length === 0);
   }
 
+  private listQuery(): { mine?: boolean; page_size: number } {
+    return this.auth.isAuthenticated()
+      ? { mine: true, page_size: 50 }
+      : { page_size: 50 };
+  }
+
   load(showSpinner = true): void {
     if (showSpinner) this.loading.set(true);
     this.error.set(null);
 
-    this.api.listCompetitions({ mine: true, page_size: 50 }).subscribe({
+    this.api.listCompetitions(this.listQuery()).subscribe({
       next: (page) => {
         this.competitions.set(page.results);
         this.refreshedAt.set(new Date());
@@ -221,14 +244,18 @@ export class CompetitionListPage {
         this.loading.set(false);
       },
     });
-    this.api.myPendingTeamPicks().subscribe({
-      next: (picks) => this.invites.set(picks),
-      error: () => this.invites.set([]),
-    });
+    if (this.auth.isAuthenticated()) {
+      this.api.myPendingTeamPicks().subscribe({
+        next: (picks) => this.invites.set(picks),
+        error: () => this.invites.set([]),
+      });
+    } else {
+      this.invites.set([]);
+    }
   }
 
   refresh(event: RefresherCustomEvent): void {
-    this.api.listCompetitions({ mine: true, page_size: 50 }).subscribe({
+    this.api.listCompetitions(this.listQuery()).subscribe({
       next: (page) => {
         this.competitions.set(page.results);
         this.refreshedAt.set(new Date());
@@ -236,9 +263,11 @@ export class CompetitionListPage {
       },
       error: () => void event.target.complete(),
     });
-    this.api.myPendingTeamPicks().subscribe({
-      next: (picks) => this.invites.set(picks),
-    });
+    if (this.auth.isAuthenticated()) {
+      this.api.myPendingTeamPicks().subscribe({
+        next: (picks) => this.invites.set(picks),
+      });
+    }
   }
 
   acceptInvite(invite: TeamPick): void {

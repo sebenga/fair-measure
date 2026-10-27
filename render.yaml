@@ -11,6 +11,8 @@ envVarGroups:
         generateValue: true
       - key: INTERNAL_API_TOKEN
         generateValue: true
+      - key: HEALTH_KEY
+        generateValue: true
 
 databases:
   - name: fairmeasure-v2-db
@@ -63,3 +65,7 @@ services:
           name: fairmeasure-v2-kv
           type: keyvalue
           property: connectionString
+      - key: FRONTEND_HORSES
+        value: "false"
+      # Point UptimeRobot (or equivalent) at GET /healthz every 5 minutes so
+      # the free web process does not spin down. See HOSTING.md.

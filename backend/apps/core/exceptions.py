@@ -41,7 +41,16 @@ def api_exception_handler(exc: Exception, context: dict[str, Any]) -> Response |
 
     response = drf_exception_handler(exc, context)
     if response is None:
-        return None
+        logger.exception("Unhandled API error on %s", context.get("request"))
+        return Response(
+            {
+                "error": {
+                    "code": "server_error",
+                    "message": "Something went wrong.",
+                }
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     code = getattr(exc, "default_code", "error")
     detail = response.data

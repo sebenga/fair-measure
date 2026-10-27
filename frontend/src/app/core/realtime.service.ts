@@ -56,11 +56,14 @@ export class RealtimeService {
     if (!token || !environment.realtimeUrl) return;
 
     this.socket = io(environment.realtimeUrl, {
-      transports: ['websocket'],
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
       auth: { token },
       reconnection: true,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 10_000,
+      reconnectionDelayMax: 15_000,
+      randomizationFactor: 0.4,
     });
 
     this.socket.on('connect', () => {

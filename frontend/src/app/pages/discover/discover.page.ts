@@ -25,6 +25,7 @@ import {
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { Competition, Post } from '../../core/models';
+import { showsFantasy } from '../../core/models';
 import { CompetitionCardComponent } from '../../shared/competition-card.component';
 import { InboxTrayComponent } from '../../shared/inbox-tray.component';
 import { PostCardComponent } from '../../shared/post-card.component';
@@ -462,9 +463,9 @@ export class DiscoverPage implements OnInit {
   }
 
   openFantasyHint(): void {
-    const openToScouts = this.featured()[0] ?? this.results()[0];
-    if (openToScouts) {
-      void this.router.navigate(['/tabs/competitions', openToScouts.id], {
+    const league = [...this.featured(), ...this.results()].find((row) => showsFantasy(row));
+    if (league) {
+      void this.router.navigate(['/tabs/competitions', league.id], {
         queryParams: { tab: 'fantasy' },
       });
       return;

@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY backend/ /app/
 COPY --from=frontend /frontend/www/browser /app/spa
+RUN date -u +%Y-%m-%dT%H:%M:%SZ > /app/.build-time
 
 # collectstatic needs a throwaway secret; Render overrides it at runtime.
 ENV DJANGO_SECRET_KEY=collectstatic-build-only \

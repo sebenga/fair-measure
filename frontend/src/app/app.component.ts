@@ -101,9 +101,42 @@ import { RealtimeService } from './core/realtime.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ion-app>
+      <div id="fm-runtime-error" hidden>
+        Something went wrong on this screen.
+        <button type="button" (click)="reload()">Reload</button>
+      </div>
       <ion-router-outlet />
     </ion-app>
   `,
+  styles: [
+    `
+      #fm-runtime-error {
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: center;
+        padding: 10px 16px;
+        background: #b45309;
+        color: #fff;
+        font-size: 0.9rem;
+      }
+      #fm-runtime-error[hidden] {
+        display: none;
+      }
+      #fm-runtime-error button {
+        border: 0;
+        border-radius: 8px;
+        padding: 6px 10px;
+        background: #fff;
+        color: #9a3412;
+        font: inherit;
+        font-weight: 600;
+      }
+    `,
+  ],
 })
 export class AppComponent {
   private readonly auth = inject(AuthService);
@@ -209,5 +242,9 @@ export class AppComponent {
         this.realtime.disconnect();
       }
     });
+  }
+
+  reload(): void {
+    window.location.reload();
   }
 }
