@@ -1,6 +1,7 @@
 """Production settings. Fails loudly rather than starting up insecure."""
 
 import hashlib
+import sys
 from pathlib import Path
 
 from .base import *  # noqa: F403
@@ -19,7 +20,10 @@ from .base import (
 
 DEBUG = False
 
-if env("RENDER") and not env("DATABASE_URL"):
+# collectstatic / image build must not need Postgres. The running web process
+# still does — SQLite in the container is wiped on every deploy and sleep.
+_BUILD_ONLY = {"collectstatic", "check", "compilemessages"}
+if env("RENDER") and not env("DATABASE_URL") and not _BUILD_ONLY.intersection(sys.argv):
     raise RuntimeError(
         "DATABASE_URL must be set on Render. SQLite lives in the container and "
         "is wiped on every deploy and cold start, so new accounts would disappear."

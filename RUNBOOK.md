@@ -59,8 +59,8 @@ Unauthenticated socket handshakes are rejected (`An access token is required`).
 
 The user table lives in Postgres (`DATABASE_URL`). If that variable is missing,
 Render used to fall back to SQLite **inside the container**. A deploy or sleep
-wipes that file, so new accounts vanish. Production now refuses to start
-without `DATABASE_URL`. After deploy, confirm:
+wipes that file, so new accounts vanish. `collectstatic` can finish without it;
+the web process still refuses to start without `DATABASE_URL`. After deploy, confirm:
 
 ```bash
 curl -sS -H "X-Health-Key: $HEALTH_KEY" https://fairmeasure-v2.onrender.com/healthz
