@@ -55,6 +55,20 @@ live updates, deploy `realtime/` and set `FRONTEND_REALTIME_URL`.
 
 Unauthenticated socket handshakes are rejected (`An access token is required`).
 
+### Registered account disappeared
+
+The user table lives in Postgres (`DATABASE_URL`). If that variable is missing,
+Render used to fall back to SQLite **inside the container**. A deploy or sleep
+wipes that file, so new accounts vanish. Production now refuses to start
+without `DATABASE_URL`. After deploy, confirm:
+
+```bash
+curl -sS -H "X-Health-Key: $HEALTH_KEY" https://fairmeasure-v2.onrender.com/healthz
+```
+
+`checks.database` must be `ok`. Then sign in with the email you registered —
+do not register again; a duplicate email is rejected on purpose.
+
 ### Auth 429
 
 `/api/v1/auth/login`, `/register`, `/google` are limited to 5 attempts / minute

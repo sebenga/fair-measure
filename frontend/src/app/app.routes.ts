@@ -1,13 +1,18 @@
 import { Routes } from '@angular/router';
 
 import { environment } from '../environments/environment';
-import { authGuard, guestGuard } from './core/auth.guard';
+import { authGuard, guestGuard, landingGuard } from './core/auth.guard';
 import { competitionIdCanMatch } from './core/competition-id.guard';
 
 const horsesEnabled = () => environment.features.horses;
 
 export const routes: Routes = [
-  { path: '', redirectTo: 'tabs/competitions', pathMatch: 'full' },
+  {
+    path: '',
+    pathMatch: 'full',
+    canActivate: [landingGuard],
+    loadComponent: () => import('./pages/landing/landing.page').then((m) => m.LandingPage),
+  },
 
   {
     path: 'login',

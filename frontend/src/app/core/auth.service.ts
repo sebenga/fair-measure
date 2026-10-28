@@ -115,10 +115,15 @@ export class AuthService {
   }
 
   private persist(response: AuthResponse): void {
+    if (!response?.access || !response?.refresh) {
+      throw new Error('The server created the account but did not return a session. Sign in.');
+    }
     localStorage.setItem(ACCESS_KEY, response.access);
     localStorage.setItem(REFRESH_KEY, response.refresh);
     this.accessToken.set(response.access);
-    this.setUser(response.user);
+    if (response.user) {
+      this.setUser(response.user);
+    }
   }
 
   private setUser(user: User): void {

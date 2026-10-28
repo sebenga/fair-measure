@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { IonContent, IonSpinner } from '@ionic/angular/standalone';
 
 import { AuthService } from '../../core/auth.service';
@@ -83,6 +83,7 @@ export class RegisterPage {
   private readonly fb = inject(FormBuilder);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
@@ -112,7 +113,8 @@ export class RegisterPage {
     this.auth.register(email.trim(), password, displayName.trim()).subscribe({
       next: () => {
         this.loading.set(false);
-        void this.router.navigateByUrl('/tabs/competitions');
+        const next = this.route.snapshot.queryParamMap.get('next');
+        void this.router.navigateByUrl(next ?? '/tabs/competitions', { replaceUrl: true });
       },
       error: (err: unknown) => {
         this.loading.set(false);

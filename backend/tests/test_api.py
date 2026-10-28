@@ -24,6 +24,10 @@ def test_register_returns_tokens_and_user(anon_api):
     assert response.data["access"]
     assert response.data["refresh"]
     assert response.data["user"]["email"] == "new@example.com"
+    from django.contrib.auth import get_user_model
+
+    stored = get_user_model().objects.get(email="new@example.com")
+    assert stored.check_password("a-strong-passphrase")
 
 
 def test_register_rejects_a_duplicate_email(anon_api, user):

@@ -15,7 +15,8 @@
 // Ionic stacks login and register without marking the leaving page hidden,
 // so the old form stays painted on top. Keep only the last auth page visible.
 ion-router-outlet > fm-login.ion-page:not(:last-child),
-ion-router-outlet > fm-register.ion-page:not(:last-child) {
+ion-router-outlet > fm-register.ion-page:not(:last-child),
+ion-router-outlet > fm-landing.ion-page:not(:last-child) {
   display: none !important;
 }
 

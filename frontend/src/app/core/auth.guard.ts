@@ -20,3 +20,10 @@ export const guestGuard: CanActivateFn = () => {
 
   return auth.isAuthenticated() ? router.createUrlTree(['/tabs/competitions']) : true;
 };
+
+export const landingGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+
+  return auth.isAuthenticated() ? router.createUrlTree(['/tabs/competitions']) : true;
+};

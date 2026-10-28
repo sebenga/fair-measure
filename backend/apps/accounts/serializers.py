@@ -91,7 +91,9 @@ class RegisterSerializer(serializers.ModelSerializer):
     def validate_email(self, value: str) -> str:
         normalized = User.objects.normalize_email(value).lower()
         if User.objects.filter(email__iexact=normalized).exists():
-            raise serializers.ValidationError("An account with this email already exists.")
+            raise serializers.ValidationError(
+                "That email is already registered. Sign in with it instead."
+            )
         return normalized
 
     def validate_password(self, value: str) -> str:

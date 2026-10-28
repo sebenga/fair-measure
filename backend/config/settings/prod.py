@@ -19,6 +19,12 @@ from .base import (
 
 DEBUG = False
 
+if env("RENDER") and not env("DATABASE_URL"):
+    raise RuntimeError(
+        "DATABASE_URL must be set on Render. SQLite lives in the container and "
+        "is wiped on every deploy and cold start, so new accounts would disappear."
+    )
+
 if SECRET_KEY in {"", "insecure-dev-key-change-me"}:
     if env("RENDER"):
         # Unblocks a first deploy when the dashboard secret was not set.

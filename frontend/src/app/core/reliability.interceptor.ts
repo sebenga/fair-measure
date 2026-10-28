@@ -7,16 +7,19 @@ import { environment } from '../../environments/environment';
 import { extractErrorMessage } from './error-message';
 
 const TIMEOUT_MS = 15_000;
+const AUTH_TIMEOUT_MS = 45_000;
 const QUIET = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/google', '/healthz'];
+const AUTH = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/google'];
 
 export const reliabilityInterceptor: HttpInterceptorFn = (request, next) => {
   const toasts = inject(ToastController);
   const isApi = request.url.startsWith(environment.apiBaseUrl);
   const quiet = QUIET.some((path) => request.url.includes(path));
+  const authCall = AUTH.some((path) => request.url.includes(path));
   const retried = request.method === 'GET' && isApi ? 2 : 0;
 
   return next(request).pipe(
-    timeout({ first: TIMEOUT_MS }),
+    timeout({ first: authCall ? AUTH_TIMEOUT_MS : TIMEOUT_MS }),
     retry({
       count: retried,
       delay: (_error, retryCount) => timer(400 * 2 ** (retryCount - 1)),
