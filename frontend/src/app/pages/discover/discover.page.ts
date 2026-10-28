@@ -3,13 +3,15 @@ import {
   Component,
   OnInit,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
-import { Subject, debounceTime, distinctUntilChanged, forkJoin, of, switchMap } from 'rxjs';
+import { Subject, debounceTime, distinctUntilChanged, forkJoin, interval, of, switchMap } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import {
   IonButton,
@@ -45,6 +47,19 @@ type FeedItem =
   | { kind: 'competition'; id: string; competition: Competition }
   | { kind: 'post'; id: string; post: Post }
   | { kind: 'promo'; id: string; placement: MarketingPlacement };
+
+interface MarketSlide {
+  id: string;
+  kind: 'corporate' | 'government' | 'competition';
+  eyebrow: string;
+  title: string;
+  body: string;
+  action: string;
+  icon: string;
+  logo: string;
+  placement?: MarketingPlacement;
+  league?: Competition;
+}
 
 const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
 
@@ -132,40 +147,51 @@ const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
           </aside>
 
           <div class="feed">
-            <div class="market-strip" aria-label="Corporate, government and current competitions">
-              @if (corporate()[0]; as ad) {
-                <fm-promo-slot
-                  kind="corporate"
-                  eyebrow="Corporate"
-                  [title]="ad.name"
-                  [body]="ad.tagline"
-                  [action]="ad.cta_label || 'Enquire'"
-                  icon="briefcase-outline"
-                  (open)="openPlacement(ad)"
-                />
-              }
-              @if (government()[0]; as ad) {
-                <fm-promo-slot
-                  kind="government"
-                  eyebrow="Government"
-                  [title]="ad.name"
-                  [body]="ad.tagline"
-                  [action]="ad.cta_label || 'Enquire'"
-                  icon="business-outline"
-                  (open)="openPlacement(ad)"
-                />
-              }
-              @if (currentCompetitions()[0]; as league) {
-                <fm-promo-slot
-                  kind="competition"
-                  eyebrow="Current competition"
-                  [title]="league.name"
-                  [body]="(league.sport || 'League') + ' · on the public landing page'"
-                  action="Open"
-                  [logo]="league.logo_url"
-                  icon="trophy-outline"
-                  (open)="open(league)"
-                />
+            <div
+              class="market-carousel"
+              aria-roledescription="carousel"
+              aria-label="Corporate, government and current competitions"
+              (pointerdown)="onMarketPointerDown($event)"
+              (pointerup)="onMarketPointerUp($event)"
+              (pointercancel)="holdMarket(false)"
+            >
+              <div class="market-viewport">
+                <div
+                  class="market-track"
+                  [style.transform]="'translateX(' + -marketIndex() * 100 + '%)'"
+                >
+                  @for (slide of marketSlides(); track slide.id; let i = $index) {
+                    <div
+                      class="market-slide"
+                      role="group"
+                      [attr.aria-label]="slide.eyebrow + ': ' + slide.title"
+                      [attr.aria-hidden]="marketIndex() !== i ? 'true' : null"
+                    >
+                      <fm-promo-slot
+                        [kind]="slide.kind"
+                        [eyebrow]="slide.eyebrow"
+                        [title]="slide.title"
+                        [body]="slide.body"
+                        [action]="slide.action"
+                        [logo]="slide.logo"
+                        [icon]="slide.icon"
+                        (open)="openMarket(slide)"
+                      />
+                    </div>
+                  }
+                </div>
+              </div>
+              @if (marketSlides().length > 1) {
+                <div class="market-dots">
+                  @for (slide of marketSlides(); track slide.id; let i = $index) {
+                    <button
+                      type="button"
+                      [class.on]="marketIndex() === i"
+                      [attr.aria-label]="'Show ' + slide.title"
+                      (click)="goMarket(i)"
+                    ></button>
+                  }
+                </div>
               }
             </div>
 
@@ -368,7 +394,13 @@ export class DiscoverPage implements OnInit {
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly query = signal('');
+  readonly marketIndex = signal(0);
   private readonly inbox = viewChild(InboxTrayComponent);
+  private marketTouching = false;
+  private marketHoldUntil = 0;
+  private marketKey = '';
+  private marketStartX = 0;
+  private suppressClickUntil = 0;
 
   readonly featured = computed(() =>
     this.results().filter((row) => row.open_to_scouts).slice(0, 8),
@@ -400,6 +432,49 @@ export class DiscoverPage implements OnInit {
   readonly logos = computed(() => {
     const rows = this.placements().filter((item) => item.slot === 'logo');
     return rows.length ? rows : FALLBACK_LOGOS;
+  });
+  readonly marketSlides = computed<MarketSlide[]>(() => {
+    const slides: MarketSlide[] = [];
+    for (const ad of this.corporate()) {
+      slides.push({
+        id: `corporate-${ad.id}`,
+        kind: 'corporate',
+        eyebrow: 'Corporate',
+        title: ad.name,
+        body: ad.tagline || ad.body,
+        action: ad.cta_label || 'Enquire',
+        icon: 'briefcase-outline',
+        logo: ad.logo_url,
+        placement: ad,
+      });
+    }
+    for (const ad of this.government()) {
+      slides.push({
+        id: `government-${ad.id}`,
+        kind: 'government',
+        eyebrow: 'Government',
+        title: ad.name,
+        body: ad.tagline || ad.body,
+        action: ad.cta_label || 'Enquire',
+        icon: 'business-outline',
+        logo: ad.logo_url,
+        placement: ad,
+      });
+    }
+    for (const league of this.currentCompetitions().slice(0, 4)) {
+      slides.push({
+        id: `league-${league.id}`,
+        kind: 'competition',
+        eyebrow: 'Current competition',
+        title: league.name,
+        body: `${league.sport || 'League'} · on the public landing page`,
+        action: 'Open',
+        icon: 'trophy-outline',
+        logo: league.logo_url,
+        league,
+      });
+    }
+    return slides;
   });
   readonly composerLeague = computed(
     () => this.mine().find((row) => row.id === this.composerLeagueId()) ?? this.mine()[0] ?? null,
@@ -456,6 +531,19 @@ export class DiscoverPage implements OnInit {
           this.loading.set(false);
         },
       });
+
+    interval(3000)
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => this.advanceMarket());
+
+    effect(() => {
+      const key = this.marketSlides()
+        .map((slide) => slide.id)
+        .join('|');
+      if (key === this.marketKey) return;
+      this.marketKey = key;
+      untracked(() => this.marketIndex.set(0));
+    });
   }
 
   ngOnInit(): void {
@@ -585,6 +673,42 @@ export class DiscoverPage implements OnInit {
     void this.router.navigate(['/tabs/competitions', competition.id]);
   }
 
+  openMarket(slide: MarketSlide): void {
+    if (Date.now() < this.suppressClickUntil) return;
+    if (slide.league) {
+      this.open(slide.league);
+      return;
+    }
+    if (slide.placement) this.openPlacement(slide.placement);
+  }
+
+  holdMarket(touching: boolean): void {
+    this.marketTouching = touching;
+    if (!touching) this.marketHoldUntil = Date.now() + 3000;
+  }
+
+  onMarketPointerDown(event: PointerEvent): void {
+    this.marketStartX = event.clientX;
+    this.holdMarket(true);
+  }
+
+  onMarketPointerUp(event: PointerEvent): void {
+    const distance = event.clientX - this.marketStartX;
+    const count = this.marketSlides().length;
+    if (count > 1 && Math.abs(distance) > 48) {
+      this.suppressClickUntil = Date.now() + 500;
+      const direction = distance < 0 ? 1 : -1;
+      this.marketIndex.set((this.marketIndex() + direction + count) % count);
+    }
+    this.holdMarket(false);
+  }
+
+  goMarket(index: number): void {
+    if (Date.now() < this.suppressClickUntil) return;
+    this.marketHoldUntil = Date.now() + 3000;
+    this.marketIndex.set(index);
+  }
+
   createLeague(): void {
     void this.router.navigate(['/tabs/competitions/new']);
   }
@@ -602,6 +726,16 @@ export class DiscoverPage implements OnInit {
     void this.router.navigate(['/tabs/partnerships'], {
       queryParams: { audience, placement: placement.id },
     });
+  }
+
+  private advanceMarket(): void {
+    if (this.marketTouching || Date.now() < this.marketHoldUntil) return;
+    if (document.hidden) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (window.matchMedia('(min-width: 1100px)').matches) return;
+    const count = this.marketSlides().length;
+    if (count < 2) return;
+    this.marketIndex.set((this.marketIndex() + 1) % count);
   }
 
   private inFeedAds(): FeedItem[] {

@@ -49,9 +49,9 @@ import { IonIcon } from '@ionic/angular/standalone';
         display: none;
       }
 
-      :host-context(.market-strip) {
+      :host-context(.market-slide) {
         margin: 0;
-        flex: 0 0 min(260px, 78vw);
+        width: 100%;
       }
 
       .slot {
