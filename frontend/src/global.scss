@@ -435,9 +435,16 @@ ion-button {
 
 ion-tab-bar {
   display: flex !important;
+  position: relative;
   visibility: visible !important;
   flex-shrink: 0;
   z-index: 10;
+}
+
+/* A page Ionic has already left must not stay painted over the current one. */
+.ion-page-hidden {
+  display: none !important;
+  pointer-events: none !important;
 }
 
 ion-tabs ion-router-outlet {

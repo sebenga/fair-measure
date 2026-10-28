@@ -76,6 +76,18 @@
         font: inherit;
         font-weight: 600;
       }
+      .ion-page {
+        inset: 0;
+        display: flex;
+        position: absolute;
+        flex-direction: column;
+        contain: layout size style;
+        overflow: hidden;
+        z-index: 0;
+      }
+      .ion-page-hidden {
+        display: none !important;
+      }
       @keyframes fm-boot-slide {
         0% {
           transform: translateX(-40%);

@@ -30,6 +30,7 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/tabs/tabs.page').then((m) => m.TabsPage),
     children: [
       { path: '', redirectTo: 'competitions', pathMatch: 'full' },
+      { path: 'login', redirectTo: '/login', pathMatch: 'full' },
       {
         path: 'competitions/new',
         canActivate: [authGuard],

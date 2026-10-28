@@ -1,4 +1,19 @@
 (function () {
+  // Production builds used to defer the layout stylesheet with media="print"
+  // and an onload flip. Mobile browsers often never fire that onload, so
+  // .ion-page never becomes a full-screen layer and every route stacks.
+  function enableStylesheet(link) {
+    if (link && link.rel === "stylesheet" && link.media === "print") link.media = "all";
+  }
+  document.querySelectorAll('link[rel="stylesheet"]').forEach(enableStylesheet);
+  new MutationObserver(function (records) {
+    records.forEach(function (record) {
+      record.addedNodes.forEach(function (node) {
+        if (node.tagName === "LINK") enableStylesheet(node);
+      });
+    });
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
   var root = document.querySelector("fm-root");
   var boot = document.getElementById("fm-boot");
   if (!boot) return;
