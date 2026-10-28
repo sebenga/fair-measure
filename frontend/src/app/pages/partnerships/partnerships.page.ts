@@ -146,6 +146,18 @@ import type { MarketingAudience, MarketingPlacement } from '../../core/models';
               />
             </label>
             <label>
+              Cellphone number
+              <input
+                name="phone"
+                type="tel"
+                required
+                maxlength="32"
+                autocomplete="tel"
+                [value]="auth.user()?.phone || ''"
+                [disabled]="enquirySending()"
+              />
+            </label>
+            <label>
               What would you like to run or sponsor?
               <textarea
                 name="message"
@@ -253,9 +265,10 @@ export class PartnershipsPage {
     const organisation = String(data.get('organisation') ?? '').trim();
     const contact_name = String(data.get('contact_name') ?? '').trim();
     const email = String(data.get('email') ?? '').trim();
+    const phone = String(data.get('phone') ?? '').trim();
     const message = String(data.get('message') ?? '').trim();
-    if (!organisation || !contact_name || !email || message.length < 12) {
-      this.enquiryError.set('Fill in the organisation, your name, email and a short note.');
+    if (!organisation || !contact_name || !email || phone.length < 7 || message.length < 12) {
+      this.enquiryError.set('Fill in the organisation, your name, email, cellphone and a short note.');
       return;
     }
     this.enquirySending.set(true);
@@ -266,6 +279,7 @@ export class PartnershipsPage {
         organisation,
         contact_name,
         email,
+        phone,
         message,
       })
       .subscribe({

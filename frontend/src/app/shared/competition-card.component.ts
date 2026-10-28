@@ -272,8 +272,8 @@ export type CompetitionCardPromo = {
         padding: 8px 10px;
         border: 0;
         border-radius: 10px;
-        background: #f8fafc;
-        color: inherit;
+        background: var(--fm-chip-bg);
+        color: var(--fm-ink);
         font: inherit;
         text-align: left;
         cursor: pointer;
@@ -294,11 +294,12 @@ export type CompetitionCardPromo = {
 
       .promo[data-kind='corporate'] {
         background: #ccfbf1;
+        color: var(--fm-on-light);
       }
 
       .promo[data-kind='government'] {
         background: #1e3a5f;
-        color: #f8fafc;
+        color: var(--fm-on-fill);
       }
 
       .promo[data-kind='government'] span {
@@ -308,6 +309,7 @@ export type CompetitionCardPromo = {
       .promo[data-kind='competition'],
       .promo[data-kind='featured'] {
         background: #ffedd5;
+        color: var(--fm-on-light);
       }
     `,
   ],

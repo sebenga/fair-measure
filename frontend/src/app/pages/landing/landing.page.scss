@@ -1,13 +1,12 @@
 :host {
   display: block;
   min-height: 100%;
-  background: #f6f7f8;
-  --ion-background-color: #f6f7f8;
-  --bg: #f6f7f8;
-  --ink: #0f172a;
-  --muted: #64748b;
+  background: var(--ion-background-color, #f6f7f8);
+  --bg: var(--ion-background-color, #f6f7f8);
+  --ink: var(--fm-ink);
+  --muted: var(--ion-color-medium);
   --teal: #0f766e;
-  --line: #e2e8f0;
+  --line: var(--fm-line);
 }
 
 ion-content {
@@ -49,7 +48,7 @@ ion-content::part(scroll) {
   gap: 8px;
   padding: 8px 10px 8px 12px;
   border-radius: 999px;
-  background: #fff;
+  background: var(--fm-surface);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
@@ -116,13 +115,14 @@ nav {
 }
 
 .ghost {
-  background: #fff;
+  background: var(--fm-surface);
   border: 1px solid var(--line);
+  color: var(--fm-ink);
 }
 
 .primary {
   background: var(--teal);
-  color: #fff;
+  color: var(--fm-on-fill);
 }
 
 .primary.block,
@@ -168,7 +168,7 @@ nav {
   margin: 0;
   padding: 8px 12px;
   border-radius: 999px;
-  background: #fff;
+  background: var(--fm-surface);
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
   font-size: 0.82rem;
   font-weight: 650;
@@ -193,7 +193,7 @@ nav {
 .commercial .banner,
 .offer,
 .enquire-form {
-  background: #fff;
+  background: var(--fm-surface);
   border-radius: 18px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
 }
@@ -244,8 +244,8 @@ nav {
   border: 1px solid var(--line);
   border-radius: 12px;
   font: inherit;
-  color: var(--ink);
-  background: #fff;
+  color: var(--fm-ink);
+  background: var(--fm-field-bg);
 }
 
 .audience {
@@ -254,20 +254,22 @@ nav {
   gap: 8px;
 }
 
-.vis {
+.audience .vis,
+.audience .vis:not(.selected) {
   min-height: 40px;
   border: 1.5px solid var(--line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--fm-chip-bg);
+  color: var(--fm-ink);
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+}
 
-  &.selected {
-    border-color: var(--teal);
-    background: color-mix(in srgb, var(--teal) 10%, #fff);
-    color: var(--teal);
-  }
+.audience .vis.selected {
+  border-color: var(--teal);
+  background: var(--fm-chip-selected);
+  color: var(--fm-ink);
 }
 
 .section-head {
@@ -300,13 +302,13 @@ h3 {
   margin: 0;
   padding: 22px 18px;
   border-radius: 18px;
-  background: #fff;
+  background: var(--fm-surface);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
 }
 
 .comp,
 .card {
-  background: #fff;
+  background: var(--fm-surface);
   border-radius: 18px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
 }
@@ -386,7 +388,7 @@ h3 {
 .sponsors li {
   padding: 16px;
   border-radius: 16px;
-  background: #fff;
+  background: var(--fm-surface);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
 }
 

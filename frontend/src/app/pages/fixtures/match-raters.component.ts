@@ -235,7 +235,7 @@ import { RealtimeService } from '../../core/realtime.service';
       }
       .rater ion-icon {
         font-size: 1.6rem;
-        color: var(--ion-color-primary);
+        color: var(--fm-accent);
       }
       .who {
         flex: 1 1 auto;
@@ -309,6 +309,9 @@ import { RealtimeService } from '../../core/realtime.service';
       .player.off {
         opacity: 0.7;
       }
+      .player .name {
+        color: var(--fm-ink);
+      }
       .player .name em {
         margin-left: 6px;
         font-style: normal;
@@ -328,7 +331,7 @@ import { RealtimeService } from '../../core/realtime.service';
         margin: 0;
         font-size: 0.72rem;
         font-weight: 700;
-        color: var(--ion-color-primary);
+        color: var(--fm-accent);
       }
       .basis {
         margin: 2px 0 0;
@@ -463,8 +466,9 @@ import { RealtimeService } from '../../core/realtime.service';
       .num {
         display: inline-block;
         min-width: 20px;
+        margin-right: 6px;
         font-weight: 800;
-        color: var(--ion-color-primary);
+        color: var(--fm-accent);
       }
       .avg {
         font-weight: 800;

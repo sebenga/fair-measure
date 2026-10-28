@@ -453,6 +453,8 @@ interface Celebration {
             [status]="fx.status"
             [minute]="matchMinute()"
             [part]="tab() === 'live' ? 'subs' : 'all'"
+            [canRecord]="canScore() && fx.status === 'live'"
+            (contribution)="chooseContribution($event)"
           />
         }
 
@@ -1332,6 +1334,47 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
         team: side.participant.name,
       })),
     );
+  }
+
+  async chooseContribution(pick: { sideId: string; playerId: string; name: string }): Promise<void> {
+    if (this.saving() || this.kickoffBlocked()) return;
+    const fixture = this.fixture();
+    if (!fixture || fixture.status !== 'live' || !this.canScore()) return;
+    const side = fixture.sides.find((item) => item.id === pick.sideId);
+    if (!side) return;
+    const options = [
+      { code: 'yellow-card', name: 'yellow card', label: 'Yellow card' },
+      { code: 'red-card', name: 'red card', label: 'Red card' },
+      { code: 'goal', name: 'goal', label: 'Goal' },
+      { code: 'own-goal', name: 'own goal', label: 'Own goal' },
+    ]
+      .map((option) => ({
+        ...option,
+        category: this.categories().find((category) => {
+          const code = category.code.trim().toLowerCase();
+          const name = category.name.trim().toLowerCase();
+          return code === option.code || name === option.name;
+        }),
+      }))
+      .filter((option) => option.category);
+    if (!options.length) {
+      await this.showToast('This competition has no goal or card categories.', 'danger');
+      return;
+    }
+    const sheet = await this.actionSheets.create({
+      header: pick.name,
+      subHeader: 'Record a contribution',
+      buttons: [
+        ...options.map((option) => ({
+          text: option.label,
+          handler: () => {
+            void this.record(side, option.category as ScoringCategory, pick.playerId);
+          },
+        })),
+        { text: 'Cancel', role: 'cancel' },
+      ],
+    });
+    await sheet.present();
   }
 
   async confirmRecord(

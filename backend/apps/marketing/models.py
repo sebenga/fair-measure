@@ -49,6 +49,7 @@ class Enquiry(BaseModel):
     organisation = models.CharField(max_length=200)
     contact_name = models.CharField(max_length=160)
     email = models.EmailField()
+    phone = models.CharField(max_length=32)
     message = models.TextField()
 
     class Meta:

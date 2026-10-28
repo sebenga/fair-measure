@@ -24,6 +24,7 @@ def test_anonymous_visitors_can_send_a_partnership_enquiry(anon_api):
             "organisation": "City of Harbour",
             "contact_name": "Ada Mayor",
             "email": "sport@harbour.gov",
+            "phone": "+27 82 555 0100",
             "message": "We want a municipal schools cup on the public landing page.",
         },
         format="json",

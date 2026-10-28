@@ -70,7 +70,7 @@ import { IonIcon } from '@ionic/angular/standalone';
       }
 
       .slot[data-kind='banner'] {
-        color: #fff;
+        color: var(--fm-on-fill);
         background: linear-gradient(135deg, var(--ion-color-primary-shade), #1d4ed8);
       }
 
@@ -81,7 +81,7 @@ import { IonIcon } from '@ionic/angular/standalone';
       }
 
       .slot[data-kind='corporate'] {
-        color: #042f2e;
+        color: var(--fm-on-light);
         background: linear-gradient(160deg, #ccfbf1, #ffffff 58%);
         box-shadow:
           var(--fm-shadow),
@@ -89,11 +89,12 @@ import { IonIcon } from '@ionic/angular/standalone';
       }
 
       .slot[data-kind='government'] {
-        color: #f8fafc;
+        color: var(--fm-on-fill);
         background: linear-gradient(160deg, #1e3a5f, #0f172a);
       }
 
       .slot[data-kind='competition'] {
+        color: var(--fm-on-light);
         box-shadow:
           var(--fm-shadow),
           inset 3px 0 0 #ea580c;

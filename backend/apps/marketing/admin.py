@@ -13,7 +13,7 @@ class PlacementAdmin(admin.ModelAdmin):
 
 @admin.register(Enquiry)
 class EnquiryAdmin(admin.ModelAdmin):
-    list_display = ["organisation", "audience", "contact_name", "email", "created_at"]
+    list_display = ["organisation", "audience", "contact_name", "email", "phone", "created_at"]
     list_filter = ["audience", "created_at"]
-    search_fields = ["organisation", "contact_name", "email", "message"]
+    search_fields = ["organisation", "contact_name", "email", "phone", "message"]
     readonly_fields = ["created_at", "updated_at"]

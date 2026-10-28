@@ -159,13 +159,14 @@
 
   .name {
     font-weight: 650;
+    color: var(--fm-ink);
   }
 
   .num {
     display: inline-block;
     min-width: 20px;
     font-weight: 800;
-    color: var(--ion-color-primary);
+    color: var(--fm-accent);
   }
 
   .sheet {

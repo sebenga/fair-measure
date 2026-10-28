@@ -20,6 +20,18 @@ ion-router-outlet > fm-landing.ion-page:not(:last-child) {
   display: none !important;
 }
 
+// Native buttons pick up the theme ink. Brand fills and fixed light/dark
+// cards opt out with --fm-on-fill or --fm-on-light.
+button {
+  color: var(--fm-ink);
+}
+
+button.primary,
+.primary,
+button[type='submit'] {
+  color: var(--fm-on-fill);
+}
+
 // --- Shared building blocks -------------------------------------------------
 
 .fm-card {
@@ -92,7 +104,7 @@ a.fm-card.report-link {
     font-weight: 800;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: var(--ion-color-primary);
+    color: var(--fm-accent);
     overflow-wrap: anywhere;
   }
 }

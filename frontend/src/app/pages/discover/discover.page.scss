@@ -93,8 +93,8 @@
   padding: 6px 8px;
   border: 0;
   border-radius: 10px;
-  background: #f1f5f9;
-  color: inherit;
+  background: var(--fm-chip-bg);
+  color: var(--fm-ink);
   font: inherit;
   font-size: 0.72rem;
   font-weight: 650;
@@ -156,8 +156,8 @@
   padding: 12px;
   border: 0;
   border-radius: 14px;
-  background: color-mix(in srgb, var(--ion-color-primary) 12%, #fff);
-  color: inherit;
+  background: var(--fm-chip-selected);
+  color: var(--fm-ink);
   font: inherit;
   text-align: left;
 }
@@ -165,6 +165,7 @@
 .chip[data-kind='competition'] {
   background: linear-gradient(160deg, #fff7ed, #ffffff 70%);
   box-shadow: inset 3px 0 0 #ea580c;
+  color: var(--fm-on-light);
 }
 
 .chip span {

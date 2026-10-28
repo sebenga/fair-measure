@@ -1001,6 +1001,7 @@ export interface MarketingEnquiry {
   organisation: string;
   contact_name: string;
   email: string;
+  phone: string;
   message: string;
 }
 

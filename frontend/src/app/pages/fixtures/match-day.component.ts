@@ -7,6 +7,7 @@ import {
   effect,
   inject,
   input,
+  output,
   signal,
   untracked,
 } from '@angular/core';
@@ -78,22 +79,30 @@ interface Draft {
               <div class="pitch-row">
                 @for (slot of row; track slot.index) {
                   @if (starterAt(side, slot.index); as player) {
-                    <div
-                      class="shirt"
-                      [class.captain]="lineup.captain_id === player.player_id"
-                      [class.off]="player.subbed_off || player.sent_off"
-                      [style.--kit]="kit(side.participant_id)[0]"
-                      [style.--kit-ink]="kit(side.participant_id)[1]"
-                    >
-                      @if (lineup.captain_id === player.player_id) {
-                        <i class="badge" aria-label="Captain">C</i>
-                      }
-                      <span class="kit">{{ player.number ?? '' }}</span>
-                      <span class="who">
-                        <b>{{ shortName(player.name) }}</b>
-                        <small>{{ shirtMeta(player) }}</small>
-                      </span>
-                    </div>
+                    @if (canRecord()) {
+                      <button
+                        type="button"
+                        class="shirt tappable"
+                        [class.captain]="lineup.captain_id === player.player_id"
+                        [class.off]="player.subbed_off || player.sent_off"
+                        [style.--kit]="kit(side.participant_id)[0]"
+                        [style.--kit-ink]="kit(side.participant_id)[1]"
+                        [attr.aria-label]="'Record a goal or card for ' + player.name"
+                        (click)="pressPlayer(side, player)"
+                      >
+                        <ng-container *ngTemplateOutlet="shirtBody; context: { $implicit: player, lineup: lineup }" />
+                      </button>
+                    } @else {
+                      <div
+                        class="shirt"
+                        [class.captain]="lineup.captain_id === player.player_id"
+                        [class.off]="player.subbed_off || player.sent_off"
+                        [style.--kit]="kit(side.participant_id)[0]"
+                        [style.--kit-ink]="kit(side.participant_id)[1]"
+                      >
+                        <ng-container *ngTemplateOutlet="shirtBody; context: { $implicit: player, lineup: lineup }" />
+                      </div>
+                    }
                   } @else {
                     <div class="empty">
                       <span class="kit hollow">–</span>
@@ -108,13 +117,31 @@ interface Draft {
           <ul class="list">
             @for (player of lineup.starters; track player.player_id) {
               <li [class.off]="player.subbed_off">
-                <span class="num">{{ player.number ?? '' }}</span>
-                <span class="who">
-                  <b>{{ player.name }}</b>
-                  <small>{{ shirtMeta(player) }}</small>
-                </span>
-                @if (lineup.captain_id === player.player_id) {
-                  <i class="badge inline" aria-label="Captain">C</i>
+                @if (canRecord()) {
+                  <button
+                    type="button"
+                    class="list-player"
+                    [attr.aria-label]="'Record a goal or card for ' + player.name"
+                    (click)="pressPlayer(side, player)"
+                  >
+                    <span class="num">{{ player.number ?? '' }}</span>
+                    <span class="who">
+                      <b>{{ player.name }}</b>
+                      <small>{{ shirtMeta(player) }}</small>
+                    </span>
+                    @if (lineup.captain_id === player.player_id) {
+                      <i class="badge inline" aria-label="Captain">C</i>
+                    }
+                  </button>
+                } @else {
+                  <span class="num">{{ player.number ?? '' }}</span>
+                  <span class="who">
+                    <b>{{ player.name }}</b>
+                    <small>{{ shirtMeta(player) }}</small>
+                  </span>
+                  @if (lineup.captain_id === player.player_id) {
+                    <i class="badge inline" aria-label="Captain">C</i>
+                  }
                 }
               </li>
             }
@@ -157,12 +184,26 @@ interface Draft {
       }
     </ng-template>
 
+    <ng-template #shirtBody let-player let-lineup="lineup">
+      @if (lineup.captain_id === player.player_id) {
+        <i class="badge" aria-label="Captain">C</i>
+      }
+      <span class="kit">{{ player.number ?? '' }}</span>
+      <span class="who">
+        <b>{{ shortName(player.name) }}</b>
+        <small>{{ shirtMeta(player) }}</small>
+      </span>
+    </ng-template>
+
     @if (day()?.enabled && sides().length && part() !== 'subs') {
       <h3 class="fm-section-title">Team sheets</h3>
       <p class="hint">
         Both teams must submit a team sheet of at least {{ sheetMinimum() }} before kickoff, and every
         named player needs a shirt number. Officials must be picked on Setup.
       </p>
+      @if (canRecord()) {
+        <p class="hint">Tap a player to record a yellow card, red card, goal or own goal.</p>
+      }
       <div class="lineup-stack" [class.editing]="!!draft()">
         @for (side of sides(); track side.side_id) {
           <div class="fm-card sheet" [class.edit]="draft()?.sideId === side.side_id">
@@ -495,6 +536,28 @@ interface Draft {
         width: 76px;
         padding: 0;
       }
+      button.shirt {
+        border: 0;
+        background: none;
+        color: #fff;
+        font: inherit;
+      }
+      button.shirt.tappable {
+        cursor: pointer;
+      }
+      .list-player {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--fm-ink);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
       .kit {
         display: grid;
         place-items: center;
@@ -755,7 +818,7 @@ interface Draft {
       .list .num {
         min-width: 22px;
         font-weight: 800;
-        color: var(--ion-color-primary);
+        color: var(--fm-accent);
       }
       .sub-on {
         color: var(--ion-color-success);
@@ -831,6 +894,9 @@ export class MatchDayComponent implements OnInit {
   readonly minute = input<number | null>(null);
   /** Which panels to show: everything, only the team sheets, or only substitutions. */
   readonly part = input<'all' | 'sheets' | 'subs'>('all');
+  /** Referee, owner or admin during a live match can record a goal or a card from the shirt. */
+  readonly canRecord = input(false);
+  readonly contribution = output<{ sideId: string; playerId: string; name: string }>();
 
   readonly day = signal<MatchDay | null>(null);
   readonly draft = signal<Draft | null>(null);
@@ -997,6 +1063,23 @@ export class MatchDayComponent implements OnInit {
     const byRow = new Map<number, FormationSlot[]>();
     for (const slot of slots) byRow.set(slot.row, [...(byRow.get(slot.row) ?? []), slot]);
     return [...byRow.entries()].sort((a, b) => b[0] - a[0]).map(([, row]) => row);
+  }
+
+  pressPlayer(side: TeamSheetSide, player: LineupPlayer): void {
+    if (!this.canRecord()) return;
+    if (player.sent_off) {
+      void this.toast(`${player.name} is already sent off.`);
+      return;
+    }
+    if (player.subbed_off) {
+      void this.toast(`${player.name} is off the field.`);
+      return;
+    }
+    this.contribution.emit({
+      sideId: side.side_id,
+      playerId: player.player_id,
+      name: player.name,
+    });
   }
 
   starterAt(side: TeamSheetSide, slot: number) {

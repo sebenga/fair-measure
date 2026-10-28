@@ -183,7 +183,7 @@
     &.on {
       border-color: var(--ion-color-primary);
       background: var(--ion-color-primary);
-      color: #fff;
+      color: var(--fm-on-fill);
     }
   }
 }

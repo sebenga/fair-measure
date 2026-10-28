@@ -76,7 +76,7 @@
 
 .offer[data-kind='government'] {
   background: linear-gradient(160deg, #1e3a5f, #0f172a);
-  color: #f8fafc;
+  color: var(--fm-on-fill);
 }
 
 .offer.selected {
@@ -107,7 +107,8 @@
 .logo-row span {
   padding: 8px 10px;
   border-radius: 10px;
-  background: #f1f5f9;
+  background: var(--fm-chip-bg);
+  color: var(--fm-ink);
   font-size: 0.78rem;
   font-weight: 650;
 }
@@ -123,19 +124,21 @@
   gap: 8px;
 }
 
-.audience button {
+.audience button,
+.audience button:not(.selected) {
   min-height: 40px;
-  border: 0;
+  border: 1.5px solid var(--fm-line);
   border-radius: 10px;
-  background: #e2e8f0;
-  color: inherit;
+  background: var(--fm-chip-bg);
+  color: var(--fm-ink);
   font: inherit;
   font-weight: 650;
 }
 
 .audience button.selected {
-  background: #0f766e;
-  color: #fff;
+  border-color: var(--ion-color-primary);
+  background: var(--fm-chip-selected);
+  color: var(--fm-ink);
 }
 
 .enquire label {
@@ -151,10 +154,10 @@
   width: 100%;
   box-sizing: border-box;
   padding: 10px 12px;
-  border: 1px solid var(--ion-color-step-200, #d7d8da);
+  border: 1px solid var(--fm-line);
   border-radius: 10px;
-  background: #fff;
-  color: inherit;
+  background: var(--fm-field-bg);
+  color: var(--fm-ink);
   font: inherit;
 }
 
@@ -163,7 +166,7 @@
   border: 0;
   border-radius: 12px;
   background: var(--ion-color-primary);
-  color: #fff;
+  color: var(--fm-on-fill);
   font: inherit;
   font-weight: 700;
 }
