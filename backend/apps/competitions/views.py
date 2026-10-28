@@ -87,6 +87,11 @@ def visible_competitions(user) -> QuerySet[Competition]:
                 "sport", str, description="Filter by type, e.g. rugby, KPIs, cleaning."
             ),
             OpenApiParameter("status", str, description="draft | active | completed | archived"),
+            OpenApiParameter(
+                "show_on_landing",
+                bool,
+                description="Only competitions featured on the marketing landing page.",
+            ),
             OpenApiParameter("mine", bool, description="Only competitions you are a member of."),
             OpenApiParameter("search", str, description="Search name, description and sport."),
         ],
@@ -101,7 +106,7 @@ class CompetitionViewSet(viewsets.ModelViewSet):
     queryset = Competition.objects.none()
     permission_classes = [IsAuthenticatedOrReadOnly, IsCompetitionAdminOrReadOnly]
     lookup_field = "pk"
-    filterset_fields = ["sport", "status", "format", "is_private"]
+    filterset_fields = ["sport", "status", "format", "is_private", "show_on_landing"]
     search_fields = ["name", "description", "sport"]
     ordering_fields = ["created_at", "name", "starts_on"]
     # An explicit default keeps pagination stable across pages.

@@ -989,6 +989,7 @@ class CompetitionListSerializer(serializers.ModelSerializer):
             "format",
             "status",
             "is_private",
+            "show_on_landing",
             "open_to_scouts",
             "starts_on",
             "ends_on",
@@ -1161,6 +1162,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
             "format",
             "status",
             "is_private",
+            "show_on_landing",
             "open_to_scouts",
             "starts_on",
             "ends_on",
@@ -1193,6 +1195,23 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         ends_on = attrs.get("ends_on", getattr(self.instance, "ends_on", None))
         if starts_on and ends_on and ends_on < starts_on:
             raise serializers.ValidationError({"ends_on": "End date is before the start date."})
+        is_private = attrs.get("is_private", getattr(self.instance, "is_private", False))
+        show_on_landing = attrs.get(
+            "show_on_landing", getattr(self.instance, "show_on_landing", False)
+        )
+        if is_private and attrs.get("show_on_landing"):
+            raise serializers.ValidationError(
+                {
+                    "show_on_landing": (
+                        "Private competitions cannot appear on the landing page. "
+                        "Make the competition public first."
+                    )
+                }
+            )
+        if is_private:
+            attrs["show_on_landing"] = False
+        elif "show_on_landing" in attrs:
+            attrs["show_on_landing"] = bool(show_on_landing)
         if attrs.get("open_to_scouts"):
             from apps.scouting.catalog import sport_for_competition
 

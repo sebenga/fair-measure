@@ -46,8 +46,17 @@ class MembershipInline(admin.TabularInline):
 
 @admin.register(Competition)
 class CompetitionAdmin(admin.ModelAdmin):
-    list_display = ["name", "sport", "format", "status", "owner", "is_private", "created_at"]
-    list_filter = ["status", "format", "is_private", "sport"]
+    list_display = [
+        "name",
+        "sport",
+        "format",
+        "status",
+        "owner",
+        "is_private",
+        "show_on_landing",
+        "created_at",
+    ]
+    list_filter = ["status", "format", "is_private", "show_on_landing", "sport"]
     search_fields = ["name", "slug", "description", "owner__email"]
     autocomplete_fields = ["owner"]
     prepopulated_fields = {"slug": ["name"]}

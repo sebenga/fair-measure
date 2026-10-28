@@ -918,6 +918,39 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
             }
           }
           @case ('officials') {
+            <h3 class="fm-section-title">Visibility</h3>
+            <p class="hint">
+              Public competitions can be found in the app. Choose to show yours on the landing page
+              if you want visitors to see it before they sign in.
+            </p>
+            <ion-list inset="true">
+              <ion-item>
+                <ion-toggle
+                  [checked]="!comp.is_private"
+                  [disabled]="busy() || !canManage()"
+                  (ionChange)="setPrivate(!$any($event).detail.checked)"
+                >
+                  {{ comp.is_private ? 'Private' : 'Public' }}
+                </ion-toggle>
+              </ion-item>
+              <ion-item>
+                <ion-toggle
+                  [checked]="!!comp.show_on_landing"
+                  [disabled]="busy() || !canManage() || !!comp.is_private"
+                  (ionChange)="setShowOnLanding($any($event).detail.checked)"
+                >
+                  {{
+                    comp.show_on_landing
+                      ? 'Shown on the landing page'
+                      : 'Hidden from the landing page'
+                  }}
+                </ion-toggle>
+              </ion-item>
+            </ion-list>
+            @if (comp.is_private) {
+              <p class="hint">Private competitions stay off the landing page. Make it public first.</p>
+            }
+
             <h3 class="fm-section-title">Game time</h3>
             <p class="hint">
               Every game needs a time limit and a referee before kickoff. Prescribed time is split into two
@@ -1367,6 +1400,65 @@ export class CompetitionSetupPage implements OnInit {
         },
         error: () => this.busy.set(false),
       });
+  }
+
+  setPrivate(isPrivate: boolean): void {
+    const competition = this.competition();
+    if (!competition || !!competition.is_private === isPrivate || this.busy()) return;
+    this.busy.set(true);
+    this.api
+      .updateCompetition(this.competitionId, {
+        is_private: isPrivate,
+        ...(isPrivate ? { show_on_landing: false } : {}),
+      })
+      .subscribe({
+        next: async (updated) => {
+          this.competition.set({ ...competition, ...updated });
+          this.busy.set(false);
+          await this.toast(
+            isPrivate
+              ? 'This competition is now private.'
+              : 'This competition is now public.',
+            'success',
+          );
+        },
+        error: async (err: unknown) => {
+          this.busy.set(false);
+          this.competition.set({ ...competition });
+          await this.toast(extractErrorMessage(err, 'Could not change visibility.'), 'danger');
+        },
+      });
+  }
+
+  setShowOnLanding(show: boolean): void {
+    const competition = this.competition();
+    if (!competition || !!competition.show_on_landing === show || this.busy()) return;
+    if (show && competition.is_private) {
+      void this.toast('Make the competition public before showing it on the landing page.', 'danger');
+      this.competition.set({ ...competition });
+      return;
+    }
+    this.busy.set(true);
+    this.api.updateCompetition(this.competitionId, { show_on_landing: show }).subscribe({
+      next: async (updated) => {
+        this.competition.set({ ...competition, ...updated });
+        this.busy.set(false);
+        await this.toast(
+          show
+            ? 'This competition will appear on the landing page.'
+            : 'This competition is no longer on the landing page.',
+          'success',
+        );
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        this.competition.set({ ...competition });
+        await this.toast(
+          extractErrorMessage(err, 'Could not change the landing page setting.'),
+          'danger',
+        );
+      },
+    });
   }
 
   setOpenToScouts(open: boolean): void {

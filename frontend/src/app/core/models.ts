@@ -235,6 +235,8 @@ export interface Competition {
   format: CompetitionFormat;
   status: CompetitionStatus;
   is_private: boolean;
+  /** When set, visitors see this public competition on the marketing landing page. */
+  show_on_landing?: boolean;
   /** Sport competitions only: scouts can follow it and it can name its own squad. */
   open_to_scouts?: boolean;
   starts_on: string | null;

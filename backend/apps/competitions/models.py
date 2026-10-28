@@ -63,6 +63,13 @@ class Competition(BaseModel):
     is_private = models.BooleanField(
         default=False, help_text=_("Private competitions are only visible to members.")
     )
+    show_on_landing = models.BooleanField(
+        default=False,
+        help_text=_(
+            "When set, this public competition is listed on the marketing landing page "
+            "for visitors who have not signed in."
+        ),
+    )
     open_to_scouts = models.BooleanField(
         default=False,
         help_text=_(
@@ -81,6 +88,7 @@ class Competition(BaseModel):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["status", "is_private"]),
+            models.Index(fields=["show_on_landing", "status"]),
             models.Index(fields=["sport"]),
         ]
 

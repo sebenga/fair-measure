@@ -80,7 +80,8 @@ const SPONSORS = [
               <div class="cards">
                 @if (competitions().length === 0) {
                   <p class="empty">
-                    No public leagues yet. Create one and it can appear here for visitors.
+                    No featured competitions yet. When you create one, choose to show it on the
+                    landing page so visitors can find it here.
                   </p>
                 } @else {
                   @for (competition of competitions(); track competition.id; let i = $index) {
@@ -252,14 +253,16 @@ export class LandingPage {
   private load(): void {
     forkJoin({
       competitions: this.api
-        .listCompetitions({ page_size: 6, status: 'active', is_private: false })
-        .pipe(catchError(() => this.api.listCompetitions({ page_size: 6, is_private: false }))),
+        .listCompetitions({ page_size: 8, show_on_landing: true })
+        .pipe(catchError(() => this.api.listCompetitions({ page_size: 8, is_private: false }))),
       posts: this.api.listDiscoverPosts({ page_size: 8 }).pipe(
         catchError(() => of({ next: null, previous: null, results: [] })),
       ),
     }).subscribe({
       next: ({ competitions, posts }) => {
-        const rows = competitions.results.filter((item) => !item.is_private);
+        const rows = competitions.results.filter(
+          (item) => !item.is_private && item.show_on_landing !== false && item.status !== 'archived',
+        );
         this.competitions.set(rows.slice(0, 3));
         this.liveCount.set(rows.filter((item) => item.status === 'active').length || rows.length);
         this.updates.set(posts.results.slice(0, 6));

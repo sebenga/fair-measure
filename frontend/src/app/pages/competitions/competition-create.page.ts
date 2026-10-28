@@ -854,7 +854,7 @@ function presetKind(preset: Preset): PresetKind {
                 type="button"
                 class="vis"
                 [class.selected]="!form.controls.is_private.value"
-                (click)="form.controls.is_private.setValue(false)"
+                (click)="setPrivate(false)"
               >
                 <ion-icon name="globe-outline" aria-hidden="true" />
                 <strong>Public</strong>
@@ -864,12 +864,27 @@ function presetKind(preset: Preset): PresetKind {
                 type="button"
                 class="vis"
                 [class.selected]="form.controls.is_private.value"
-                (click)="form.controls.is_private.setValue(true)"
+                (click)="setPrivate(true)"
               >
                 <ion-icon name="lock-closed-outline" aria-hidden="true" />
                 <strong>Private</strong>
                 <p>Only people you add can see it.</p>
               </button>
+              @if (!form.controls.is_private.value) {
+                <button
+                  type="button"
+                  class="vis landing"
+                  [class.selected]="form.controls.show_on_landing.value"
+                  (click)="form.controls.show_on_landing.setValue(!form.controls.show_on_landing.value)"
+                >
+                  <ion-icon name="megaphone-outline" aria-hidden="true" />
+                  <strong>Show on the landing page</strong>
+                  <p>
+                    Visitors can see this competition before they sign in. Use this to make it more
+                    public.
+                  </p>
+                </button>
+              }
             </div>
 
             @if (scoutable()) {
@@ -955,7 +970,7 @@ function presetKind(preset: Preset): PresetKind {
                 }
                 <div>
                   <dt>Visibility</dt>
-                  <dd>{{ form.controls.is_private.value ? 'Private' : 'Public' }}</dd>
+                  <dd>{{ visibilityLabel() }}</dd>
                 </div>
                 @if (scoutable()) {
                   <div>
@@ -1247,6 +1262,7 @@ export class CompetitionCreatePage implements OnInit {
       ends_on: [''],
       timezone: [localTimezone()],
       is_private: [false],
+      show_on_landing: [false],
       open_to_scouts: [false],
       match_weekdays: [[] as number[]],
     },
@@ -1739,6 +1755,19 @@ export class CompetitionCreatePage implements OnInit {
     this.form.controls.name.markAsTouched();
   }
 
+  setPrivate(isPrivate: boolean): void {
+    this.form.controls.is_private.setValue(isPrivate);
+    if (isPrivate) {
+      this.form.controls.show_on_landing.setValue(false);
+    }
+  }
+
+  visibilityLabel(): string {
+    if (this.form.controls.is_private.value) return 'Private';
+    if (this.form.controls.show_on_landing.value) return 'Public · on the landing page';
+    return 'Public';
+  }
+
   /** Only sports that scouting covers can be opened to scouts. */
   scoutable(): boolean {
     return scoutingSportFor(this.form.controls.sport.value, this.scoutingCatalog()) !== null;
@@ -1794,6 +1823,7 @@ export class CompetitionCreatePage implements OnInit {
             }
           : {}),
         is_private: raw.is_private,
+        show_on_landing: !raw.is_private && raw.show_on_landing,
         open_to_scouts: this.scoutable() && raw.open_to_scouts,
         starts_on: raw.starts_on || null,
         ends_on: raw.ends_on || null,
