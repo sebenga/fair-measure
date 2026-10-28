@@ -4,13 +4,19 @@ import { IonBadge, IonButton, IonIcon } from '@ionic/angular/standalone';
 
 import type { Competition } from '../core/models';
 
+export type CompetitionCardPromo = {
+  kind: 'corporate' | 'government' | 'competition' | 'featured';
+  eyebrow: string;
+  title: string;
+};
+
 @Component({
   selector: 'fm-competition-card',
   standalone: true,
   imports: [TitleCasePipe, IonBadge, IonButton, IonIcon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="card" [attr.data-size]="size()">
+    <div class="card" [attr.data-size]="size()" [attr.data-promo]="promo()?.kind || null">
       <button type="button" class="card-main" (click)="open.emit()">
         <div class="crest" [style.background]="crestColour()">
           @if (competition().logo_url) {
@@ -38,6 +44,12 @@ import type { Competition } from '../core/models';
 
           <div class="tags">
             <ion-badge [color]="statusColour()">{{ competition().status | titlecase }}</ion-badge>
+            @if (competition().show_on_landing) {
+              <ion-badge color="warning">On landing page</ion-badge>
+            }
+            @if (competition().open_to_scouts) {
+              <ion-badge color="tertiary">Open to scouts</ion-badge>
+            }
             @if (competition().my_role) {
               <ion-badge color="light">{{ competition().my_role | titlecase }}</ion-badge>
             }
@@ -48,6 +60,13 @@ import type { Competition } from '../core/models';
           <ion-icon name="chevron-forward-outline" class="chevron" aria-hidden="true" />
         }
       </button>
+
+      @if (promo(); as ad) {
+        <button type="button" class="promo" [attr.data-kind]="ad.kind" (click)="onPromo($event)">
+          <span>{{ ad.eyebrow }}</span>
+          <strong>{{ ad.title }}</strong>
+        </button>
+      }
 
       @if (canDelete()) {
         <ion-button
@@ -72,6 +91,7 @@ import type { Competition } from '../core/models';
 
       .card {
         display: flex;
+        flex-wrap: wrap;
         transition:
           transform 0.25s var(--fm-ease-out),
           box-shadow 0.25s var(--fm-ease-out);
@@ -112,6 +132,25 @@ import type { Competition } from '../core/models';
         .card:hover .chevron {
           transform: translateX(3px);
         }
+      }
+
+      .card[data-promo='corporate'] {
+        box-shadow:
+          var(--fm-shadow),
+          inset 3px 0 0 #0f766e;
+      }
+
+      .card[data-promo='government'] {
+        box-shadow:
+          var(--fm-shadow),
+          inset 3px 0 0 #1e3a5f;
+      }
+
+      .card[data-promo='competition'],
+      .card[data-promo='featured'] {
+        box-shadow:
+          var(--fm-shadow),
+          inset 3px 0 0 #ea580c;
       }
 
       .card[data-size='large'] {
@@ -223,6 +262,53 @@ import type { Competition } from '../core/models';
         font-size: 1.1rem;
         transition: transform 0.25s var(--fm-ease-out);
       }
+
+      .promo {
+        flex: 1 1 100%;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin: -4px 14px 12px;
+        padding: 8px 10px;
+        border: 0;
+        border-radius: 10px;
+        background: #f8fafc;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .promo span {
+        font-size: 0.66rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ion-color-medium);
+      }
+
+      .promo strong {
+        font-size: 0.8rem;
+        font-weight: 650;
+      }
+
+      .promo[data-kind='corporate'] {
+        background: #ccfbf1;
+      }
+
+      .promo[data-kind='government'] {
+        background: #1e3a5f;
+        color: #f8fafc;
+      }
+
+      .promo[data-kind='government'] span {
+        color: #94a3b8;
+      }
+
+      .promo[data-kind='competition'],
+      .promo[data-kind='featured'] {
+        background: #ffedd5;
+      }
     `,
   ],
 })
@@ -230,8 +316,16 @@ export class CompetitionCardComponent {
   readonly competition = input.required<Competition>();
   readonly size = input<'default' | 'large'>('default');
   readonly canDelete = input(false);
+  readonly promo = input<CompetitionCardPromo | null>(null);
   readonly open = output<void>();
+  readonly promoClick = output<void>();
   readonly deleteClick = output<void>();
+
+  onPromo(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.promoClick.emit();
+  }
 
   onDelete(event: Event): void {
     event.preventDefault();

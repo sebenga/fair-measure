@@ -1,0 +1,195 @@
+.page {
+  box-sizing: border-box;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+}
+
+.hero {
+  margin-bottom: 24px;
+}
+
+.hero h1,
+.tracks h2,
+.enquire h2 {
+  margin: 4px 0 0;
+  font-size: 1.45rem;
+  font-weight: 750;
+}
+
+.lede {
+  max-width: 46ch;
+  margin: 10px 0 0;
+  color: var(--ion-color-medium);
+  line-height: 1.5;
+}
+
+.kicker,
+.hero p:first-child {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ion-color-medium);
+}
+
+.layout {
+  display: grid;
+  gap: 20px;
+}
+
+.tracks {
+  display: grid;
+  gap: 22px;
+}
+
+.offers {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.offer,
+.enquire {
+  padding: 16px 14px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--ion-card-background, #fff);
+  box-shadow: var(--fm-shadow);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.offer {
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.offer[data-kind='corporate'] {
+  box-shadow:
+    var(--fm-shadow),
+    inset 3px 0 0 #0f766e;
+}
+
+.offer[data-kind='government'] {
+  background: linear-gradient(160deg, #1e3a5f, #0f172a);
+  color: #f8fafc;
+}
+
+.offer.selected {
+  outline: 2px solid var(--ion-color-primary);
+  outline-offset: 2px;
+}
+
+.offer span {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.offer small {
+  line-height: 1.4;
+  opacity: 0.86;
+}
+
+.logo-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.logo-row span {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.enquire {
+  display: grid;
+  gap: 10px;
+}
+
+.audience {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.audience button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: #e2e8f0;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+}
+
+.audience button.selected {
+  background: #0f766e;
+  color: #fff;
+}
+
+.enquire label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--ion-color-medium);
+}
+
+.enquire input,
+.enquire textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--ion-color-step-200, #d7d8da);
+  border-radius: 10px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+
+.enquire > button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--ion-color-primary);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--ion-color-medium);
+}
+
+@media (min-width: 860px) {
+  .hero h1 {
+    font-size: 2rem;
+  }
+
+  .layout {
+    grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+    align-items: start;
+  }
+
+  .enquire {
+    position: sticky;
+    top: 12px;
+  }
+
+  .offers {
+    grid-template-columns: 1fr 1fr;
+  }
+}

@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     "apps.results",
     "apps.games",
     "apps.fantasy",
+    "apps.marketing",
 ]
 
 MIDDLEWARE = [

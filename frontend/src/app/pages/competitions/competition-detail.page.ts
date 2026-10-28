@@ -26,9 +26,10 @@ import {
   ToastController,
 } from '@ionic/angular/standalone';
 
-import { forkJoin } from 'rxjs';
+import { forkJoin, of } from 'rxjs';
 
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail, TeamPick } from '../../core/models';
 import { isPointsTable, showsFantasy } from '../../core/models';
@@ -67,7 +68,7 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button defaultHref="/tabs/competitions" />
+          <ion-back-button [defaultHref]="auth.isAuthenticated() ? '/tabs/competitions' : '/'" />
         </ion-buttons>
         <div class="title-cluster" slot="start">
           <span class="name">{{ competition()?.name ?? 'Competition' }}</span>
@@ -144,6 +145,12 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
         @if (demoExpiryLabel(); as expiry) {
           <div class="pick-banner">
             <p>This is a one-hour demo. It deletes at {{ expiry }}.</p>
+          </div>
+        }
+        @if (!auth.isAuthenticated()) {
+          <div class="pick-banner">
+            <p>Public competition. Browse the table, fixtures and feed without an account.</p>
+            <ion-button size="small" (click)="goLogin()">Sign in</ion-button>
           </div>
         }
         @if (canManage()) {
@@ -484,6 +491,7 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
 })
 export class CompetitionDetailPage implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
+  readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly alerts = inject(AlertController);
@@ -553,7 +561,9 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
 
     forkJoin({
       competition: this.api.getCompetition(this.competitionId),
-      picks: this.api.myTeamPicks(this.competitionId),
+      picks: this.auth.isAuthenticated()
+        ? this.api.myTeamPicks(this.competitionId)
+        : of([] as TeamPick[]),
     }).subscribe({
       next: ({ competition, picks }) => {
         this.competition.set(competition);
@@ -814,6 +824,12 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
           'danger',
         );
       },
+    });
+  }
+
+  goLogin(): void {
+    void this.router.navigate(['/login'], {
+      queryParams: { next: `/tabs/competitions/${this.competitionId}` },
     });
   }
 

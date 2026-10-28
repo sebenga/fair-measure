@@ -43,6 +43,8 @@ import type {
   ScrabbleBoard,
   StandingsResponse,
   UploadTarget,
+  MarketingEnquiry,
+  MarketingPlacement,
 } from './models';
 
 type Query = Record<string, string | number | boolean | undefined | null>;
@@ -756,5 +758,15 @@ export class ApiService {
       `${this.base}/search`,
       { params: toParams({ q: query, type, competition: competitionId }) },
     );
+  }
+
+  listPlacements(query: Query = {}): Observable<MarketingPlacement[]> {
+    return this.http.get<MarketingPlacement[]>(`${this.base}/marketing/placements`, {
+      params: toParams(query),
+    });
+  }
+
+  sendEnquiry(body: MarketingEnquiry) {
+    return this.http.post<{ ok: boolean }>(`${this.base}/marketing/enquiries`, body);
   }
 }

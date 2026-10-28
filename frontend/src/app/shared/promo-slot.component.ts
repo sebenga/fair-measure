@@ -10,7 +10,9 @@ import { IonIcon } from '@ionic/angular/standalone';
     <button type="button" class="slot" [attr.data-kind]="kind()" (click)="open.emit()">
       <span class="eyebrow">{{ eyebrow() }}</span>
       <span class="row">
-        @if (icon()) {
+        @if (logo()) {
+          <img class="logo" [src]="logo()" alt="" />
+        } @else if (icon()) {
           <ion-icon [name]="icon()" aria-hidden="true" />
         }
         <span class="copy">
@@ -47,6 +49,11 @@ import { IonIcon } from '@ionic/angular/standalone';
         display: none;
       }
 
+      :host-context(.market-strip) {
+        margin: 0;
+        flex: 0 0 min(260px, 78vw);
+      }
+
       .slot {
         display: grid;
         gap: 8px;
@@ -71,6 +78,35 @@ import { IonIcon } from '@ionic/angular/standalone';
         box-shadow:
           var(--fm-shadow),
           inset 3px 0 0 var(--ion-color-warning);
+      }
+
+      .slot[data-kind='corporate'] {
+        color: #042f2e;
+        background: linear-gradient(160deg, #ccfbf1, #ffffff 58%);
+        box-shadow:
+          var(--fm-shadow),
+          inset 3px 0 0 #0f766e;
+      }
+
+      .slot[data-kind='government'] {
+        color: #f8fafc;
+        background: linear-gradient(160deg, #1e3a5f, #0f172a);
+      }
+
+      .slot[data-kind='competition'] {
+        box-shadow:
+          var(--fm-shadow),
+          inset 3px 0 0 #ea580c;
+        background: linear-gradient(160deg, #fff7ed, #ffffff 62%);
+      }
+
+      .logo {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        object-fit: cover;
+        flex: 0 0 auto;
+        background: #fff;
       }
 
       .eyebrow {
@@ -112,11 +148,14 @@ import { IonIcon } from '@ionic/angular/standalone';
   ],
 })
 export class PromoSlotComponent {
-  readonly kind = input<'banner' | 'sponsored' | 'suggested'>('suggested');
+  readonly kind = input<'banner' | 'sponsored' | 'suggested' | 'corporate' | 'government' | 'competition'>(
+    'suggested',
+  );
   readonly eyebrow = input('Suggested');
   readonly title = input.required<string>();
   readonly body = input('');
   readonly action = input('');
   readonly icon = input('');
+  readonly logo = input('');
   readonly open = output<void>();
 }

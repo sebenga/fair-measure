@@ -194,6 +194,7 @@ import { RelativeTimePipe } from './relative-time.pipe';
             }
           }
 
+          @if (auth.isAuthenticated()) {
           <fm-attachment-tray [queue]="attachments" [small]="true" />
           <form class="composer" (submit)="submitComment($event)">
             <input
@@ -244,6 +245,9 @@ import { RelativeTimePipe } from './relative-time.pipe';
               <ion-icon slot="icon-only" name="send-outline" aria-label="Send comment" />
             </ion-button>
           </form>
+          } @else {
+            <p class="no-comments">Sign in to join the conversation.</p>
+          }
         </div>
       }
     </article>
@@ -252,7 +256,7 @@ import { RelativeTimePipe } from './relative-time.pipe';
 })
 export class PostCardComponent {
   private readonly api = inject(ApiService);
-  private readonly auth = inject(AuthService);
+  readonly auth = inject(AuthService);
   private readonly alerts = inject(AlertController);
   private readonly router = inject(Router);
 
@@ -351,6 +355,12 @@ export class PostCardComponent {
   }
 
   toggleReaction(): void {
+    if (!this.auth.isAuthenticated()) {
+      void this.router.navigate(['/login'], {
+        queryParams: { next: `/tabs/competitions/${this.competitionId()}` },
+      });
+      return;
+    }
     const wasReacted = Boolean(this.post().my_reaction);
     // Optimistic: the count nudges immediately, then the server's number wins.
     this.reactionOverride.set(this.reactionCount() + (wasReacted ? -1 : 1));

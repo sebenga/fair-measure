@@ -104,6 +104,11 @@ export const routes: Routes = [
           import('./pages/discover/discover.page').then((m) => m.DiscoverPage),
       },
       {
+        path: 'partnerships',
+        loadComponent: () =>
+          import('./pages/partnerships/partnerships.page').then((m) => m.PartnershipsPage),
+      },
+      {
         path: 'profile',
         canActivate: [authGuard],
         loadComponent: () => import('./pages/profile/profile.page').then((m) => m.ProfilePage),
@@ -263,6 +268,7 @@ export const routes: Routes = [
   },
 
   // Older links land back inside the tab shell so the bottom nav stays up.
+  { path: 'partnerships', redirectTo: 'tabs/partnerships', pathMatch: 'full' },
   { path: 'competitions/new', redirectTo: 'tabs/competitions/new', pathMatch: 'full' },
   { path: 'competitions/:id/setup', redirectTo: 'tabs/competitions/:id/setup' },
   { path: 'competitions/:id/score', redirectTo: 'tabs/competitions/:id/score' },

@@ -116,8 +116,8 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
               A league can hold several competitions — an official sport, or one
               with scoring you define. Create one, then add more from here.
             } @else {
-              Public leagues show up here. Sign in to create your own scoring,
-              fixtures and feed.
+              Featured public leagues appear here. Open one to see the table,
+              fixtures and feed — no account needed.
             }
           </p>
           <ion-button
@@ -223,10 +223,10 @@ export class CompetitionListPage {
     this.load(this.competitions().length === 0);
   }
 
-  private listQuery(): { mine?: boolean; page_size: number } {
+  private listQuery(): { mine?: boolean; show_on_landing?: boolean; page_size: number } {
     return this.auth.isAuthenticated()
       ? { mine: true, page_size: 50 }
-      : { page_size: 50 };
+      : { show_on_landing: true, page_size: 50 };
   }
 
   load(showSpinner = true): void {

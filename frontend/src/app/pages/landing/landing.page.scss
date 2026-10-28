@@ -183,8 +183,91 @@ nav {
 
 .public,
 .sponsors,
-.happening {
+.happening,
+.partners,
+.commercial,
+.enquire {
   margin-top: 36px;
+}
+
+.commercial .banner,
+.offer,
+.enquire-form {
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.commercial .banner {
+  padding: 22px 20px;
+}
+
+.offer-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.offer {
+  padding: 18px 16px;
+
+  p {
+    margin: 8px 0 0;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .text {
+    margin-top: 14px;
+  }
+}
+
+.enquire-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 18px 16px;
+}
+
+.enquire-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.enquire-form input,
+.enquire-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font: inherit;
+  color: var(--ink);
+  background: #fff;
+}
+
+.audience {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.vis {
+  min-height: 40px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+
+  &.selected {
+    border-color: var(--teal);
+    background: color-mix(in srgb, var(--teal) 10%, #fff);
+    color: var(--teal);
+  }
 }
 
 .section-head {
@@ -419,6 +502,16 @@ h3 {
 
   .sponsors ul {
     grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .offer-grid,
+  .enquire-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .enquire-form .audience,
+  .enquire-form button.primary {
+    grid-column: 1 / -1;
   }
 
   .happening {

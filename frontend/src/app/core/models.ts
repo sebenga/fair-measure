@@ -980,6 +980,30 @@ export interface NextSeasonResponse {
   competition: CompetitionDetail;
 }
 
+export type MarketingAudience = 'corporate' | 'government' | 'general';
+export type MarketingSlot = 'feature' | 'banner' | 'logo';
+
+export interface MarketingPlacement {
+  id: string;
+  audience: MarketingAudience;
+  slot: MarketingSlot;
+  name: string;
+  tagline: string;
+  body: string;
+  cta_label: string;
+  cta_url: string;
+  logo_url: string;
+  display_order: number;
+}
+
+export interface MarketingEnquiry {
+  audience: 'corporate' | 'government';
+  organisation: string;
+  contact_name: string;
+  email: string;
+  message: string;
+}
+
 export interface GenerateFixturesRequest {
   method: 'round_robin' | 'knockout' | 'league_knockout';
   participant_ids?: string[];

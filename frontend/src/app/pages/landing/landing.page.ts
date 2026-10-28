@@ -1,22 +1,15 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { IonContent, IonSpinner } from '@ionic/angular/standalone';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
 import { ApiService } from '../../core/api.service';
-import type { Competition, Post, StandingRow } from '../../core/models';
+import { FALLBACK_CORPORATE, FALLBACK_GOVERNMENT, FALLBACK_LOGOS } from '../../core/marketing-fallbacks';
+import type { Competition, MarketingPlacement, Post, StandingRow } from '../../core/models';
 
 const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
-
-const SPONSORS = [
-  { name: 'Pitchside', note: 'Kit' },
-  { name: 'Harbour Radio', note: 'Broadcast' },
-  { name: 'Millwater', note: 'Hydration' },
-  { name: 'Northstand', note: 'Community' },
-  { name: 'Ledger & Co', note: 'Workplace' },
-];
 
 @Component({
   selector: 'fm-landing',
@@ -35,9 +28,9 @@ const SPONSORS = [
           </button>
           <nav>
             <button type="button" (click)="scrollTo('public')">Competitions</button>
+            <button type="button" (click)="scrollTo('corporate')">Corporate</button>
+            <button type="button" (click)="scrollTo('government')">Government</button>
             <button type="button" (click)="scrollTo('happening')">Discover</button>
-            <button type="button" (click)="go('/tabs/games')">Games</button>
-            <button type="button" (click)="go('/tabs/scouting')">Scouting</button>
           </nav>
           <div class="auth">
             <button type="button" class="ghost" (click)="go('/login')">Sign in</button>
@@ -145,14 +138,79 @@ const SPONSORS = [
           }
         </section>
 
+        @if (banners().length) {
+          <section class="commercial" id="commercial">
+            @for (banner of banners(); track banner.id) {
+              <article class="banner">
+                <p class="eyebrow">Commercial</p>
+                <h2>{{ banner.name }}</h2>
+                @if (banner.tagline) {
+                  <p>{{ banner.tagline }}</p>
+                }
+                @if (banner.cta_label) {
+                  <button type="button" class="primary" (click)="openPlacement(banner)">
+                    {{ banner.cta_label }}
+                  </button>
+                }
+              </article>
+            }
+          </section>
+        }
+
+        <section class="partners" id="corporate">
+          <p class="eyebrow">Corporate</p>
+          <h2>Workplace leagues, brand and broadcast</h2>
+          <p class="lede">
+            Reserved commercial space for companies: staff competitions, naming rights, kit and
+            live boards. Slots are managed in admin so a campaign can go live without a release.
+          </p>
+          <div class="offer-grid">
+            @for (item of corporate(); track item.id) {
+              <article class="offer">
+                <h3>{{ item.name }}</h3>
+                <p>{{ item.tagline || item.body }}</p>
+                @if (item.body && item.tagline) {
+                  <p class="hint">{{ item.body }}</p>
+                }
+                <button type="button" class="text" (click)="openPlacement(item)">
+                  {{ item.cta_label || 'Enquire' }} →
+                </button>
+              </article>
+            }
+          </div>
+        </section>
+
+        <section class="partners government" id="government">
+          <p class="eyebrow">Government</p>
+          <h2>Schools, municipalities and public programmes</h2>
+          <p class="lede">
+            Public-sector competitions stay readable without an account. Departments and
+            federations get a named programme on this page and a route to partner.
+          </p>
+          <div class="offer-grid">
+            @for (item of government(); track item.id) {
+              <article class="offer">
+                <h3>{{ item.name }}</h3>
+                <p>{{ item.tagline || item.body }}</p>
+                @if (item.body && item.tagline) {
+                  <p class="hint">{{ item.body }}</p>
+                }
+                <button type="button" class="text" (click)="openPlacement(item)">
+                  {{ item.cta_label || 'Enquire' }} →
+                </button>
+              </article>
+            }
+          </div>
+        </section>
+
         <section class="sponsors" id="sponsors">
           <p class="eyebrow">Sponsors</p>
           <h2>Partners on the pitch, the feed, and at work</h2>
           <ul>
-            @for (sponsor of sponsors; track sponsor.name) {
+            @for (sponsor of logos(); track sponsor.id) {
               <li>
                 <strong>{{ sponsor.name }}</strong>
-                <span>{{ sponsor.note }}</span>
+                <span>{{ sponsor.tagline }}</span>
               </li>
             }
           </ul>
@@ -203,6 +261,60 @@ const SPONSORS = [
             }
           </div>
         </section>
+
+        <section class="enquire" id="enquire">
+          <p class="eyebrow">Partnerships</p>
+          <h2>Book a corporate or government slot</h2>
+          <p class="lede">
+            Tell us who you are. We place logos, banners and feature cards on this landing page
+            and on public competitions.
+          </p>
+          <form class="enquire-form" (submit)="submitEnquiry($event)">
+            <div class="audience">
+              <button
+                type="button"
+                class="vis"
+                [class.selected]="enquiryAudience() === 'corporate'"
+                (click)="enquiryAudience.set('corporate')"
+              >
+                Corporate
+              </button>
+              <button
+                type="button"
+                class="vis"
+                [class.selected]="enquiryAudience() === 'government'"
+                (click)="enquiryAudience.set('government')"
+              >
+                Government
+              </button>
+            </div>
+            <label>
+              Organisation
+              <input name="organisation" required maxlength="200" [disabled]="enquirySending()" />
+            </label>
+            <label>
+              Your name
+              <input name="contact_name" required maxlength="160" [disabled]="enquirySending()" />
+            </label>
+            <label>
+              Email
+              <input name="email" type="email" required [disabled]="enquirySending()" />
+            </label>
+            <label>
+              What would you like to run or sponsor?
+              <textarea name="message" required minlength="12" rows="4" [disabled]="enquirySending()"></textarea>
+            </label>
+            @if (enquiryError()) {
+              <p class="hint" role="alert">{{ enquiryError() }}</p>
+            }
+            @if (enquirySent()) {
+              <p class="hint">Received. Partnerships will come back to you.</p>
+            }
+            <button type="submit" class="primary" [disabled]="enquirySending()">
+              {{ enquirySending() ? 'Sending…' : 'Send enquiry' }}
+            </button>
+          </form>
+        </section>
       </div>
     </ion-content>
   `,
@@ -211,13 +323,37 @@ export class LandingPage {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
 
-  readonly sponsors = SPONSORS;
   readonly loading = signal(true);
   readonly competitions = signal<Competition[]>([]);
   readonly table = signal<StandingRow[]>([]);
   readonly updates = signal<Post[]>([]);
   readonly previewPosts = signal<Post[]>([]);
   readonly liveCount = signal(0);
+  readonly placements = signal<MarketingPlacement[]>([]);
+  readonly enquiryAudience = signal<'corporate' | 'government'>('corporate');
+  readonly enquirySending = signal(false);
+  readonly enquirySent = signal(false);
+  readonly enquiryError = signal<string | null>(null);
+
+  readonly banners = computed(() =>
+    this.placements().filter((item) => item.slot === 'banner'),
+  );
+  readonly corporate = computed(() => {
+    const rows = this.placements().filter(
+      (item) => item.audience === 'corporate' && item.slot === 'feature',
+    );
+    return rows.length ? rows : FALLBACK_CORPORATE;
+  });
+  readonly government = computed(() => {
+    const rows = this.placements().filter(
+      (item) => item.audience === 'government' && item.slot === 'feature',
+    );
+    return rows.length ? rows : FALLBACK_GOVERNMENT;
+  });
+  readonly logos = computed(() => {
+    const rows = this.placements().filter((item) => item.slot === 'logo');
+    return rows.length ? rows : FALLBACK_LOGOS;
+  });
 
   constructor() {
     this.load();
@@ -246,6 +382,52 @@ export class LandingPage {
     void this.router.navigateByUrl(`/tabs/competitions/${id}`);
   }
 
+  openPlacement(placement: MarketingPlacement): void {
+    if (placement.cta_url) {
+      window.open(placement.cta_url, '_blank', 'noopener');
+      return;
+    }
+    const audience = placement.audience === 'government' ? 'government' : 'corporate';
+    void this.router.navigate(['/partnerships'], {
+      queryParams: { audience, placement: placement.id },
+    });
+  }
+
+  submitEnquiry(event: Event): void {
+    event.preventDefault();
+    const form = event.target as HTMLFormElement;
+    const data = new FormData(form);
+    const organisation = String(data.get('organisation') ?? '').trim();
+    const contact_name = String(data.get('contact_name') ?? '').trim();
+    const email = String(data.get('email') ?? '').trim();
+    const message = String(data.get('message') ?? '').trim();
+    if (!organisation || !contact_name || !email || message.length < 12) {
+      this.enquiryError.set('Fill in the organisation, your name, email and a short note.');
+      return;
+    }
+    this.enquirySending.set(true);
+    this.enquiryError.set(null);
+    this.api
+      .sendEnquiry({
+        audience: this.enquiryAudience(),
+        organisation,
+        contact_name,
+        email,
+        message,
+      })
+      .subscribe({
+        next: () => {
+          this.enquirySending.set(false);
+          this.enquirySent.set(true);
+          form.reset();
+        },
+        error: () => {
+          this.enquirySending.set(false);
+          this.enquiryError.set('Could not send that just now. Try again, or email partnerships.');
+        },
+      });
+  }
+
   scrollTo(id: string): void {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -258,8 +440,10 @@ export class LandingPage {
       posts: this.api.listDiscoverPosts({ page_size: 8 }).pipe(
         catchError(() => of({ next: null, previous: null, results: [] })),
       ),
+      placements: this.api.listPlacements().pipe(catchError(() => of([]))),
     }).subscribe({
-      next: ({ competitions, posts }) => {
+      next: ({ competitions, posts, placements }) => {
+        this.placements.set(placements);
         const rows = competitions.results.filter(
           (item) => !item.is_private && item.show_on_landing !== false && item.status !== 'archived',
         );
