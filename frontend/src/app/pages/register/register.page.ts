@@ -1,151 +1,83 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
-import {
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonInput,
-  IonItem,
-  IonList,
-  IonNote,
-  IonSpinner,
-  IonText,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { Router } from '@angular/router';
+import { IonContent, IonSpinner } from '@ionic/angular/standalone';
 
 import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
+import { AuthShellComponent } from '../login/auth-shell.component';
 
 @Component({
   selector: 'fm-register',
   standalone: true,
-  imports: [
-    ReactiveFormsModule,
-    RouterLink,
-    IonHeader,
-    IonToolbar,
-    IonTitle,
-    IonButtons,
-    IonBackButton,
-    IonContent,
-    IonList,
-    IonItem,
-    IonInput,
-    IonButton,
-    IonNote,
-    IonSpinner,
-    IonText,
-  ],
+  imports: [ReactiveFormsModule, IonContent, IonSpinner, AuthShellComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { class: 'ion-page' },
+  styleUrl: '../login/login.page.scss',
   template: `
-    <ion-header>
-      <ion-toolbar>
-        <ion-buttons slot="start">
-          <ion-back-button defaultHref="/login" />
-        </ion-buttons>
-        <ion-title>Create account</ion-title>
-      </ion-toolbar>
-    </ion-header>
+    <ion-content [fullscreen]="true">
+      <fm-auth-shell
+        eyebrow="Sport · Social · Work"
+        title="Join as a player, fan, or organiser."
+        subtitle="One account for the match, the conversation, and the admin that keeps both honest."
+      >
+        <h2>Create account</h2>
+        <p class="lede">A minute to start. Use it for a club, a feed, or a workplace league.</p>
 
-    <ion-content class="ion-padding">
-      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
-        <ion-list inset="true">
-          <ion-item>
-            <ion-input
-              label="Name"
-              labelPlacement="stacked"
-              formControlName="displayName"
+        @if (error()) {
+          <p class="error" role="alert">{{ error() }}</p>
+        }
+
+        <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+          <label class="field">
+            Name
+            <input
+              type="text"
               autocomplete="name"
+              formControlName="displayName"
               placeholder="How should we call you?"
             />
-          </ion-item>
-          <ion-item>
-            <ion-input
-              label="Email"
-              labelPlacement="stacked"
+          </label>
+          <label class="field">
+            Email
+            <input
               type="email"
               inputmode="email"
               autocomplete="email"
               formControlName="email"
               placeholder="you@example.com"
             />
-          </ion-item>
-          <ion-item>
-            <ion-input
-              label="Password"
-              labelPlacement="stacked"
+          </label>
+          <label class="field">
+            Password
+            <input
               type="password"
               autocomplete="new-password"
               formControlName="password"
               placeholder="At least 8 characters"
             />
-          </ion-item>
-        </ion-list>
+          </label>
 
-        <ion-note class="hint">
-          Passwords are checked against Django's validators, so avoid anything
-          too common or too similar to your email.
-        </ion-note>
+          <p class="lede" style="margin: 0">
+            Avoid anything too common or too close to your email.
+          </p>
 
-        @if (error()) {
-          <ion-text color="danger">
-            <p class="error" role="alert">{{ error() }}</p>
-          </ion-text>
-        }
+          <button type="submit" class="primary" [disabled]="loading()">
+            @if (loading()) {
+              <ion-spinner name="crescent" />
+            } @else {
+              Create account
+            }
+          </button>
+        </form>
 
-        <ion-button type="submit" expand="block" [disabled]="form.invalid || loading()">
-          @if (loading()) {
-            <ion-spinner name="crescent" />
-          } @else {
-            Create account
-          }
-        </ion-button>
-      </form>
-
-      <p class="switch">
-        <ion-note>Already have an account?</ion-note>
-        <a routerLink="/login">Sign in</a>
-      </p>
+        <p class="switch">
+          Already have an account?
+          <button type="button" class="link" (click)="goLogin()">Sign in</button>
+        </p>
+      </fm-auth-shell>
     </ion-content>
   `,
-  styles: [
-    `
-      form ion-button {
-        margin: 16px;
-      }
-
-      .hint {
-        display: block;
-        margin: 0 20px;
-        font-size: 0.8rem;
-        line-height: 1.5;
-      }
-
-      .error {
-        margin: 8px 16px 0;
-        font-size: 0.85rem;
-      }
-
-      .switch {
-        display: flex;
-        gap: 6px;
-        justify-content: center;
-        align-items: center;
-        margin-top: 24px;
-        font-size: 0.9rem;
-
-        a {
-          color: var(--ion-color-primary);
-          font-weight: 600;
-          text-decoration: none;
-        }
-      }
-    `,
-  ],
 })
 export class RegisterPage {
   private readonly fb = inject(FormBuilder);
@@ -161,14 +93,23 @@ export class RegisterPage {
     password: ['', [Validators.required, Validators.minLength(8)]],
   });
 
+  goLogin(): void {
+    void this.router.navigateByUrl('/login', { replaceUrl: true });
+  }
+
   submit(): void {
-    if (this.form.invalid || this.loading()) return;
+    if (this.form.invalid || this.loading()) {
+      if (this.form.invalid) {
+        this.error.set('Name, email and a password of at least 8 characters are required.');
+      }
+      return;
+    }
 
     this.loading.set(true);
     this.error.set(null);
 
     const { email, password, displayName } = this.form.getRawValue();
-    this.auth.register(email, password, displayName).subscribe({
+    this.auth.register(email.trim(), password, displayName.trim()).subscribe({
       next: () => {
         this.loading.set(false);
         void this.router.navigateByUrl('/tabs/competitions');
