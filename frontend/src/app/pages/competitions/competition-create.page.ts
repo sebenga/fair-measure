@@ -427,6 +427,9 @@ function presetKind(preset: Preset): PresetKind {
                   errorText="A name is required."
                 />
               </ion-item>
+              @if (form.controls.name.touched && form.controls.name.invalid) {
+                <p class="fm-form-error" role="alert">Give the competition a name.</p>
+              }
               <ion-item>
                 <ion-textarea
                   label="Description"
@@ -990,6 +993,41 @@ function presetKind(preset: Preset): PresetKind {
         @if (error()) {
           <p class="fm-form-error" role="alert">{{ error() }}</p>
         }
+
+        <ng-template #leagueCupFields>
+          <ion-list inset="true">
+            <ion-item>
+              <ion-input
+                label="Cup game after every"
+                labelPlacement="stacked"
+                type="number"
+                inputmode="numeric"
+                min="1"
+                formControlName="cup_every_league_rounds"
+              />
+            </ion-item>
+            @for (name of cupNames(); track $index) {
+              <ion-item>
+                <ion-input
+                  label="Cup name"
+                  labelPlacement="stacked"
+                  [value]="name"
+                  (ionInput)="setCupName($index, $any($event).detail.value)"
+                />
+                @if (cupNames().length > 1) {
+                  <ion-button slot="end" fill="clear" (click)="removeCup($index)">Remove</ion-button>
+                }
+              </ion-item>
+            }
+            <ion-item button="true" (click)="addCup()">
+              <ion-label>Add another cup</ion-label>
+            </ion-item>
+          </ion-list>
+          <p class="hint">
+            Each cup needs a unique name. Only one cup runs at a time; the next starts after the current
+            cup is finished.
+          </p>
+        </ng-template>
       </form>
 
       <ng-template #sampleFields>
@@ -1015,41 +1053,6 @@ function presetKind(preset: Preset): PresetKind {
           }
           so you can see the product without the full setup. This is a demo
           {{ sampleNoun() }} and it deletes itself after one hour.
-        </p>
-      </ng-template>
-
-      <ng-template #leagueCupFields>
-        <ion-list inset="true">
-          <ion-item>
-            <ion-input
-              label="Cup game after every"
-              labelPlacement="stacked"
-              type="number"
-              inputmode="numeric"
-              min="1"
-              formControlName="cup_every_league_rounds"
-            />
-          </ion-item>
-          @for (name of cupNames(); track $index) {
-            <ion-item>
-              <ion-input
-                label="Cup name"
-                labelPlacement="stacked"
-                [value]="name"
-                (ionInput)="setCupName($index, $any($event).detail.value)"
-              />
-              @if (cupNames().length > 1) {
-                <ion-button slot="end" fill="clear" (click)="removeCup($index)">Remove</ion-button>
-              }
-            </ion-item>
-          }
-          <ion-item button="true" (click)="addCup()">
-            <ion-label>Add another cup</ion-label>
-          </ion-item>
-        </ion-list>
-        <p class="hint">
-          Each cup needs a unique name. Only one cup runs at a time; the next starts after the current
-          cup is finished.
         </p>
       </ng-template>
     </ion-content>
@@ -1279,7 +1282,9 @@ export class CompetitionCreatePage implements OnInit {
 
   setCupName(index: number, value: string | null | undefined): void {
     const next = value ?? '';
-    this.cupNames.update((names) => names.map((name, current) => (current === index ? next : name)));
+    const names = this.cupNames();
+    if (names[index] === next) return;
+    this.cupNames.set(names.map((name, current) => (current === index ? next : name)));
   }
 
   normalizedCups(): string[] {
@@ -1721,6 +1726,8 @@ export class CompetitionCreatePage implements OnInit {
     }
     if (this.step() === 2 && this.form.controls.name.invalid) {
       this.form.controls.name.markAsTouched();
+      this.error.set('Give the competition a name.');
+      void this.content()?.scrollToTop(250);
       return;
     }
     this.error.set(null);
@@ -1753,6 +1760,8 @@ export class CompetitionCreatePage implements OnInit {
       return;
     }
     this.form.controls.name.markAsTouched();
+    this.error.set('Give the competition a name.');
+    void this.content()?.scrollToTop(250);
   }
 
   setPrivate(isPrivate: boolean): void {
@@ -1867,8 +1876,8 @@ export class CompetitionCreatePage implements OnInit {
     };
   }
 
-  private replaceScoring(categories: Preset['scoring_categories']): void {
-    if (!categories.length) {
+  private replaceScoring(categories: Preset['scoring_categories'] | null | undefined): void {
+    if (!categories?.length) {
       this.scoringDrafts.set([this.blankDraft()]);
       return;
     }
