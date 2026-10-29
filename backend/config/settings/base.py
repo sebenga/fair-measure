@@ -84,6 +84,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "apps.core.security.SecurityHeadersMiddleware",
     "apps.core.spa.SpaFallbackMiddleware",
+    "apps.core.jobs.PeriodicJobsMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -125,6 +126,9 @@ else:
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
+SQLITE_LIKE_POSTGRES = "config.db.sqlite_pglike"
+if DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3":
+    DATABASES["default"]["ENGINE"] = SQLITE_LIKE_POSTGRES
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"
@@ -295,6 +299,12 @@ MEILISEARCH_API_KEY = env("MEILISEARCH_API_KEY")
 REALTIME_EVENT_CHANNEL = env("REALTIME_EVENT_CHANNEL", "fm:events")
 JOB_INBOX_KEY = env("JOB_INBOX_KEY", "fm:jobs:inbox")
 INTERNAL_API_TOKEN = env("INTERNAL_API_TOKEN")
+# Without the Node service: run queued jobs in this process, and keep recent
+# events so the app can poll GET /api/v1/realtime/events instead of a socket.
+JOBS_INLINE = env_bool("JOBS_INLINE", False)
+JOBS_INLINE_SYNC = env_bool("JOBS_INLINE_SYNC", False)
+REALTIME_POLLING = env_bool("REALTIME_POLLING", False)
+REALTIME_RECENT_KEY = env("REALTIME_RECENT_KEY", "fm:events:recent")
 HEALTH_KEY = env("HEALTH_KEY")
 
 # Angular ships hashed JS. Styles stay 'unsafe-inline' because Ionic sets

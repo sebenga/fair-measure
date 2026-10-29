@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import redis
@@ -8,7 +9,7 @@ from django.conf import settings
 from django.db import connection
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -74,6 +75,36 @@ def health_check(request: Request) -> Response:
         body,
         status=status.HTTP_200_OK if database_ok else status.HTTP_503_SERVICE_UNAVAILABLE,
     )
+
+
+@extend_schema(
+    summary="Recent live events, for clients without a realtime socket",
+    description=(
+        "Returns events published to the given rooms after `since` (milliseconds). "
+        "Call without `since` to get the server clock and start from there."
+    ),
+    responses={200: dict},
+)
+@api_view(["GET"])
+@permission_classes([AllowAny])
+@throttle_classes([])
+def realtime_events(request: Request) -> Response:
+    from .bus import recent_events
+    from .jobs import allowed_rooms
+
+    now = int(time.time() * 1000)
+    if not settings.REALTIME_POLLING:
+        return Response({"enabled": False, "now": now, "events": []})
+    requested = [room for room in request.query_params.get("rooms", "").split(",") if room][:50]
+    try:
+        since = int(request.query_params.get("since") or 0)
+    except ValueError:
+        since = 0
+    if since <= 0 or not requested:
+        return Response({"enabled": True, "now": now, "events": []})
+    rooms = set(allowed_rooms(request.user, requested))
+    events = recent_events(rooms, since) if rooms else []
+    return Response({"enabled": True, "now": now, "events": events})
 
 
 @extend_schema(

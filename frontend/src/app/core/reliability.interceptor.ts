@@ -10,7 +10,14 @@ const TIMEOUT_MS = 15_000;
 // A sleeping free Render instance can take close to a minute to answer the first write.
 const WRITE_TIMEOUT_MS = 60_000;
 const AUTH_TIMEOUT_MS = 45_000;
-const QUIET = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/google', '/healthz'];
+const QUIET = [
+  '/auth/login',
+  '/auth/register',
+  '/auth/refresh',
+  '/auth/google',
+  '/healthz',
+  '/realtime/events',
+];
 const AUTH = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/google'];
 
 export const reliabilityInterceptor: HttpInterceptorFn = (request, next) => {
@@ -19,7 +26,7 @@ export const reliabilityInterceptor: HttpInterceptorFn = (request, next) => {
   const quiet = QUIET.some((path) => request.url.includes(path));
   const authCall = AUTH.some((path) => request.url.includes(path));
   const isRead = request.method === 'GET' || request.method === 'HEAD';
-  const retried = isRead && isApi ? 2 : 0;
+  const retried = isRead && isApi && !quiet ? 2 : 0;
   const limit = authCall ? AUTH_TIMEOUT_MS : isRead ? TIMEOUT_MS : WRITE_TIMEOUT_MS;
 
   return next(request).pipe(

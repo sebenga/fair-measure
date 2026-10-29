@@ -176,6 +176,10 @@ def generate_demo_league(competition: Competition, actor) -> dict:
             }
         )
     with transaction.atomic():
+        # Two taps on "demo" deadlock on Postgres unless the runs take turns.
+        locked = Competition.objects.select_for_update().filter(pk=competition.pk).first()
+        if locked is not None:
+            competition.settings_json = locked.settings_json
         _clear_demo(competition)
         users: list = []
         entrants = _create_entrants(competition, users)

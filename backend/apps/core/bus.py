@@ -17,8 +17,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 import uuid
+from collections import deque
 from typing import Any
 
 import redis
@@ -126,6 +128,8 @@ def publish_event(
     )
 
     def _send() -> None:
+        if settings.REALTIME_POLLING:
+            _remember_event(message)
         try:
             get_redis().publish(settings.REALTIME_EVENT_CHANNEL, message)
         except redis.RedisError:
@@ -167,6 +171,11 @@ def enqueue_job(
     )
 
     def _send() -> None:
+        if settings.JOBS_INLINE:
+            # Delayed jobs (demo expiry) are picked up by run_periodic instead.
+            if not delay_ms:
+                _run_inline(queue, name, data)
+            return
         try:
             get_redis().lpush(settings.JOB_INBOX_KEY, message)
         except redis.RedisError:
@@ -177,6 +186,122 @@ def enqueue_job(
         _send()
     else:
         transaction.on_commit(_send)
+
+
+# --- In-process fallback ------------------------------------------------------
+# A deployment without the Node service (one Render web service) has nobody to
+# run queued jobs or relay events. JOBS_INLINE runs jobs on a small thread pool
+# here; REALTIME_POLLING keeps recent events so the app can poll for them.
+
+_executor = None
+_executor_lock = threading.Lock()
+_recent_events: deque[str] = deque(maxlen=500)
+_last_periodic = 0.0
+PERIODIC_EVERY_SECONDS = 10 * 60
+
+
+def _job_pool():
+    global _executor
+    with _executor_lock:
+        if _executor is None:
+            from concurrent.futures import ThreadPoolExecutor
+
+            _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="fm-job")
+        return _executor
+
+
+def _guarded(label: str, task, *args) -> None:
+    # A savepoint, so a failed job cannot leave a Postgres transaction aborted.
+    try:
+        with transaction.atomic():
+            task(*args)
+    except Exception:
+        logger.exception("Inline job %s failed", label)
+
+
+def _in_pool(label: str, task, *args) -> None:
+    from django.db import connections
+
+    try:
+        _guarded(label, task, *args)
+    finally:
+        # Pool threads outlive requests, so nothing else closes their connections.
+        connections.close_all()
+
+
+def _run_inline(queue: str, name: str, data: dict[str, Any]) -> None:
+    from .jobs import run_job
+
+    label = f"{queue}/{name}"
+    if settings.JOBS_INLINE_SYNC:
+        _guarded(label, run_job, queue, name, data)
+    else:
+        _job_pool().submit(_in_pool, label, run_job, queue, name, data)
+
+
+def maybe_run_periodic() -> None:
+    """Called after requests; runs the worker's repeating jobs at most every ten minutes."""
+
+    global _last_periodic
+    if not settings.JOBS_INLINE:
+        return
+    now = time.monotonic()
+    with _executor_lock:
+        if _last_periodic and now - _last_periodic < PERIODIC_EVERY_SECONDS:
+            return
+        _last_periodic = now
+    from .jobs import run_periodic
+
+    if settings.JOBS_INLINE_SYNC:
+        _guarded("periodic", run_periodic)
+    else:
+        _job_pool().submit(_in_pool, "periodic", run_periodic)
+
+
+def _remember_event(message: str) -> None:
+    if redis_configured():
+        try:
+            client = get_redis()
+            client.lpush(settings.REALTIME_RECENT_KEY, message)
+            client.ltrim(settings.REALTIME_RECENT_KEY, 0, _recent_events.maxlen - 1)
+            return
+        except redis.RedisError:
+            reset_redis()
+    _recent_events.appendleft(message)
+
+
+def recent_events(rooms: set[str], since_ms: int) -> list[dict[str, Any]]:
+    """Events newer than `since_ms` for any of `rooms`, oldest first."""
+
+    raw: list[str] = []
+    if redis_configured():
+        try:
+            raw = list(get_redis().lrange(settings.REALTIME_RECENT_KEY, 0, -1))
+        except redis.RedisError:
+            reset_redis()
+            raw = list(_recent_events)
+    else:
+        raw = list(_recent_events)
+    found = []
+    for item in raw:
+        try:
+            envelope = json.loads(item)
+        except (TypeError, ValueError):
+            continue
+        if int(envelope.get("ts") or 0) <= since_ms:
+            continue
+        if not rooms.intersection(envelope.get("rooms") or []):
+            continue
+        found.append(
+            {
+                "id": envelope.get("id"),
+                "event": envelope.get("event"),
+                "payload": envelope.get("payload") or {},
+                "ts": envelope.get("ts"),
+            }
+        )
+    found.sort(key=lambda row: row["ts"])
+    return found
 
 
 class Queues:

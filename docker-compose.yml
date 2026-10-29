@@ -51,6 +51,8 @@ services:
       JWT_SIGNING_KEY: local-parity-jwt-key-change-me
       INTERNAL_API_TOKEN: local-parity-internal-token
       HEALTH_KEY: local-parity-health-key
+      JOBS_INLINE: 'true'
+      REALTIME_POLLING: 'true'
       DJANGO_DEBUG: 'false'
       DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
       CORS_ALLOWED_ORIGINS: http://localhost:8000

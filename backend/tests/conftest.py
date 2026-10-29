@@ -31,6 +31,14 @@ class RecordingRedis:
     def lpush(self, key: str, message: str) -> None:
         self.pushed.append((key, message))
 
+    def ltrim(self, key: str, start: int, end: int) -> None:
+        kept = [item for item in self.pushed if item[0] == key][::-1][start : end + 1]
+        self.pushed = [item for item in self.pushed if item[0] != key] + kept[::-1]
+
+    def lrange(self, key: str, start: int, end: int) -> list[str]:
+        newest_first = [message for name, message in reversed(self.pushed) if name == key]
+        return newest_first[start:] if end == -1 else newest_first[start : end + 1]
+
     def ping(self) -> bool:
         return True
 

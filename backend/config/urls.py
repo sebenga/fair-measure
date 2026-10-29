@@ -11,7 +11,7 @@ from drf_spectacular.views import (
 )
 
 from apps.core.spa import spa_index
-from apps.core.views import health_check, version
+from apps.core.views import health_check, realtime_events, version
 
 api_v1 = [
     path("auth/", include("apps.accounts.urls")),
@@ -34,6 +34,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("healthz", health_check, name="health"),
     path("api/v1/version", version, name="version"),
+    path("api/v1/realtime/events", realtime_events, name="realtime-events"),
     path("api/v1/", include(api_v1)),
     # Called by the BullMQ workers only; protected by INTERNAL_API_TOKEN and
     # excluded from the public schema.

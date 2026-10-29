@@ -321,6 +321,17 @@ class FixtureViewSet(viewsets.ModelViewSet):
             persist_cup_names(competition, normalize_cup_names(data["cups"]))
 
         with transaction.atomic():
+            # Postgres runs requests in parallel, so a double tap or an entrant removed
+            # mid-request would otherwise point fixtures at rows that no longer exist.
+            type(competition).objects.select_for_update().filter(pk=competition.pk).first()
+            still_there = set(
+                competition.participants.filter(
+                    is_active=True, pk__in=[row.pk for row in participants]
+                ).values_list("pk", flat=True)
+            )
+            participants = [row for row in participants if row.pk in still_there]
+            if len(participants) < 2:
+                raise ValidationError("Add at least two participants before generating fixtures.")
             if data["replace_existing"]:
                 # Completed fixtures carry results, so they are left alone.
                 competition.fixtures.filter(

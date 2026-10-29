@@ -13,6 +13,8 @@ from collections.abc import Iterable
 
 from django.conf import settings
 
+from apps.core.apps import fit_char_fields
+
 from .models import DeviceToken, Notification, NotificationPreference
 
 logger = logging.getLogger(__name__)
@@ -134,19 +136,21 @@ def notify_users(
     if not recipients:
         return 0
 
-    Notification.objects.bulk_create(
-        [
-            Notification(
-                user=user,
-                competition=competition,
-                kind=kind,
-                title=title,
-                body=body,
-                data=data or {},
-            )
-            for user in recipients
-        ]
-    )
+    rows = [
+        Notification(
+            user=user,
+            competition=competition,
+            kind=kind,
+            title=title,
+            body=body,
+            data=data or {},
+        )
+        for user in recipients
+    ]
+    # bulk_create skips pre_save, and titles embed competition names.
+    for row in rows:
+        fit_char_fields(row)
+    Notification.objects.bulk_create(rows)
 
     tokens = DeviceToken.objects.filter(
         user__in=recipients, is_active=True

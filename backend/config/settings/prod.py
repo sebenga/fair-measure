@@ -67,6 +67,11 @@ if Path(SPA_DIR).is_dir():
 # still talks to Redis on its own client.
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
+# The Render blueprint runs one Docker service with no Node worker or Socket.io
+# gateway, so Django does that work itself. Set both to false once they exist.
+JOBS_INLINE = env_bool("JOBS_INLINE", bool(env("RENDER")))
+REALTIME_POLLING = env_bool("REALTIME_POLLING", bool(env("RENDER")))
+
 if env("RENDER"):
     render_host = env("RENDER_EXTERNAL_HOSTNAME")
     if render_host and render_host not in ALLOWED_HOSTS:

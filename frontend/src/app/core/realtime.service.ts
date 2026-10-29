@@ -1,3 +1,4 @@
+import { HttpClient } from '@angular/common/http';
 import { DestroyRef, Injectable, inject, signal } from '@angular/core';
 import { Observable, Subject, filter, map } from 'rxjs';
 import { io, type Socket } from 'socket.io-client';
@@ -39,6 +40,12 @@ export class RealtimeService {
 
   private socket: Socket | null = null;
   private readonly messages = new Subject<RealtimeMessage>();
+  private readonly http = inject(HttpClient);
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private pollSince = 0;
+  private polling = false;
+  private pollingDisabled = false;
+  private seenEvents = new Set<string>();
 
   /** Rooms we want to be in, re-sent after every reconnect. */
   private readonly desiredRooms = new Set<string>();
@@ -50,10 +57,14 @@ export class RealtimeService {
   }
 
   connect(): void {
+    if (!environment.realtimeUrl) {
+      this.startPolling();
+      return;
+    }
     if (this.socket?.connected) return;
 
     const token = this.auth.getAccessToken();
-    if (!token || !environment.realtimeUrl) return;
+    if (!token) return;
 
     this.socket = io(environment.realtimeUrl, {
       path: '/socket.io',
@@ -143,9 +154,70 @@ export class RealtimeService {
     this.socket?.removeAllListeners();
     this.socket?.disconnect();
     this.socket = null;
+    this.stopPolling();
     this.desiredRooms.clear();
     this.connected.set(false);
   }
+
+  // Builds without a gateway (the single Render service) poll Django for the
+  // same events instead of holding a socket.
+  private startPolling(): void {
+    if (this.pollTimer !== null || this.pollingDisabled) return;
+    this.pollTimer = setInterval(() => this.poll(), POLL_EVERY_MS);
+    this.poll();
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer !== null) clearInterval(this.pollTimer);
+    this.pollTimer = null;
+    this.pollSince = 0;
+    this.seenEvents.clear();
+  }
+
+  private poll(): void {
+    if (this.polling || document.hidden) return;
+    const rooms = [...this.desiredRooms];
+    this.polling = true;
+    const params: Record<string, string> = { rooms: rooms.join(',') };
+    // Overlap the window: an event is stamped before its transaction commits.
+    if (this.pollSince > 0) params['since'] = String(this.pollSince - POLL_OVERLAP_MS);
+    this.http
+      .get<PolledEvents>(`${environment.apiBaseUrl}/realtime/events`, { params })
+      .subscribe({
+        next: (response) => {
+          this.polling = false;
+          if (!response.enabled) {
+            this.pollingDisabled = true;
+            this.stopPolling();
+            this.connected.set(false);
+            return;
+          }
+          this.connected.set(true);
+          this.pollSince = response.now;
+          for (const event of response.events) {
+            if (this.seenEvents.has(event.id)) continue;
+            this.seenEvents.add(event.id);
+            this.messages.next({ event: event.event, payload: event.payload, ts: event.ts });
+          }
+          if (this.seenEvents.size > 1000) {
+            this.seenEvents = new Set([...this.seenEvents].slice(-500));
+          }
+        },
+        error: () => {
+          this.polling = false;
+          this.connected.set(false);
+        },
+      });
+  }
+}
+
+const POLL_EVERY_MS = 5_000;
+const POLL_OVERLAP_MS = 5_000;
+
+interface PolledEvents {
+  enabled: boolean;
+  now: number;
+  events: { id: string; event: string; payload: Record<string, unknown>; ts: number }[];
 }
 
 export function competitionRoom(id: string): string {

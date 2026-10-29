@@ -115,6 +115,25 @@ Builds the production frontend bundle and runs Django on
 just not Postgres-only behavior (e.g. a delete that only fails under real FK
 constraints).
 
+Render runs **one** service: there is no Node worker or Socket.io gateway
+there. With `RENDER` set, prod settings turn on `JOBS_INLINE` (Django runs
+queued jobs such as standings, notifications and demo expiry on a small thread
+pool) and `REALTIME_POLLING` (the app polls `GET /api/v1/realtime/events`
+instead of opening a socket). `dev-parity.sh` and the compose `web` service
+switch both on too. If you add a worker and gateway on Render later, set both
+to `false` and give the build a `FRONTEND_REALTIME_URL`.
+
+**Run the backend tests on Postgres before pushing**
+
+```bash
+brew install postgresql@16 && brew services start postgresql@16   # once
+cd backend && TEST_DATABASE_URL=postgres://$USER@localhost:5432/fairmeasure pytest
+```
+
+SQLite ignores column lengths and runs one write at a time, so it hides errors
+Postgres raises in production (text too long, deadlocks). Local SQLite does
+sort blanks last like Postgres (`config/db/sqlite_pglike`).
+
 ## The domain
 
 A **Competition** owns everything else and is the unit of permission. Membership

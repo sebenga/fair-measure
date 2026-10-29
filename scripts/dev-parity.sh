@@ -20,10 +20,15 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "==> Building the production frontend bundle (same as the Dockerfile)"
 cd "$ROOT/frontend"
+# Render has no Socket.io gateway or Node worker: the app polls Django for live
+# events and Django runs queued jobs itself. Mirror that here.
 FRONTEND_API_BASE_URL="${FRONTEND_API_BASE_URL:-/api/v1}" \
-FRONTEND_REALTIME_URL="${FRONTEND_REALTIME_URL:-http://localhost:4000}" \
+FRONTEND_REALTIME_URL="${FRONTEND_REALTIME_URL:-}" \
   node scripts/write-render-env.mjs
+trap 'git -C "$ROOT" checkout -- frontend/src/environments/environment.prod.ts' EXIT
 npm run build:prod
+git -C "$ROOT" checkout -- frontend/src/environments/environment.prod.ts
+trap - EXIT
 
 echo "==> Starting Django on config.settings.prod, serving that bundle"
 cd "$ROOT/backend"
@@ -38,6 +43,8 @@ export PUBLIC_API_ORIGIN="${PUBLIC_API_ORIGIN:-http://localhost:8000}"
 export SECURE_SSL_REDIRECT=false
 export SEARCH_ENABLED="${SEARCH_ENABLED:-false}"
 export SPA_DIR="$ROOT/frontend/www/browser"
+export JOBS_INLINE="${JOBS_INLINE:-true}"
+export REALTIME_POLLING="${REALTIME_POLLING:-true}"
 
 python manage.py migrate --noinput
 exec python manage.py runserver "0.0.0.0:${PORT:-8000}"
