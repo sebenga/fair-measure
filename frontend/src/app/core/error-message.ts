@@ -1,4 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
+import { TimeoutError } from 'rxjs';
 
 import type { ApiError } from './models';
 
@@ -10,6 +11,9 @@ import type { ApiError } from './models';
  * useful than a generic "Request failed", so prefer it when present.
  */
 export function extractErrorMessage(error: unknown, fallback = 'Something went wrong.'): string {
+  if (error instanceof TimeoutError) {
+    return 'The server is taking too long. It may be waking up. Try again in a moment.';
+  }
   if (!(error instanceof HttpErrorResponse)) {
     return fallback;
   }

@@ -24,7 +24,7 @@ class Post(BaseModel, SoftDeleteModel):
     )
     kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.PROFILE, db_index=True)
     source_key = models.CharField(
-        max_length=80,
+        max_length=160,
         blank=True,
         db_index=True,
         help_text=_("Stable id for generated live updates, so the same event is not posted twice."),

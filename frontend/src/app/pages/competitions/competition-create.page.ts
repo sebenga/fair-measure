@@ -990,10 +990,6 @@ function presetKind(preset: Preset): PresetKind {
           }
         }
 
-        @if (error()) {
-          <p class="fm-form-error" role="alert">{{ error() }}</p>
-        }
-
         <ng-template #leagueCupFields>
           <ion-list inset="true">
             <ion-item>
@@ -1059,6 +1055,9 @@ function presetKind(preset: Preset): PresetKind {
 
     <ion-footer>
       <ion-toolbar>
+        @if (error()) {
+          <p class="fm-form-error" role="alert">{{ error() }}</p>
+        }
         <div class="footer-actions">
           @if (step() > 1) {
             <ion-button fill="clear" type="button" (click)="back()">Back</ion-button>
