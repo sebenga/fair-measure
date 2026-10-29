@@ -30,6 +30,42 @@ services:
       timeout: 3s
       retries: 10
 
+  # The literal image Render deploys: same Dockerfile, same production
+  # Angular build, same config.settings.prod, talking to the Postgres and
+  # Redis above instead of Render's managed services. Use this to reproduce
+  # a "only happens on hosted" bug before trusting a fix.
+  #   docker compose --profile parity up --build
+  #   open http://localhost:8000 (there is no separate :8100 here)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DJANGO_SECRET_KEY: local-parity-secret-key-change-me
+      JWT_SIGNING_KEY: local-parity-jwt-key-change-me
+      INTERNAL_API_TOKEN: local-parity-internal-token
+      HEALTH_KEY: local-parity-health-key
+      DJANGO_DEBUG: 'false'
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+      CORS_ALLOWED_ORIGINS: http://localhost:8000
+      PUBLIC_APP_ORIGIN: http://localhost:8000
+      PUBLIC_API_ORIGIN: http://localhost:8000
+      SEARCH_ENABLED: 'false'
+      SECURE_SSL_REDIRECT: 'false'
+      SPA_DIR: /app/spa
+      DATABASE_URL: postgres://fairmeasure:fairmeasure@postgres:5432/fairmeasure
+      REDIS_URL: redis://redis:6379/0
+      SEED_ON_BOOT: 'false'
+    ports:
+      - '8000:8000'
+    profiles: ['parity']
+
   # Search is optional in development; the API falls back to Postgres queries
   # when SEARCH_ENABLED is false.
   meilisearch:

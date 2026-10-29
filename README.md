@@ -81,6 +81,40 @@ Postgres is optional in development: leave `DATABASE_URL` unset and Django falls
 back to SQLite. Redis being down degrades the health check but does not fail
 writes — real-time delivery is best-effort by design.
 
+## Reproducing "only happens on hosted" bugs
+
+The fast loop above (`ng serve` + SQLite + `config.settings.dev`) is a
+genuinely different stack from Render: Render runs the production Angular
+build, `config.settings.prod` (`DEBUG=False`, strict CORS), and real Postgres
++ Redis, all served from one origin by Django/whitenoise. Bugs that only show
+up once deployed are usually one of those differences, not the feature code.
+Two ways to get parity locally, from closest to least setup:
+
+**Docker — the literal image Render deploys**
+
+```bash
+docker compose --profile parity up --build
+```
+
+Builds the same `Dockerfile`, runs `config.settings.prod` against the
+Postgres/Redis containers above, and serves on http://localhost:8000 (no
+`:8100`). Requires Docker Desktop or Colima.
+
+**No Docker — same settings module and production bundle, SQLite underneath**
+
+```bash
+docker compose up -d postgres redis   # optional: adds real Postgres too
+export DATABASE_URL=postgres://fairmeasure:fairmeasure@localhost:5432/fairmeasure
+export REDIS_URL=redis://localhost:6379/0
+./scripts/dev-parity.sh
+```
+
+Builds the production frontend bundle and runs Django on
+`config.settings.prod`, single-origin, on http://localhost:8000. Skip the
+`export` lines to fall back to SQLite — still catches build/settings drift,
+just not Postgres-only behavior (e.g. a delete that only fails under real FK
+constraints).
+
 ## The domain
 
 A **Competition** owns everything else and is the unit of permission. Membership
