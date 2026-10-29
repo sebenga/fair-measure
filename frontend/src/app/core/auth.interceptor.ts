@@ -14,7 +14,8 @@ import { AuthService } from './auth.service';
 // Shared across concurrent requests so a burst of 401s triggers one refresh
 // rather than one per request.
 let refreshing = false;
-const refreshed = new BehaviorSubject<string | null>(null);
+// null while a refresh is in flight, false when it failed, otherwise the new access token.
+const refreshed = new BehaviorSubject<string | null | false>(null);
 
 const PUBLIC_PATHS = ['/auth/login', '/auth/register', '/auth/google', '/auth/refresh'];
 
@@ -60,9 +61,13 @@ function retryWithFreshToken(
   if (refreshing) {
     // Wait for the in-flight refresh instead of starting another one.
     return refreshed.pipe(
-      filter((token): token is string => token !== null),
+      filter((token): token is string | false => token !== null),
       take(1),
-      switchMap((token) => next(withToken(request, token))),
+      switchMap((token) =>
+        token
+          ? next(withToken(request, token))
+          : throwError(() => new HttpErrorResponse({ status: 401, url: request.url })),
+      ),
     );
   }
 
@@ -77,6 +82,7 @@ function retryWithFreshToken(
     }),
     catchError((error: unknown) => {
       refreshing = false;
+      refreshed.next(false);
       // The refresh token is expired or revoked; there is nothing left to try.
       auth.logout();
       return throwError(() => error);

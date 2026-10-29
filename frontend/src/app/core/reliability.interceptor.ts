@@ -26,7 +26,13 @@ export const reliabilityInterceptor: HttpInterceptorFn = (request, next) => {
     timeout({ first: limit }),
     retry({
       count: retried,
-      delay: (_error, retryCount) => timer(400 * 2 ** (retryCount - 1)),
+      delay: (error, retryCount) => {
+        // 4xx answers (expired sign-in, not found, validation) will not change on a second try.
+        if (error instanceof HttpErrorResponse && error.status >= 400 && error.status < 500) {
+          return throwError(() => error);
+        }
+        return timer(400 * 2 ** (retryCount - 1));
+      },
     }),
     catchError((error: unknown) => {
       const shown =
