@@ -104,6 +104,15 @@
     --ion-color-step-900: #8ca3cc;
     --ion-color-step-950: #93abd5;
 
+    /* Pills and score buttons pair light with light-contrast; both must flip,
+       or a child on the page background gets dark text on a dark fill. */
+    --ion-color-light: #1e293b;
+    --ion-color-light-rgb: 30, 41, 59;
+    --ion-color-light-contrast: #f1f5f9;
+    --ion-color-light-contrast-rgb: 241, 245, 249;
+    --ion-color-light-shade: #1a2434;
+    --ion-color-light-tint: #344054;
+
     --ion-item-background: #131b2a;
     --ion-card-background: #131b2a;
     --ion-toolbar-background: #0f1828;

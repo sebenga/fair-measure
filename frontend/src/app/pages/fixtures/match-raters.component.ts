@@ -3,13 +3,15 @@ import {
   Component,
   DestroyRef,
   OnInit,
+  computed,
   inject,
   input,
   output,
   signal,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { AlertController, IonIcon, ToastController } from '@ionic/angular/standalone';
+import { AlertController, IonContent, IonIcon, IonModal, ToastController } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
@@ -21,8 +23,112 @@ import { RealtimeService } from '../../core/realtime.service';
   selector: 'fm-match-raters',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [IonIcon],
+  imports: [IonIcon, IonModal, IonContent, NgTemplateOutlet],
   template: `
+    <ng-template #playerCard let-player let-d="d">
+      <div class="player" [class.rated]="hasMark(player)" [class.off]="player.sent_off">
+        <span class="name">
+          @if (player.number !== null) {
+            <span class="num">{{ player.number }}</span>
+          }
+          {{ player.name }}
+          @if (player.sent_off) {
+            <em>Sent off</em>
+          }
+        </span>
+        <span class="avg" [class.pending]="!player.average">
+          @if (player.average) {
+            {{ player.average }}
+          } @else {
+            {{ player.count }}/{{ d.minimum }}
+          }
+        </span>
+        @if (context(player); as note) {
+          <p class="context">{{ note }}</p>
+        }
+        <p class="basis">
+          @if (player.rating_locked) {
+            Sent off. Rating stopped.
+          } @else if (recordedStatLine(player); as figures) {
+            {{ figures }}
+          } @else {
+            Record player stats, then rate from them
+          }
+        </p>
+        <dl class="sheet">
+          @for (stat of player.stats; track stat.code) {
+            @if (stat.kind === 'minutes' && d.can_record_stats) {
+              <label class="minutes">
+                <input
+                  type="number"
+                  min="0"
+                  max="300"
+                  inputmode="numeric"
+                  [value]="stat.count"
+                  [disabled]="busy() || player.rating_locked"
+                  (change)="setMinutes(player.player_id, $any($event.target).value)"
+                />
+                <span>{{ stat.label }}</span>
+              </label>
+            } @else if (stat.editable && d.can_record_stats) {
+              <div class="step" [class.hot]="stat.recorded">
+                <button
+                  type="button"
+                  [disabled]="busy() || !stat.recorded"
+                  [attr.aria-label]="'Remove one ' + stat.label + ' from ' + player.name"
+                  (click)="adjust(player.player_id, stat.code, -1)"
+                >
+                  −
+                </button>
+                <strong>{{ stat.count }}</strong>
+                <span>{{ stat.label }}</span>
+                <button
+                  type="button"
+                  [disabled]="busy() || player.rating_locked"
+                  [attr.aria-label]="'Add one ' + stat.label + ' for ' + player.name"
+                  (click)="adjust(player.player_id, stat.code, 1)"
+                >
+                  +
+                </button>
+              </div>
+            } @else {
+              <div [class]="stat.kind ?? ''" [class.zero]="!stat.recorded" [class.hot]="stat.recorded">
+                <strong>{{ stat.count }}</strong>
+                <span>{{ stat.label }}</span>
+              </div>
+            }
+          } @empty {
+            <em>No player stats for this sport yet.</em>
+          }
+        </dl>
+        <div
+          class="marks"
+          role="radiogroup"
+          [class.blocked]="!!cannotRateReason(player)"
+          [attr.aria-label]="'Rate ' + player.name + ' from these stats'"
+          [attr.title]="cannotRateReason(player) || null"
+        >
+          @for (mark of scale; track mark) {
+            <button
+              type="button"
+              role="radio"
+              [class.on]="isMark(player, mark)"
+              [class.blocked]="!!cannotRateReason(player)"
+              [attr.aria-checked]="isMark(player, mark)"
+              [attr.aria-disabled]="!!cannotRateReason(player)"
+              [attr.title]="cannotRateReason(player) || null"
+              (click)="rate(player, mark)"
+            >
+              {{ mark }}
+            </button>
+          }
+        </div>
+        @if (cannotRateReason(player); as why) {
+          <p class="why">{{ why }}</p>
+        }
+      </div>
+    </ng-template>
+
     @if (data(); as d) {
       <h3 class="fm-section-title">
         Raters
@@ -79,7 +185,33 @@ import { RealtimeService } from '../../core/realtime.service';
         }
       </div>
 
-      @if (d.teams.length) {
+      @if (d.teams.length && pitch()) {
+        @if (cannotRateReason(); as why) {
+          <p class="warn why-banner">{{ why }}</p>
+        }
+        <ion-modal
+          [isOpen]="!!selected()"
+          [initialBreakpoint]="0.85"
+          [breakpoints]="[0, 0.85, 1]"
+          (didDismiss)="close()"
+        >
+          <ng-template>
+            <ion-content class="ion-padding player-sheet">
+              @if (selected(); as pick) {
+                <div class="sheet-head">
+                  <span class="fm-team-head">{{ pick.team }}</span>
+                  <button type="button" class="close" (click)="close()">Done</button>
+                </div>
+                <ng-container *ngTemplateOutlet="playerCard; context: { $implicit: pick.player, d: d }" />
+                <div class="sheet-nav">
+                  <button type="button" [disabled]="!pick.previous" (click)="select(pick.previous)">‹ Previous</button>
+                  <button type="button" [disabled]="!pick.next" (click)="select(pick.next)">Next ›</button>
+                </div>
+              }
+            </ion-content>
+          </ng-template>
+        </ion-modal>
+      } @else if (d.teams.length) {
         <h3 class="fm-section-title">Player ratings</h3>
         @if (cannotRateReason(); as why) {
           <p class="warn why-banner">{{ why }}</p>
@@ -89,107 +221,7 @@ import { RealtimeService } from '../../core/realtime.service';
             <div class="fm-card team">
               <span class="fm-team-head">{{ team.team }}</span>
               @for (player of team.players; track player.player_id) {
-                <div class="player" [class.rated]="hasMark(player)" [class.off]="player.sent_off">
-                  <span class="name">
-                    @if (player.number !== null) {
-                      <span class="num">{{ player.number }}</span>
-                    }
-                    {{ player.name }}
-                    @if (player.sent_off) {
-                      <em>Sent off</em>
-                    }
-                  </span>
-                  <span class="avg" [class.pending]="!player.average">
-                    @if (player.average) {
-                      {{ player.average }}
-                    } @else {
-                      {{ player.count }}/{{ d.minimum }}
-                    }
-                  </span>
-                  @if (context(player); as note) {
-                    <p class="context">{{ note }}</p>
-                  }
-                  <p class="basis">
-                    @if (player.rating_locked) {
-                      Sent off. Rating stopped.
-                    } @else if (recordedStatLine(player); as figures) {
-                      {{ figures }}
-                    } @else {
-                      Record player stats, then rate from them
-                    }
-                  </p>
-                  <dl class="sheet">
-                    @for (stat of player.stats; track stat.code) {
-                      @if (stat.kind === 'minutes' && d.can_record_stats) {
-                        <label class="minutes">
-                          <input
-                            type="number"
-                            min="0"
-                            max="300"
-                            inputmode="numeric"
-                            [value]="stat.count"
-                            [disabled]="busy() || player.rating_locked"
-                            (change)="setMinutes(player.player_id, $any($event.target).value)"
-                          />
-                          <span>{{ stat.label }}</span>
-                        </label>
-                      } @else if (stat.editable && d.can_record_stats) {
-                        <div class="step" [class.hot]="stat.recorded">
-                          <button
-                            type="button"
-                            [disabled]="busy() || !stat.recorded"
-                            [attr.aria-label]="'Remove one ' + stat.label + ' from ' + player.name"
-                            (click)="adjust(player.player_id, stat.code, -1)"
-                          >
-                            −
-                          </button>
-                          <strong>{{ stat.count }}</strong>
-                          <span>{{ stat.label }}</span>
-                          <button
-                            type="button"
-                            [disabled]="busy() || player.rating_locked"
-                            [attr.aria-label]="'Add one ' + stat.label + ' for ' + player.name"
-                            (click)="adjust(player.player_id, stat.code, 1)"
-                          >
-                            +
-                          </button>
-                        </div>
-                      } @else {
-                        <div [class]="stat.kind ?? ''" [class.zero]="!stat.recorded" [class.hot]="stat.recorded">
-                          <strong>{{ stat.count }}</strong>
-                          <span>{{ stat.label }}</span>
-                        </div>
-                      }
-                    } @empty {
-                      <em>No player stats for this sport yet.</em>
-                    }
-                  </dl>
-                  <div
-                    class="marks"
-                    role="radiogroup"
-                    [class.blocked]="!!cannotRateReason(player)"
-                    [attr.aria-label]="'Rate ' + player.name + ' from these stats'"
-                    [attr.title]="cannotRateReason(player) || null"
-                  >
-                    @for (mark of scale; track mark) {
-                      <button
-                        type="button"
-                        role="radio"
-                        [class.on]="isMark(player, mark)"
-                        [class.blocked]="!!cannotRateReason(player)"
-                        [attr.aria-checked]="isMark(player, mark)"
-                        [attr.aria-disabled]="!!cannotRateReason(player)"
-                        [attr.title]="cannotRateReason(player) || null"
-                        (click)="rate(player, mark)"
-                      >
-                        {{ mark }}
-                      </button>
-                    }
-                  </div>
-                  @if (cannotRateReason(player); as why) {
-                    <p class="why">{{ why }}</p>
-                  }
-                </div>
+                <ng-container *ngTemplateOutlet="playerCard; context: { $implicit: player, d: d }" />
               } @empty {
                 <p class="muted">No players to rate.</p>
               }
@@ -201,6 +233,41 @@ import { RealtimeService } from '../../core/realtime.service';
   `,
   styles: [
     `
+      .sheet-head,
+      .sheet-nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .sheet-head .fm-team-head {
+        margin: 0;
+      }
+      .player-sheet .player {
+        border-bottom: 0;
+      }
+      .sheet-nav {
+        margin-top: 12px;
+      }
+      .sheet-head button,
+      .sheet-nav button {
+        padding: 8px 14px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--ion-color-light);
+        color: var(--ion-color-light-contrast);
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .sheet-head .close {
+        background: var(--ion-color-primary);
+        color: var(--ion-color-primary-contrast);
+      }
+      .sheet-nav button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
       .raters {
         display: grid;
         gap: 10px;
@@ -493,6 +560,8 @@ export class MatchRatersComponent implements OnInit {
   readonly fixtureId = input.required<string>();
   /** Emitted after ratings change so the page can refresh its own ratings list. */
   readonly changed = output<void>();
+  /** The line-up pitch picks players, so one player's sheet opens at a time instead of a list. */
+  readonly pitch = input(false);
 
   readonly data = signal<MatchRaters | null>(null);
   readonly busy = signal(false);
@@ -500,6 +569,44 @@ export class MatchRatersComponent implements OnInit {
   readonly drafts = signal<Record<string, string>>({});
   readonly scale = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   private searchTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly selectedId = signal<string | null>(null);
+
+  private readonly everyone = computed(() =>
+    (this.data()?.teams ?? []).flatMap((team) => team.players.map((player) => ({ player, team: team.team }))),
+  );
+
+  readonly selected = computed(() => {
+    const id = this.selectedId();
+    const rows = this.everyone();
+    const index = rows.findIndex((row) => row.player.player_id === id);
+    if (index < 0) return null;
+    return {
+      ...rows[index],
+      previous: rows[index - 1]?.player.player_id ?? null,
+      next: rows[index + 1]?.player.player_id ?? null,
+    };
+  });
+
+  /** Players the viewer has marked, for the green ring on the pitch. */
+  readonly markedIds = computed<ReadonlySet<string>>(
+    () => new Set(this.everyone().filter((row) => this.hasMark(row.player)).map((row) => row.player.player_id)),
+  );
+
+  openPlayer(playerId: string, name = 'That player'): void {
+    if (!this.everyone().some((row) => row.player.player_id === playerId)) {
+      void this.toast(`${name} has not played in this match, so there is nothing to rate.`);
+      return;
+    }
+    this.selectedId.set(playerId);
+  }
+
+  select(playerId: string | null): void {
+    if (playerId) this.selectedId.set(playerId);
+  }
+
+  close(): void {
+    this.selectedId.set(null);
+  }
 
   ngOnInit(): void {
     this.load();

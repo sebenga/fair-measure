@@ -13,15 +13,7 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { AlertController, IonIcon, ToastController } from '@ionic/angular/standalone';
-import { addIcons } from 'ionicons';
-import {
-  arrowDownOutline,
-  arrowUpOutline,
-  ribbonOutline,
-  swapHorizontalOutline,
-  trashOutline,
-} from 'ionicons/icons';
+import { AlertController, ToastController } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
@@ -65,9 +57,9 @@ interface Draft {
   selector: 'fm-match-day',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [IonIcon, NgTemplateOutlet],
+  imports: [NgTemplateOutlet],
   template: `
-    @if (day()?.enabled === false && part() !== 'subs') {
+    @if (day()?.enabled === false) {
       <div class="fm-empty compact"><p>This competition does not use team sheets.</p></div>
     }
 
@@ -78,19 +70,24 @@ interface Draft {
             @for (row of rows(pitchSlots(side)); track $index) {
               <div class="pitch-row">
                 @for (slot of row; track slot.index) {
-                  @if (starterAt(side, slot.index); as player) {
-                    @if (canRecord()) {
+                  @if (starterAt(side, slot.index); as starter) {
+                    @let player = onPitch(side, starter);
+                    @let replaced = player.player_id !== starter.player_id ? starter : null;
+                    @if (canRecord() || rating()) {
                       <button
                         type="button"
                         class="shirt tappable"
                         [class.captain]="lineup.captain_id === player.player_id"
                         [class.off]="player.subbed_off || player.sent_off"
+                        [class.rated]="marked().has(player.player_id)"
                         [style.--kit]="kit(side.participant_id)[0]"
                         [style.--kit-ink]="kit(side.participant_id)[1]"
-                        [attr.aria-label]="'Record a goal or card for ' + player.name"
+                        [attr.aria-label]="pressLabel(player, replaced)"
                         (click)="pressPlayer(side, player)"
                       >
-                        <ng-container *ngTemplateOutlet="shirtBody; context: { $implicit: player, lineup: lineup }" />
+                        <ng-container
+                          *ngTemplateOutlet="shirtBody; context: { $implicit: player, lineup: lineup, replaced: replaced }"
+                        />
                       </button>
                     } @else {
                       <div
@@ -99,8 +96,11 @@ interface Draft {
                         [class.off]="player.subbed_off || player.sent_off"
                         [style.--kit]="kit(side.participant_id)[0]"
                         [style.--kit-ink]="kit(side.participant_id)[1]"
+                        [attr.aria-label]="replaced ? player.name + ' came on for ' + replaced.name : null"
                       >
-                        <ng-container *ngTemplateOutlet="shirtBody; context: { $implicit: player, lineup: lineup }" />
+                        <ng-container
+                          *ngTemplateOutlet="shirtBody; context: { $implicit: player, lineup: lineup, replaced: replaced }"
+                        />
                       </div>
                     }
                   } @else {
@@ -115,19 +115,26 @@ interface Draft {
           </div>
         } @else {
           <ul class="list">
-            @for (player of lineup.starters; track player.player_id) {
-              <li [class.off]="player.subbed_off">
-                @if (canRecord()) {
+            @for (starter of lineup.starters; track starter.player_id) {
+              @let player = onPitch(side, starter);
+              @let replaced = player.player_id !== starter.player_id ? starter : null;
+              <li [class.off]="player.subbed_off || player.sent_off" [class.rated]="marked().has(player.player_id)">
+                @if (canRecord() || rating()) {
                   <button
                     type="button"
                     class="list-player"
-                    [attr.aria-label]="'Record a goal or card for ' + player.name"
+                    [attr.aria-label]="pressLabel(player, replaced)"
                     (click)="pressPlayer(side, player)"
                   >
                     <span class="num">{{ player.number ?? '' }}</span>
                     <span class="who">
                       <b>{{ player.name }}</b>
-                      <small>{{ shirtMeta(player) }}</small>
+                      <small>
+                        @if (replaced) {
+                          ↑ for {{ shortName(replaced.name) }} ·
+                        }
+                        {{ shirtMeta(player) }}
+                      </small>
                     </span>
                     @if (lineup.captain_id === player.player_id) {
                       <i class="badge inline" aria-label="Captain">C</i>
@@ -137,7 +144,12 @@ interface Draft {
                   <span class="num">{{ player.number ?? '' }}</span>
                   <span class="who">
                     <b>{{ player.name }}</b>
-                    <small>{{ shirtMeta(player) }}</small>
+                    <small>
+                      @if (replaced) {
+                        ↑ for {{ shortName(replaced.name) }} ·
+                      }
+                      {{ shirtMeta(player) }}
+                    </small>
                   </span>
                   @if (lineup.captain_id === player.player_id) {
                     <i class="badge inline" aria-label="Captain">C</i>
@@ -148,21 +160,70 @@ interface Draft {
           </ul>
         }
         <section class="bench">
-          <h3>Substitutes</h3>
+          <h3>
+            Substitutes
+            @if (side.substitutions_used || config()?.max_substitutions) {
+              <small class="used">
+                {{ side.substitutions_used }}{{ config()?.max_substitutions ? ' of ' + config()?.max_substitutions : '' }}
+                used
+              </small>
+            }
+          </h3>
           <div class="bench-row">
             @for (player of lineup.bench; track player.player_id) {
-              <div
-                class="shirt bench-shirt"
-                [class.used]="player.on_field || player.subbed_off"
-                [style.--kit]="kit(side.participant_id)[0]"
-                [style.--kit-ink]="kit(side.participant_id)[1]"
-              >
-                <span class="kit slim">{{ player.number ?? '' }}</span>
-                <span class="who">
-                  <b>{{ shortName(player.name) }}</b>
-                  <small>{{ shirtMeta(player) }}</small>
-                </span>
-              </div>
+              @if (wentOffFor(side, player); as out) {
+                <button
+                  type="button"
+                  class="shirt bench-shirt went-off"
+                  [class.rated]="marked().has(out.player.player_id)"
+                  [disabled]="rating() ? false : !day()?.can_substitute || busy()"
+                  [style.--kit]="kit(side.participant_id)[0]"
+                  [style.--kit-ink]="kit(side.participant_id)[1]"
+                  [attr.aria-label]="
+                    rating()
+                      ? 'Stats and rating for ' + out.player.name
+                      : out.player.name + ' went off for ' + player.name + (day()?.can_substitute ? '. Tap to undo.' : '')
+                  "
+                  (click)="rating() ? picked.emit({ sideId: side.side_id, playerId: out.player.player_id, name: out.player.name }) : confirmDelete(out.sub)"
+                >
+                  <i class="badge out" aria-hidden="true">↓</i>
+                  <span class="kit slim">{{ out.player.number ?? '' }}</span>
+                  <span class="who">
+                    <b>{{ shortName(out.player.name) }}</b>
+                    <small class="for">
+                      Off{{ out.minute !== null ? ' ' + out.minute + "'" : '' }} · {{ shortName(player.name) }} on
+                    </small>
+                  </span>
+                </button>
+              } @else if (canBringOn(side, player)) {
+                <button
+                  type="button"
+                  class="shirt bench-shirt tappable"
+                  [style.--kit]="kit(side.participant_id)[0]"
+                  [style.--kit-ink]="kit(side.participant_id)[1]"
+                  [attr.aria-label]="'Bring ' + player.name + ' on'"
+                  (click)="pressBench(side, player)"
+                >
+                  <span class="kit slim">{{ player.number ?? '' }}</span>
+                  <span class="who">
+                    <b>{{ shortName(player.name) }}</b>
+                    <small>{{ shirtMeta(player) }}</small>
+                  </span>
+                </button>
+              } @else {
+                <div
+                  class="shirt bench-shirt"
+                  [class.used]="player.on_field || player.subbed_off"
+                  [style.--kit]="kit(side.participant_id)[0]"
+                  [style.--kit-ink]="kit(side.participant_id)[1]"
+                >
+                  <span class="kit slim">{{ player.number ?? '' }}</span>
+                  <span class="who">
+                    <b>{{ shortName(player.name) }}</b>
+                    <small>{{ shirtMeta(player) }}</small>
+                  </span>
+                </div>
+              }
             } @empty {
               <p class="muted">No substitutes named.</p>
             }
@@ -171,7 +232,8 @@ interface Draft {
       } @else {
         <p class="muted">{{ side.name }} have not picked their team yet.</p>
       }
-      @if (side.can_edit) {
+      @if (rating()) {
+      } @else if (side.can_edit) {
         <div class="actions">
           <button type="button" class="primary" (click)="edit(side)">
             {{ side.lineup ? 'Edit team sheet' : 'Pick team' }}
@@ -184,25 +246,40 @@ interface Draft {
       }
     </ng-template>
 
-    <ng-template #shirtBody let-player let-lineup="lineup">
+    <ng-template #shirtBody let-player let-lineup="lineup" let-replaced="replaced">
       @if (lineup.captain_id === player.player_id) {
         <i class="badge" aria-label="Captain">C</i>
+      }
+      @if (replaced) {
+        <i class="badge came-on" [attr.aria-label]="'Came on for ' + replaced.name">↑</i>
       }
       <span class="kit">{{ player.number ?? '' }}</span>
       <span class="who">
         <b>{{ shortName(player.name) }}</b>
+        @if (replaced) {
+          <small class="for">for {{ shortName(replaced.name) }}</small>
+        }
         <small>{{ shirtMeta(player) }}</small>
       </span>
     </ng-template>
 
-    @if (day()?.enabled && sides().length && part() !== 'subs') {
-      <h3 class="fm-section-title">Team sheets</h3>
-      <p class="hint">
-        Both teams must submit a team sheet of at least {{ sheetMinimum() }} before kickoff, and every
-        named player needs a shirt number. Officials must be picked on Setup.
-      </p>
-      @if (canRecord()) {
-        <p class="hint">Tap a player to record a yellow card, red card, goal or own goal.</p>
+    @if (day()?.enabled && sides().length) {
+      @if (rating()) {
+        <h3 class="fm-section-title">Player ratings</h3>
+        <p class="hint">Tap a player to record their stats and rate them. A green ring means you have rated them.</p>
+      } @else {
+        <h3 class="fm-section-title">Team sheets</h3>
+        <p class="hint">
+          Both teams must submit a team sheet of at least {{ sheetMinimum() }} before kickoff, and every
+          named player needs a shirt number. Officials must be picked on Setup.
+        </p>
+      }
+      @if (canRecord() && !rating()) {
+        <p class="hint">
+          Tap a player to record a yellow card, red card, goal or own goal{{
+            day()?.can_substitute ? ', or to take them off. Tap a substitute to bring them on' : ''
+          }}.
+        </p>
       }
       <div class="lineup-stack" [class.editing]="!!draft()">
         @for (side of sides(); track side.side_id) {
@@ -344,120 +421,10 @@ interface Draft {
         }
       </div>
     }
-
-    @if (day()?.enabled && sides().length && part() !== 'sheets' && showSubstitutions()) {
-      <h3 class="fm-section-title">
-        Substitutions
-        @if (subs().length) {
-          <span class="count">{{ subs().length }}</span>
-        }
-      </h3>
-      <div class="fm-team-columns" [class.many]="sides().length > 2">
-        @for (side of sides(); track side.side_id) {
-          <div class="fm-card subs">
-            <span class="fm-team-head">{{ side.name }}</span>
-            <p class="used">
-              {{ side.substitutions_used }}
-              @if (config()?.max_substitutions; as limit) {
-                of {{ limit }}
-              }
-              used
-            </p>
-
-            @if (day()?.can_substitute) {
-              @if (side.lineup) {
-                @if (side.substitutions_left !== 0) {
-                  <div class="sub-form">
-                    <label class="field">
-                      Off
-                      <select (change)="setSub(side.side_id, 'off', value($event))">
-                        <option value="" [selected]="!subFor(side.side_id).off">Coming off</option>
-                        @for (player of onField(side); track player.player_id) {
-                          <option [value]="player.player_id" [selected]="subFor(side.side_id).off === player.player_id">{{ label(player) }}</option>
-                        }
-                      </select>
-                    </label>
-                    <label class="field">
-                      On
-                      <select (change)="setSub(side.side_id, 'on', value($event))">
-                        <option value="" [selected]="!subFor(side.side_id).on">Coming on</option>
-                        @for (player of available(side); track player.player_id) {
-                          <option [value]="player.player_id" [selected]="subFor(side.side_id).on === player.player_id">{{ label(player) }}</option>
-                        }
-                      </select>
-                    </label>
-                    <div class="row">
-                      <label class="field">
-                        Minute
-                        <input
-                          type="number"
-                          min="0"
-                          inputmode="numeric"
-                          [value]="subMinute()"
-                          (input)="setMinute(value($event))"
-                        />
-                      </label>
-                      <label class="field">
-                        Reason
-                        <select (change)="setSub(side.side_id, 'reason', value($event))">
-                          @for (reason of day()?.reasons ?? []; track reason.key) {
-                            <option [value]="reason.key" [selected]="subFor(side.side_id).reason === reason.key">{{ reason.label }}</option>
-                          }
-                        </select>
-                      </label>
-                    </div>
-                    <button
-                      type="button"
-                      class="record"
-                      [disabled]="busy() || !subFor(side.side_id).off || !subFor(side.side_id).on"
-                      (click)="substitute(side)"
-                    >
-                      <ion-icon name="swap-horizontal-outline" aria-hidden="true" />
-                      Record
-                    </button>
-                  </div>
-                } @else {
-                  <p class="hint">All substitutions used.</p>
-                }
-              } @else {
-                <p class="hint">Pick the team sheet first.</p>
-              }
-            }
-
-            @if (part() !== 'subs') {
-              @for (sub of subsFor(side.side_id); track sub.id) {
-                <div class="sub">
-                  <span class="minute">{{ sub.minute !== null ? sub.minute + "'" : '–' }}</span>
-                  <span class="detail">
-                    <span class="on"><ion-icon name="arrow-up-outline" aria-label="On" /> {{ sub.player_on.name }}</span>
-                    <span class="off"><ion-icon name="arrow-down-outline" aria-label="Off" /> {{ sub.player_off.name }}</span>
-                    <em>{{ reasonLabel(sub.reason) }}</em>
-                  </span>
-                  @if (day()?.can_substitute) {
-                    <button
-                      type="button"
-                      class="undo"
-                      [disabled]="busy()"
-                      [attr.aria-label]="'Delete substitution of ' + sub.player_off.name"
-                      (click)="confirmDelete(sub)"
-                    >
-                      <ion-icon name="trash-outline" />
-                    </button>
-                  }
-                </div>
-              } @empty {
-                <p class="muted">No substitutions yet.</p>
-              }
-            }
-          </div>
-        }
-      </div>
-    }
   `,
   styles: [
     `
-      .sheet,
-      .subs {
+      .sheet {
         padding: 12px;
         display: grid;
         align-content: start;
@@ -488,25 +455,6 @@ interface Draft {
           width: 38px;
           height: 42px;
         }
-      }
-      .record {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        width: 100%;
-        padding: 9px 12px;
-        border: 0;
-        border-radius: 999px;
-        background: var(--ion-color-primary);
-        color: var(--ion-color-primary-contrast);
-        font: inherit;
-        font-weight: 700;
-        cursor: pointer;
-      }
-      .record:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
       }
       .pitch {
         position: relative;
@@ -631,6 +579,50 @@ interface Draft {
       .badge.inline {
         position: static;
       }
+      .shirt.rated .kit {
+        box-shadow:
+          0 0 0 2px var(--ion-color-success, #16a34a),
+          0 4px 10px rgb(0 0 0 / 25%);
+      }
+      .list li.rated .num {
+        color: var(--ion-color-success, #16a34a);
+      }
+      .badge.out {
+        right: auto;
+        left: 8px;
+        background: var(--ion-color-danger, #dc2626);
+        color: #fff;
+      }
+      button.bench-shirt:disabled {
+        cursor: default;
+        opacity: 1;
+      }
+      .bench h3 .used {
+        margin-left: 6px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: var(--ion-color-medium);
+      }
+      .bench-shirt.went-off .kit {
+        opacity: 0.6;
+      }
+      .bench-shirt.went-off .for {
+        color: var(--ion-color-danger, #dc2626);
+      }
+      .badge.came-on {
+        right: auto;
+        left: 8px;
+        background: var(--ion-color-success, #16a34a);
+        color: #fff;
+      }
+      .who small.for {
+        font-weight: 700;
+        opacity: 1;
+      }
+      button.bench-shirt {
+        color: inherit;
+        cursor: pointer;
+      }
       .shirt.off {
         opacity: 0.55;
       }
@@ -712,8 +704,7 @@ interface Draft {
         grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
         gap: 8px;
       }
-      .editor,
-      .sub-form {
+      .editor {
         display: grid;
         gap: 10px;
       }
@@ -833,50 +824,6 @@ interface Draft {
         font-size: 0.85rem;
         color: var(--ion-color-medium);
       }
-      .used {
-        margin: -4px 0 0;
-        font-size: 0.78rem;
-        color: var(--ion-color-medium);
-      }
-      .sub {
-        display: grid;
-        grid-template-columns: 32px 1fr auto;
-        align-items: center;
-        gap: 10px;
-        padding-top: 8px;
-        border-top: 1px solid var(--ion-color-step-100, #eef0f3);
-      }
-      .sub .minute {
-        font-weight: 800;
-        color: var(--ion-color-primary);
-      }
-      .sub .detail {
-        display: grid;
-        gap: 2px;
-        font-size: 0.86rem;
-      }
-      .sub .on ion-icon {
-        color: var(--ion-color-success);
-      }
-      .sub .off ion-icon {
-        color: var(--ion-color-danger);
-      }
-      .sub em {
-        font-style: normal;
-        font-size: 0.74rem;
-        color: var(--ion-color-medium);
-      }
-      .undo {
-        display: grid;
-        place-items: center;
-        width: 34px;
-        height: 34px;
-        border: 0;
-        border-radius: 50%;
-        background: none;
-        color: var(--ion-color-danger);
-        cursor: pointer;
-      }
     `,
   ],
 })
@@ -892,18 +839,30 @@ export class MatchDayComponent implements OnInit {
   readonly status = input<string>('scheduled');
   /** The match clock's current minute, used as the default for a substitution. */
   readonly minute = input<number | null>(null);
-  /** Which panels to show: everything, only the team sheets, or only substitutions. */
-  readonly part = input<'all' | 'sheets' | 'subs'>('all');
   /** Referee, owner or admin during a live match can record a goal or a card from the shirt. */
   readonly canRecord = input(false);
-  readonly contribution = output<{ sideId: string; playerId: string; name: string }>();
+  readonly contribution = output<{
+    sideId: string;
+    playerId: string;
+    name: string;
+    canSubstitute: boolean;
+  }>();
+  /** 'rate': the pitch only picks a player for stats and a rating; no team-sheet editing. */
+  readonly mode = input<'lineup' | 'rate'>('lineup');
+  /** Players the viewer has already rated, ringed on the pitch. */
+  readonly marked = input<ReadonlySet<string>>(new Set());
+  readonly picked = output<{ sideId: string; playerId: string; name: string }>();
+  /** Whether every side has a team sheet to draw, so the pitch can stand in for a list. */
+  readonly pitchReady = output<boolean>();
+  readonly rating = computed(() => this.mode() === 'rate');
 
   readonly day = signal<MatchDay | null>(null);
   readonly draft = signal<Draft | null>(null);
   readonly busy = signal(false);
-  readonly subMinute = signal('');
-  readonly subDrafts = signal<Record<string, { off: string; on: string; reason: string }>>({});
-  private minuteTouched = false;
+  readonly subMinute = computed(() => {
+    const minute = this.minute();
+    return minute === null ? '' : String(minute);
+  });
 
   readonly sides = computed(() => this.day()?.sides ?? []);
   readonly config = computed(() => this.day()?.config);
@@ -917,26 +876,8 @@ export class MatchDayComponent implements OnInit {
     if (!draft) return [];
     return this.day()?.formations?.find((item) => item.key === draft.formation)?.slots ?? [];
   });
-  readonly showSubstitutions = computed(
-    () =>
-      this.status() === 'live' ||
-      this.status() === 'completed' ||
-      this.status() === 'forfeit' ||
-      this.subs().length > 0,
-  );
 
   constructor() {
-    addIcons({
-      arrowDownOutline,
-      arrowUpOutline,
-      ribbonOutline,
-      swapHorizontalOutline,
-      trashOutline,
-    });
-    effect(() => {
-      const minute = this.minute();
-      if (!this.minuteTouched) this.subMinute.set(minute === null ? '' : String(minute));
-    });
     effect(() => {
       this.status();
       if (untracked(() => this.day())) this.load();
@@ -1066,6 +1007,10 @@ export class MatchDayComponent implements OnInit {
   }
 
   pressPlayer(side: TeamSheetSide, player: LineupPlayer): void {
+    if (this.rating()) {
+      this.picked.emit({ sideId: side.side_id, playerId: player.player_id, name: player.name });
+      return;
+    }
     if (!this.canRecord()) return;
     if (player.sent_off) {
       void this.toast(`${player.name} is already sent off.`);
@@ -1079,7 +1024,117 @@ export class MatchDayComponent implements OnInit {
       sideId: side.side_id,
       playerId: player.player_id,
       name: player.name,
+      canSubstitute: this.canTakeOff(side, player.player_id),
     });
+  }
+
+  pressLabel(player: LineupPlayer, replaced: LineupPlayer | null): string {
+    if (this.rating()) return `Stats and rating for ${player.name}`;
+    const action = this.day()?.can_substitute ? 'Goal, card or substitution' : 'Record a goal or card';
+    return `${action} for ${player.name}${replaced ? `, on for ${replaced.name}` : ''}`;
+  }
+
+  /** Who is in a starter's position now: the last player to come on for them, or the starter. */
+  onPitch(side: TeamSheetSide, starter: LineupPlayer): LineupPlayer {
+    const lineup = side.lineup;
+    if (!lineup) return starter;
+    const named = [...lineup.starters, ...lineup.bench];
+    const seen = new Set([starter.player_id]);
+    let current = starter;
+    while (current.subbed_off) {
+      const sub = this.subsFor(side.side_id)
+        .filter((row) => row.player_off.player_id === current.player_id)
+        .at(-1);
+      const next = sub ? named.find((player) => player.player_id === sub.player_on.player_id) : undefined;
+      if (!next || seen.has(next.player_id)) break;
+      seen.add(next.player_id);
+      current = next;
+    }
+    return current;
+  }
+
+  /** The player who went off when this substitute came on, shown in the substitute's bench spot. */
+  wentOffFor(
+    side: TeamSheetSide,
+    substitute: LineupPlayer,
+  ): { player: LineupPlayer; minute: number | null; sub: SubstitutionRecord } | null {
+    const lineup = side.lineup;
+    if (!lineup) return null;
+    const sub = this.subsFor(side.side_id)
+      .filter((row) => row.player_on.player_id === substitute.player_id)
+      .at(-1);
+    if (!sub) return null;
+    const player = [...lineup.starters, ...lineup.bench].find(
+      (item) => item.player_id === sub.player_off.player_id,
+    );
+    return player ? { player, minute: sub.minute, sub } : null;
+  }
+
+  private canTakeOff(side: TeamSheetSide, playerId: string): boolean {
+    return (
+      !!this.day()?.can_substitute &&
+      side.substitutions_left !== 0 &&
+      side.on_field.includes(playerId) &&
+      side.available_subs.length > 0
+    );
+  }
+
+  canBringOn(side: TeamSheetSide, player: LineupPlayer): boolean {
+    return (
+      this.canRecord() &&
+      !!this.day()?.can_substitute &&
+      side.substitutions_left !== 0 &&
+      side.available_subs.includes(player.player_id)
+    );
+  }
+
+  /** Take `playerId` off: pick who comes on, at the clock's minute. */
+  async offerSubstitution(sideId: string, playerId: string): Promise<void> {
+    const side = this.sides().find((item) => item.side_id === sideId);
+    if (!side || this.busy()) return;
+    if (!this.canTakeOff(side, playerId)) {
+      await this.toast('No substitution is possible for that player right now.');
+      return;
+    }
+    const off = this.player(side, playerId);
+    const choices = this.available(side);
+    const on = await this.pickPlayer(
+      `${off?.name ?? 'Player'} off`,
+      'Who comes on?',
+      choices,
+    );
+    if (on) this.submitSubstitution(side, playerId, on);
+  }
+
+  async pressBench(side: TeamSheetSide, player: LineupPlayer): Promise<void> {
+    if (!this.canBringOn(side, player) || this.busy()) return;
+    const off = await this.pickPlayer(`${player.name} on`, 'Who comes off?', this.onField(side));
+    if (off) this.submitSubstitution(side, off, player.player_id);
+  }
+
+  private async pickPlayer(header: string, subHeader: string, players: MatchPlayer[]): Promise<string | null> {
+    if (!players.length) {
+      await this.toast('There is nobody to swap with.');
+      return null;
+    }
+    const minute = this.subMinute();
+    const alert = await this.alerts.create({
+      header,
+      subHeader: minute ? `${subHeader} (${minute}')` : subHeader,
+      inputs: players.map((player, index) => ({
+        type: 'radio' as const,
+        label: this.label(player),
+        value: player.player_id,
+        checked: index === 0,
+      })),
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Substitute', role: 'confirm' },
+      ],
+    });
+    await alert.present();
+    const { role, data } = await alert.onDidDismiss<{ values: string }>();
+    return role === 'confirm' && data?.values ? data.values : null;
   }
 
   starterAt(side: TeamSheetSide, slot: number) {
@@ -1088,10 +1143,6 @@ export class MatchDayComponent implements OnInit {
     if (bySlot) return bySlot;
     const unslotted = starters.every((player) => player.slot === null);
     return unslotted ? (starters[slot] ?? null) : null;
-  }
-
-  reasonLabel(key: string): string {
-    return this.day()?.reasons?.find((reason) => reason.key === key)?.label ?? key;
   }
 
   // --- Team sheet editing ---
@@ -1376,40 +1427,28 @@ export class MatchDayComponent implements OnInit {
       .filter((player): player is MatchPlayer => !!player);
   }
 
-  subFor(sideId: string): { off: string; on: string; reason: string } {
-    return this.subDrafts()[sideId] ?? { off: '', on: '', reason: 'tactical' };
-  }
-
-  setSub(sideId: string, field: 'off' | 'on' | 'reason', value: string): void {
-    this.subDrafts.update((drafts) => ({ ...drafts, [sideId]: { ...this.subFor(sideId), [field]: value } }));
-  }
-
   subsFor(sideId: string): SubstitutionRecord[] {
     return this.subs().filter((sub) => sub.side_id === sideId);
   }
 
-  setMinute(minute: string): void {
-    this.minuteTouched = true;
-    this.subMinute.set(minute);
-  }
-
-  substitute(side: TeamSheetSide): void {
+  private submitSubstitution(side: TeamSheetSide, off: string, on: string, reason = 'tactical'): void {
     if (this.busy()) return;
     this.busy.set(true);
     this.api
       .recordSubstitution(this.competitionId(), this.fixtureId(), {
         side: side.side_id,
-        player_off: this.subFor(side.side_id).off,
-        player_on: this.subFor(side.side_id).on,
+        player_off: off,
+        player_on: on,
         minute: this.subMinute() || null,
-        reason: this.subFor(side.side_id).reason,
+        reason,
       })
       .subscribe({
         next: (day) => {
           this.busy.set(false);
           this.day.set(day);
-          this.subDrafts.update((drafts) => ({ ...drafts, [side.side_id]: { off: '', on: '', reason: 'tactical' } }));
-          this.minuteTouched = false;
+          const offName = this.player(side, off)?.name ?? 'Player';
+          const onName = this.player(side, on)?.name ?? 'substitute';
+          void this.toast(`${onName} on for ${offName}.`, 'success');
         },
         error: async (err: unknown) => {
           this.busy.set(false);
@@ -1444,12 +1483,21 @@ export class MatchDayComponent implements OnInit {
     });
   }
 
+  reload(): void {
+    this.load();
+  }
+
   private load(): void {
     this.api.teamSheets(this.competitionId(), this.fixtureId()).subscribe({
       next: (day) => {
         this.day.set(day);
+        const sides = day.sides ?? [];
+        this.pitchReady.emit(!!day.enabled && sides.length > 0 && sides.every((side) => !!side.lineup));
       },
-      error: () => this.day.set({ enabled: false }),
+      error: () => {
+        this.day.set({ enabled: false });
+        this.pitchReady.emit(false);
+      },
     });
   }
 

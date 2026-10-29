@@ -8,6 +8,7 @@ import {
   effect,
   inject,
   signal,
+  viewChild,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -42,6 +43,7 @@ import type {
   ScoreEvent,
   ScoringCategory,
 } from '../../core/models';
+import { teamSheetOf } from '../../core/models';
 import { RealtimeService, fixtureRoom } from '../../core/realtime.service';
 import { MatchAwardsComponent } from './match-awards.component';
 import { FixtureOverviewComponent } from './fixture-overview.component';
@@ -51,6 +53,14 @@ import { MatchRatersComponent } from './match-raters.component';
 import { ScrabbleScorerComponent } from './scrabble-scorer.component';
 
 type FixtureTab = 'overview' | 'lineups' | 'live' | 'stats' | 'raters' | 'setup';
+
+/** What tapping a player on the line-up pitch can record. */
+const PITCH_CONTRIBUTIONS = [
+  { code: 'yellow-card', name: 'yellow card', label: 'Yellow card' },
+  { code: 'red-card', name: 'red card', label: 'Red card' },
+  { code: 'goal', name: 'goal', label: 'Goal' },
+  { code: 'own-goal', name: 'own goal', label: 'Own goal' },
+];
 const FIXTURE_TABS: FixtureTab[] = ['overview', 'lineups', 'live', 'stats', 'raters', 'setup'];
 
 interface Celebration {
@@ -345,6 +355,11 @@ interface Celebration {
             <div class="fm-empty compact">
               <p>No scoring categories are configured for this competition yet.</p>
             </div>
+          } @else if (scoredOnPitch() && !awardedScoreCategories().length) {
+            <div class="fm-empty compact">
+              <p>Tap a player on the line-up to record a goal, own goal, card or substitution.</p>
+              <ion-button size="small" fill="outline" (click)="selectTab('lineups')">Open line-ups</ion-button>
+            </div>
           } @else {
             <p class="hint">
               @if (recordsMatchEvents()) {
@@ -396,7 +411,7 @@ interface Celebration {
                     </dl>
                   </div>
                 }
-                @for (member of rosterFor(side); track member.id) {
+                @for (member of scoredOnPitch() ? [] : rosterFor(side); track member.id) {
                   <div class="player">
                     <span class="name">
                       @if (member.number !== null) {
@@ -446,13 +461,12 @@ interface Celebration {
           }
         }
 
-        @if (tab() === 'lineups' || (tab() === 'live' && fx.status === 'live')) {
+        @if (tab() === 'lineups') {
           <fm-match-day
             [competitionId]="competitionKey()"
             [fixtureId]="fx.id"
             [status]="fx.status"
             [minute]="matchMinute()"
-            [part]="tab() === 'live' ? 'subs' : 'all'"
             [canRecord]="canScore() && fx.status === 'live'"
             (contribution)="chooseContribution($event)"
           />
@@ -480,7 +494,26 @@ interface Celebration {
         }
 
         @if (tab() === 'raters') {
-          <fm-match-raters [competitionId]="competitionKey()" [fixtureId]="fx.id" (changed)="reloadFixture()" />
+          <fm-match-raters
+            #raters
+            [competitionId]="competitionKey()"
+            [fixtureId]="fx.id"
+            [pitch]="ratePitch()"
+            (changed)="ratingsChanged()"
+          />
+          @if (hasLineups()) {
+            <div [hidden]="!ratePitch()">
+              <fm-match-day
+                mode="rate"
+                [competitionId]="competitionKey()"
+                [fixtureId]="fx.id"
+                [status]="fx.status"
+                [marked]="raters.markedIds()"
+                (picked)="raters.openPlayer($event.playerId, $event.name)"
+                (pitchReady)="ratePitch.set($event)"
+              />
+            </div>
+          }
         }
 
         @if (tab() === 'overview' && hasAwards()) {
@@ -510,6 +543,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   private readonly realtime = inject(RealtimeService);
   private readonly router = inject(Router);
   private readonly actionSheets = inject(ActionSheetController);
+  private readonly matchDay = viewChild(MatchDayComponent);
   private readonly alerts = inject(AlertController);
   private readonly toasts = inject(ToastController);
 
@@ -758,6 +792,15 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     if (this.canManage()) items.push({ key: 'setup', label: 'Setup' });
     return items;
   });
+
+  /** The Raters tab swaps its player list for the line-up pitch once both team sheets exist. */
+  readonly ratePitch = signal(false);
+  readonly hasLineups = computed(() => this.tabs().some((item) => item.key === 'lineups'));
+
+  ratingsChanged(): void {
+    this.reloadFixture();
+    this.matchDay()?.reload();
+  }
 
   selectTab(tab: FixtureTab): void {
     this.tabChosen = true;
@@ -1043,6 +1086,23 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
 
   awardedScoreCategories(): ScoringCategory[] {
     return this.scoreCategories().filter((category) => this.noPlayer(category));
+  }
+
+  /** Team-sheet football: every player score is a goal or card, recorded by tapping the pitch. */
+  scoredOnPitch(): boolean {
+    const competition = this.competition();
+    if (!competition) return false;
+    const teams = (competition.settings_json?.['participant_type'] ?? 'team') === 'team';
+    if (!teams || !teamSheetOf(competition)) return false;
+    const players = this.playerScoreCategories();
+    return (
+      players.length > 0 &&
+      players.every((category) => {
+        const code = category.code.trim().toLowerCase();
+        const name = category.name.trim().toLowerCase();
+        return PITCH_CONTRIBUTIONS.some((option) => option.code === code || option.name === name);
+      })
+    );
   }
 
   isCard(category: ScoringCategory): boolean {
@@ -1336,18 +1396,18 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     );
   }
 
-  async chooseContribution(pick: { sideId: string; playerId: string; name: string }): Promise<void> {
+  async chooseContribution(pick: {
+    sideId: string;
+    playerId: string;
+    name: string;
+    canSubstitute: boolean;
+  }): Promise<void> {
     if (this.saving() || this.kickoffBlocked()) return;
     const fixture = this.fixture();
     if (!fixture || fixture.status !== 'live' || !this.canScore()) return;
     const side = fixture.sides.find((item) => item.id === pick.sideId);
     if (!side) return;
-    const options = [
-      { code: 'yellow-card', name: 'yellow card', label: 'Yellow card' },
-      { code: 'red-card', name: 'red card', label: 'Red card' },
-      { code: 'goal', name: 'goal', label: 'Goal' },
-      { code: 'own-goal', name: 'own goal', label: 'Own goal' },
-    ]
+    const options = PITCH_CONTRIBUTIONS
       .map((option) => ({
         ...option,
         category: this.categories().find((category) => {
@@ -1357,13 +1417,13 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
         }),
       }))
       .filter((option) => option.category);
-    if (!options.length) {
+    if (!options.length && !pick.canSubstitute) {
       await this.showToast('This competition has no goal or card categories.', 'danger');
       return;
     }
     const sheet = await this.actionSheets.create({
       header: pick.name,
-      subHeader: 'Record a contribution',
+      subHeader: pick.canSubstitute ? 'Record a contribution or substitute' : 'Record a contribution',
       buttons: [
         ...options.map((option) => ({
           text: option.label,
@@ -1371,6 +1431,16 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
             void this.record(side, option.category as ScoringCategory, pick.playerId);
           },
         })),
+        ...(pick.canSubstitute
+          ? [
+              {
+                text: 'Substitute',
+                handler: () => {
+                  void this.matchDay()?.offerSubstitution(pick.sideId, pick.playerId);
+                },
+              },
+            ]
+          : []),
         { text: 'Cancel', role: 'cancel' },
       ],
     });
