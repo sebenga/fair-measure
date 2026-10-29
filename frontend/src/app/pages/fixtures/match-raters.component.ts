@@ -11,9 +11,10 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { AlertController, IonContent, IonIcon, IonModal, ToastController } from '@ionic/angular/standalone';
+import { AlertController, IonIcon, ToastController } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { MatchRaters } from '../../core/models';
 import { RealtimeService } from '../../core/realtime.service';
@@ -23,7 +24,7 @@ import { RealtimeService } from '../../core/realtime.service';
   selector: 'fm-match-raters',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [IonIcon, IonModal, IonContent, NgTemplateOutlet],
+  imports: [IonIcon, NgTemplateOutlet],
   template: `
     <ng-template #playerCard let-player let-d="d">
       <div class="player" [class.rated]="hasMark(player)" [class.off]="player.sent_off">
@@ -189,28 +190,25 @@ import { RealtimeService } from '../../core/realtime.service';
         @if (cannotRateReason(); as why) {
           <p class="warn why-banner">{{ why }}</p>
         }
-        <ion-modal
-          [isOpen]="!!selected()"
-          [initialBreakpoint]="0.85"
-          [breakpoints]="[0, 0.85, 1]"
-          (didDismiss)="close()"
-        >
-          <ng-template>
-            <ion-content class="ion-padding player-sheet">
-              @if (selected(); as pick) {
-                <div class="sheet-head">
-                  <span class="fm-team-head">{{ pick.team }}</span>
-                  <button type="button" class="close" (click)="close()">Done</button>
-                </div>
-                <ng-container *ngTemplateOutlet="playerCard; context: { $implicit: pick.player, d: d }" />
-                <div class="sheet-nav">
-                  <button type="button" [disabled]="!pick.previous" (click)="select(pick.previous)">‹ Previous</button>
-                  <button type="button" [disabled]="!pick.next" (click)="select(pick.next)">Next ›</button>
-                </div>
-              }
-            </ion-content>
-          </ng-template>
-        </ion-modal>
+        @if (selected(); as pick) {
+          <div class="sheet-backdrop" (click)="close()"></div>
+          <section class="player-sheet" role="dialog" [attr.aria-label]="pick.player.name + ' stats and rating'">
+            <div class="sheet-head">
+              <span class="fm-team-head">{{ pick.team }}</span>
+              <button type="button" class="close" (click)="close()">Done</button>
+            </div>
+            @if (d.can_manage && !d.is_rater && myId()) {
+              <button type="button" class="appoint-me" [disabled]="busy()" (click)="appoint(myId()!)">
+                Appoint me as a rater
+              </button>
+            }
+            <ng-container *ngTemplateOutlet="playerCard; context: { $implicit: pick.player, d: d }" />
+            <div class="sheet-nav">
+              <button type="button" [disabled]="!pick.previous" (click)="select(pick.previous)">‹ Previous</button>
+              <button type="button" [disabled]="!pick.next" (click)="select(pick.next)">Next ›</button>
+            </div>
+          </section>
+        }
       } @else if (d.teams.length) {
         <h3 class="fm-section-title">Player ratings</h3>
         @if (cannotRateReason(); as why) {
@@ -243,8 +241,41 @@ import { RealtimeService } from '../../core/realtime.service';
       .sheet-head .fm-team-head {
         margin: 0;
       }
+      .sheet-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: rgb(0 0 0 / 45%);
+      }
+      .player-sheet {
+        position: fixed;
+        left: 50%;
+        bottom: 0;
+        z-index: 1001;
+        display: grid;
+        gap: 8px;
+        width: min(100%, 640px);
+        max-height: 88vh;
+        overflow-y: auto;
+        padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+        border-radius: 18px 18px 0 0;
+        background: var(--ion-card-background, #fff);
+        color: var(--ion-text-color);
+        box-shadow: 0 -10px 30px rgb(0 0 0 / 30%);
+        transform: translateX(-50%);
+      }
       .player-sheet .player {
         border-bottom: 0;
+      }
+      .appoint-me {
+        padding: 9px 14px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--ion-color-primary);
+        color: var(--ion-color-primary-contrast);
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
       }
       .sheet-nav {
         margin-top: 12px;
@@ -570,6 +601,8 @@ export class MatchRatersComponent implements OnInit {
   readonly scale = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   private searchTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly selectedId = signal<string | null>(null);
+  private readonly auth = inject(AuthService);
+  readonly myId = computed(() => this.auth.user()?.id ?? null);
 
   private readonly everyone = computed(() =>
     (this.data()?.teams ?? []).flatMap((team) => team.players.map((player) => ({ player, team: team.team }))),
