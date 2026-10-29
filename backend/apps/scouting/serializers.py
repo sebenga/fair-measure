@@ -633,6 +633,7 @@ class ProfileCardSerializer(serializers.Serializer):
     def to_representation(self, profile: PlayerProfile) -> dict:
         primary = next(iter(profile.sports.all()), None)
         given, family = account_name(profile.user)
+        family = family or (profile.last_name or "").strip()
         group = age_group(date_of_birth_of(profile))
         teams = affiliated_teams(profile)
         return {

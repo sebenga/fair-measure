@@ -206,6 +206,11 @@ def test_captain_doubles_points_from_recorded_goals(api, competition, rugby_scor
     assert saved.status_code == 200, saved.data
     # A 90-minute forward try (goal code) is 2 (appearance) + 4 (FWD goal) = 6, doubled to 12.
     assert Decimal(saved.data["team"]["points"]) == Decimal("12")
+    # The player's own performance points stay undoubled; captaincy is a squad rule.
+    performance = api.get(
+        f"/api/v1/competitions/{competition.id}/fantasy/players/{scorer.id}/performance"
+    )
+    assert performance.data["total_performance_points"] == "6"
 
     table = api.get(f"/api/v1/competitions/{competition.id}/fantasy/standings")
     assert table.status_code == 200

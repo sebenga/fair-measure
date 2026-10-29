@@ -63,7 +63,7 @@ RULES_PUBLIC = {
     "formations": ["-".join(str(n) for n in shape) for shape in sorted(VALID_FORMATIONS)],
     "scoring": [
         {"label": "Appearance", "points": "1"},
-        {"label": "60+ minutes", "points": "2"},
+        {"label": "60+ minutes", "points": "1"},
         {"label": "Goal (GK/DEF)", "points": "6"},
         {"label": "Goal (MID)", "points": "5"},
         {"label": "Goal (FWD)", "points": "4"},

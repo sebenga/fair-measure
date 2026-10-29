@@ -96,6 +96,97 @@ def _minutes_for(appearance: PlayerAppearance | None, fixture: Fixture, played: 
     return 0
 
 
+GOAL_POINTS = {
+    FantasySlot.GKP: Decimal("6"),
+    FantasySlot.DEF: Decimal("6"),
+    FantasySlot.MID: Decimal("5"),
+    FantasySlot.FWD: Decimal("4"),
+}
+CLEAN_SHEET_POINTS = {
+    FantasySlot.GKP: Decimal("4"),
+    FantasySlot.DEF: Decimal("4"),
+    FantasySlot.MID: Decimal("1"),
+    FantasySlot.FWD: Decimal("0"),
+}
+# Labels match RULES_PUBLIC["scoring"] so the breakdown reads like the rules page.
+SLOT_GROUP = {
+    FantasySlot.GKP: "GK/DEF",
+    FantasySlot.DEF: "GK/DEF",
+    FantasySlot.MID: "MID",
+    FantasySlot.FWD: "FWD",
+}
+
+
+def _line(label: str, each: Decimal, count: Decimal) -> dict:
+    detail = f"× {points_text(count)}" if count != 1 else ""  # noqa: RUF001
+    return {"label": label, "each": each, "count": count, "points": each * count, "detail": detail}
+
+
+def match_breakdown(
+    *,
+    slot: str,
+    minutes: int,
+    events: Iterable[ScoreEvent],
+    conceded: Decimal,
+) -> dict:
+    """One player's points in one counted fixture, line by line.
+
+    Shots, tackles and other stat-only codes are ignored: they are player stats,
+    not fantasy actions. Captaincy is applied to a squad, never here.
+    """
+
+    lines: list[dict] = []
+    if minutes > 0:
+        lines.append(_line("Appearance", Decimal("1"), Decimal("1")))
+        if minutes >= 60:
+            lines.append(_line("60+ minutes", Decimal("1"), Decimal("1")))
+
+        counts: dict[str, Decimal] = defaultdict(Decimal)
+        for event in events:
+            code = event.scoring_category.code
+            for key, codes in (
+                ("goal", GOAL_CODES),
+                ("assist", ASSIST_CODES),
+                ("own_goal", OWN_GOAL_CODES),
+                ("yellow", YELLOW_CODES),
+                ("red", RED_CODES),
+                ("penalty_save", PENALTY_SAVE_CODES),
+                ("save", SAVE_CODES),
+            ):
+                if code in codes:
+                    counts[key] += _qty(event)
+                    break
+
+        if counts["goal"]:
+            label = f"Goal ({SLOT_GROUP.get(slot, 'MID')})"
+            each = GOAL_POINTS.get(slot, GOAL_POINTS[FantasySlot.MID])
+            lines.append(_line(label, each, counts["goal"]))
+        if counts["assist"]:
+            lines.append(_line("Assist", Decimal("3"), counts["assist"]))
+        if counts["penalty_save"]:
+            lines.append(_line("Penalty save", Decimal("5"), counts["penalty_save"]))
+        if counts["save"] >= 3:
+            line = _line("3 saves", Decimal("1"), counts["save"] // 3)
+            line["detail"] = f"{points_text(counts['save'])} saves"
+            lines.append(line)
+        if conceded <= 0 and minutes >= 60 and CLEAN_SHEET_POINTS.get(slot):
+            label = f"Clean sheet ({SLOT_GROUP.get(slot, 'MID')})"
+            lines.append(_line(label, CLEAN_SHEET_POINTS[slot], Decimal("1")))
+        if counts["own_goal"]:
+            lines.append(_line("Own goal", Decimal("-2"), counts["own_goal"]))
+        if counts["yellow"]:
+            lines.append(_line("Yellow card", Decimal("-1"), counts["yellow"]))
+        if counts["red"]:
+            lines.append(_line("Red card", Decimal("-3"), counts["red"]))
+
+    return {
+        "minutes": max(int(minutes), 0),
+        "slot": slot,
+        "points": sum((line["points"] for line in lines), Decimal("0")),
+        "lines": lines,
+    }
+
+
 def player_match_points(
     *,
     slot: str,
@@ -105,59 +196,16 @@ def player_match_points(
 ) -> Decimal:
     """Points one player earns in one counted fixture."""
 
-    points = Decimal("0")
-    if minutes <= 0:
-        return points
-
-    points += Decimal("1")
-    if minutes >= 60:
-        points += Decimal("1")
-
-    saves = Decimal("0")
-    for event in events:
-        code = event.scoring_category.code
-        amount = _qty(event)
-        if code in GOAL_CODES:
-            if slot == FantasySlot.FWD:
-                points += Decimal("4") * amount
-            elif slot == FantasySlot.MID:
-                points += Decimal("5") * amount
-            else:
-                points += Decimal("6") * amount
-        elif code in ASSIST_CODES:
-            points += Decimal("3") * amount
-        elif code in OWN_GOAL_CODES:
-            points -= Decimal("2") * amount
-        elif code in YELLOW_CODES:
-            points -= Decimal("1") * amount
-        elif code in RED_CODES:
-            points -= Decimal("3") * amount
-        elif code in PENALTY_SAVE_CODES:
-            points += Decimal("5") * amount
-        elif code in SAVE_CODES:
-            saves += amount
-
-    if saves >= 3:
-        points += (saves // 3)
-
-    if conceded <= 0 and minutes >= 60:
-        if slot in {FantasySlot.GKP, FantasySlot.DEF}:
-            points += Decimal("4")
-        elif slot == FantasySlot.MID:
-            points += Decimal("1")
-
-    return points
+    return match_breakdown(slot=slot, minutes=minutes, events=events, conceded=conceded)["points"]
 
 
-def season_totals(competition) -> dict[object, dict]:
-    """Per-player season points, last-fixture points, and a suggested price."""
+def _match_rows(competition, members: list[RosterMember]) -> tuple[dict, list[Fixture], dict]:
+    """Every counted fixture for these players, with one match breakdown each.
 
-    members = list(
-        RosterMember.objects.filter(participant__competition=competition, is_active=True)
-        .select_related("participant")
-    )
-    if not members:
-        return {}
+    Returns (slots by player, counted fixtures oldest first, rows by player).
+    A row is {"fixture", "side", "conceded", "breakdown"}; a fixture the player
+    did not appear in still has a row, worth 0.
+    """
 
     by_id = {member.id: member for member in members}
     shirts = lineup_positions(competition, by_id)
@@ -169,28 +217,20 @@ def season_totals(competition) -> dict[object, dict]:
 
     fixtures = list(
         Fixture.objects.filter(competition=competition, status__in=COUNTED)
-        .prefetch_related("sides")
+        .prefetch_related("sides__participant")
         .order_by("scheduled_at", "created_at")
     )
     if not fixtures:
-        return {
-            member.id: {
-                "points": Decimal("0"),
-                "event_points": Decimal("0"),
-                "minutes": 0,
-                "slot": slots[member.id][0],
-                "slots": slots[member.id],
-                "price": BASE_PRICES[slots[member.id][0]],
-            }
-            for member in members
-        }
+        return slots, [], {member.id: [] for member in members}
 
     fixture_ids = [fixture.id for fixture in fixtures]
-    last_fixture = fixtures[-1]
 
+    # Conceded = the best opposing score, so multi-way fixtures still have one figure.
     conceded: dict[tuple[object, object], Decimal] = {}
+    sides_by_fixture: dict[object, dict[object, object]] = {}
     for fixture in fixtures:
         sides = list(fixture.sides.all())
+        sides_by_fixture[fixture.id] = {side.participant_id: side for side in sides}
         for side in sides:
             others = [other.score for other in sides if other.id != side.id]
             conceded[(fixture.id, side.participant_id)] = max(others) if others else Decimal("0")
@@ -211,45 +251,113 @@ def season_totals(competition) -> dict[object, dict]:
         appearances[(row.fixture_id, row.player_id)] = row
         appeared.add((row.fixture_id, row.player_id))
 
-    totals: dict[object, dict] = {
-        member.id: {
-            "points": Decimal("0"),
-            "event_points": Decimal("0"),
-            "minutes": 0,
-            "slot": slots[member.id][0],
-            "slots": slots[member.id],
-            "price": BASE_PRICES[slots[member.id][0]],
-        }
-        for member in members
-    }
-
+    rows: dict[object, list[dict]] = {}
     for member in members:
         primary = slots[member.id][0]
-        season = Decimal("0")
-        minutes_total = 0
-        last = Decimal("0")
+        member_rows = []
         for fixture in fixtures:
             key = (fixture.id, member.id)
-            mins = _minutes_for(appearances.get(key), fixture, key in appeared)
-            minutes_total += mins
-            against = conceded.get((fixture.id, member.participant_id), Decimal("0"))
             shirt = match_shirts.get(key)
-            match_slot = classify_slot(shirt) if shirt else primary
-            match_pts = player_match_points(
-                slot=match_slot,
-                minutes=mins,
-                events=events_by_player.get(key, ()),
-                conceded=against,
+            member_rows.append(
+                {
+                    "fixture": fixture,
+                    "side": sides_by_fixture[fixture.id].get(member.participant_id),
+                    "conceded": conceded.get((fixture.id, member.participant_id), Decimal("0")),
+                    "breakdown": match_breakdown(
+                        slot=classify_slot(shirt) if shirt else primary,
+                        minutes=_minutes_for(appearances.get(key), fixture, key in appeared),
+                        events=events_by_player.get(key, ()),
+                        conceded=conceded.get((fixture.id, member.participant_id), Decimal("0")),
+                    ),
+                }
             )
-            season += match_pts
-            if fixture.id == last_fixture.id:
-                last = match_pts
-        totals[member.id]["points"] = season
-        totals[member.id]["event_points"] = last
-        totals[member.id]["minutes"] = minutes_total
-        totals[member.id]["price"] = _price_for(primary, season)
+        rows[member.id] = member_rows
+    return slots, fixtures, rows
 
+
+def season_totals(competition) -> dict[object, dict]:
+    """Per-player season points, last-fixture points, and a suggested price.
+
+    The season total is the sum of the player's match points.
+    """
+
+    members = list(
+        RosterMember.objects.filter(participant__competition=competition, is_active=True)
+        .select_related("participant")
+    )
+    if not members:
+        return {}
+
+    slots, fixtures, rows = _match_rows(competition, members)
+    totals: dict[object, dict] = {}
+    for member in members:
+        primary = slots[member.id][0]
+        member_rows = rows.get(member.id, [])
+        season = sum((row["breakdown"]["points"] for row in member_rows), Decimal("0"))
+        totals[member.id] = {
+            "points": season,
+            "event_points": member_rows[-1]["breakdown"]["points"] if member_rows else Decimal("0"),
+            "minutes": sum(row["breakdown"]["minutes"] for row in member_rows),
+            "slot": primary,
+            "slots": slots[member.id],
+            "price": _price_for(primary, season) if fixtures else BASE_PRICES[primary],
+        }
     return totals
+
+
+def player_performance(competition, member: RosterMember) -> dict:
+    """One player's season total and the breakdown of every counted match they played."""
+
+    slots, _fixtures, rows = _match_rows(competition, [member])
+    member_rows = rows.get(member.id, [])
+    played = [row for row in member_rows if row["breakdown"]["minutes"] > 0]
+    total = sum((row["breakdown"]["points"] for row in member_rows), Decimal("0"))
+    matches = []
+    for row in played:
+        fixture = row["fixture"]
+        side = row["side"]
+        opponents = [
+            other.participant.name
+            for other in fixture.sides.all()
+            if side is None or other.id != side.id
+        ]
+        breakdown = row["breakdown"]
+        matches.append(
+            {
+                "fixture_id": str(fixture.id),
+                "label": fixture.label,
+                "played_at": (fixture.completed_at or fixture.scheduled_at),
+                "opponents": opponents,
+                "team_score": points_text(Decimal(side.score)) if side is not None else None,
+                "conceded": points_text(row["conceded"]),
+                "minutes": breakdown["minutes"],
+                "slot": breakdown["slot"],
+                "points": points_text(breakdown["points"]),
+                "lines": [
+                    {
+                        "label": line["label"],
+                        "points": points_text(line["points"]),
+                        "each": points_text(line["each"]),
+                        "count": points_text(line["count"]),
+                        "detail": line["detail"],
+                    }
+                    for line in breakdown["lines"]
+                ],
+            }
+        )
+    return {
+        "player_id": str(member.id),
+        "name": member.name,
+        "number": member.number,
+        "team_id": str(member.participant_id),
+        "team_name": member.participant.name,
+        "slot": slots[member.id][0],
+        "slots": slots[member.id],
+        "matches_played": len(played),
+        "minutes": sum(row["breakdown"]["minutes"] for row in member_rows),
+        "total_performance_points": points_text(total),
+        "matches": matches,
+    }
 
 
 def _price_for(slot: str, season_points: Decimal) -> Decimal:
