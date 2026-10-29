@@ -1527,7 +1527,7 @@ export class CompetitionCreatePage implements OnInit {
     const current = card.presets.find((preset) => preset.key === this.selectedPreset());
     this.selectPreset((current ?? this.familyHead(card.presets)).key);
     this.focused.set(true);
-    void this.content()?.scrollToTop(250);
+    this.scrollToStart();
   }
 
   selectVariant(key: string, event: Event): void {
@@ -1556,7 +1556,7 @@ export class CompetitionCreatePage implements OnInit {
     }
     if (key !== this.selectedPreset()) this.selectPreset(key);
     this.focused.set(true);
-    void this.content()?.scrollToTop(250);
+    this.scrollToStart();
   }
 
   groupOpen(key: string): boolean {
@@ -1671,9 +1671,23 @@ export class CompetitionCreatePage implements OnInit {
   }
 
   patchDraft(key: number, patch: Partial<ScoringDraft>): void {
-    this.scoringDrafts.update((rows) =>
-      rows.map((row) => (row.key === key ? { ...row, ...patch } : row)),
-    );
+    this.scoringDrafts.update((rows) => {
+      const current = rows.find((row) => row.key === key);
+      if (!current) return rows;
+      const next = { ...current, ...patch };
+      const unchanged = (Object.keys(patch) as Array<keyof ScoringDraft>).every(
+        (field) => current[field] === next[field],
+      );
+      if (unchanged) return rows;
+      return rows.map((row) => (row.key === key ? next : row));
+    });
+  }
+
+  /** A failed scroll must not surface as "Something went wrong on this screen." */
+  private scrollToStart(): void {
+    void this.content()
+      ?.scrollToTop(250)
+      ?.catch(() => undefined);
   }
 
   addDraft(): void {
@@ -1727,7 +1741,7 @@ export class CompetitionCreatePage implements OnInit {
     if (this.step() === 2 && this.form.controls.name.invalid) {
       this.form.controls.name.markAsTouched();
       this.error.set('Give the competition a name.');
-      void this.content()?.scrollToTop(250);
+      this.scrollToStart();
       return;
     }
     this.error.set(null);
@@ -1761,7 +1775,7 @@ export class CompetitionCreatePage implements OnInit {
     }
     this.form.controls.name.markAsTouched();
     this.error.set('Give the competition a name.');
-    void this.content()?.scrollToTop(250);
+    this.scrollToStart();
   }
 
   setPrivate(isPrivate: boolean): void {

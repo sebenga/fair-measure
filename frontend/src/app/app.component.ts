@@ -43,6 +43,7 @@ import {
   flagOutline,
   flashOutline,
   footballOutline,
+  gitMergeOutline,
   gitNetworkOutline,
   globeOutline,
   golfOutline,
@@ -102,7 +103,8 @@ import { RealtimeService } from './core/realtime.service';
   template: `
     <ion-app>
       <div id="fm-runtime-error" hidden>
-        Something went wrong on this screen.
+        <span>Something went wrong on this screen.</span>
+        <span id="fm-runtime-error-detail"></span>
         <button type="button" (click)="reload()">Reload</button>
       </div>
       <ion-router-outlet />
@@ -191,7 +193,8 @@ export class AppComponent {
       flagOutline,
       flashOutline,
       footballOutline,
-      gitNetworkOutline,
+      gitMergeOutline,
+  gitNetworkOutline,
       globeOutline,
       golfOutline,
       gridOutline,
