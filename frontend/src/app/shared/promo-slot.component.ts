@@ -7,7 +7,10 @@ import { IonIcon } from '@ionic/angular/standalone';
   imports: [IonIcon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <button type="button" class="slot" [attr.data-kind]="kind()" (click)="open.emit()">
+    <button type="button" class="slot" [class.photo]="!!image()" [attr.data-kind]="kind()" (click)="open.emit()">
+      @if (image()) {
+        <img class="bg" [src]="image()" alt="" loading="lazy" decoding="async" />
+      }
       <span class="eyebrow">{{ eyebrow() }}</span>
       <span class="row">
         @if (logo()) {
@@ -145,6 +148,87 @@ import { IonIcon } from '@ionic/angular/standalone';
         font-size: 0.8rem;
         font-weight: 700;
       }
+
+      /* Photo cards: the landing page treatment, a picture under a teal-to-dark wash. */
+      .slot.photo {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        align-content: end;
+        min-height: 190px;
+        padding: 16px;
+        border-radius: 18px;
+        background: #0b1220;
+        color: #fff;
+        box-shadow: 0 12px 28px rgb(15 23 42 / 14%);
+      }
+
+      .slot.photo .bg {
+        position: absolute;
+        inset: 0;
+        z-index: -2;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.6s ease;
+      }
+
+      .slot.photo::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        background: linear-gradient(0deg, rgb(4 10 22 / 90%) 0%, rgb(4 10 22 / 45%) 55%, rgb(15 118 110 / 35%) 100%);
+      }
+
+      .slot.photo[data-kind='government']::after {
+        background: linear-gradient(0deg, rgb(4 10 22 / 92%) 0%, rgb(15 30 60 / 55%) 55%, rgb(30 58 95 / 40%) 100%);
+      }
+
+      .slot.photo[data-kind='competition']::after {
+        background: linear-gradient(0deg, rgb(4 10 22 / 90%) 0%, rgb(4 10 22 / 45%) 55%, rgb(234 88 12 / 30%) 100%);
+      }
+
+      @media (hover: hover) {
+        .slot.photo:hover .bg {
+          transform: scale(1.04);
+        }
+      }
+
+      .slot.photo .eyebrow {
+        justify-self: start;
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: rgb(15 118 110 / 92%);
+        opacity: 1;
+        letter-spacing: 0.08em;
+      }
+
+      .slot.photo[data-kind='government'] .eyebrow {
+        background: rgb(37 99 235 / 88%);
+      }
+
+      .slot.photo[data-kind='competition'] .eyebrow {
+        background: rgb(234 88 12 / 92%);
+      }
+
+      .slot.photo strong {
+        font-size: 1.05rem;
+        line-height: 1.25;
+      }
+
+      .slot.photo small {
+        opacity: 0.86;
+      }
+
+      .slot.photo .cta {
+        justify-self: start;
+        margin-top: 2px;
+        padding: 7px 13px;
+        border-radius: 999px;
+        background: #fff;
+        color: #0f172a;
+      }
     `,
   ],
 })
@@ -158,5 +242,7 @@ export class PromoSlotComponent {
   readonly action = input('');
   readonly icon = input('');
   readonly logo = input('');
+  /** Optional photo; turns the card into a landing-style picture card. */
+  readonly image = input('');
   readonly open = output<void>();
 }

@@ -1,7 +1,9 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { IonContent, IonSpinner } from '@ionic/angular/standalone';
+import { IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
+import { addIcons } from 'ionicons';
+import { arrowForwardOutline } from 'ionicons/icons';
 
 import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
@@ -10,16 +12,17 @@ import { AuthShellComponent } from '../login/auth-shell.component';
 @Component({
   selector: 'fm-register',
   standalone: true,
-  imports: [ReactiveFormsModule, IonContent, IonSpinner, AuthShellComponent],
+  imports: [ReactiveFormsModule, IonContent, IonIcon, IonSpinner, AuthShellComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'ion-page' },
   styleUrl: '../login/login.page.scss',
   template: `
     <ion-content [fullscreen]="true">
       <fm-auth-shell
-        eyebrow="Sport · Social · Work"
+        eyebrow="Join free"
         title="Join as a player, fan, or organiser."
-        subtitle="One account for the match, the conversation, and the admin that keeps both honest."
+        subtitle="From the township league to the provincial final and the office KPI cup: one account for the match, the conversation and the admin."
+        [photos]="photos"
       >
         <h2>Create account</h2>
         <p class="lede">A minute to start. Use it for a club, a feed, or a workplace league.</p>
@@ -58,15 +61,14 @@ import { AuthShellComponent } from '../login/auth-shell.component';
             />
           </label>
 
-          <p class="lede" style="margin: 0">
-            Avoid anything too common or too close to your email.
-          </p>
+          <p class="hint">Avoid anything too common or too close to your email.</p>
 
           <button type="submit" class="primary" [disabled]="loading()">
             @if (loading()) {
               <ion-spinner name="crescent" />
             } @else {
               Create account
+              <ion-icon name="arrow-forward-outline" aria-hidden="true" />
             }
           </button>
         </form>
@@ -87,6 +89,15 @@ export class RegisterPage {
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+  readonly photos = [
+    'assets/landing/hero.jpg',
+    'assets/landing/gov-cleanup.jpg',
+    'assets/landing/corp-kpi.jpg',
+  ];
+
+  constructor() {
+    addIcons({ arrowForwardOutline });
+  }
 
   readonly form = this.fb.nonNullable.group({
     displayName: ['', [Validators.required, Validators.maxLength(120)]],

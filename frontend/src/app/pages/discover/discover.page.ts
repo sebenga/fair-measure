@@ -32,6 +32,8 @@ import {
   FALLBACK_CORPORATE,
   FALLBACK_GOVERNMENT,
   FALLBACK_LOGOS,
+  competitionImage,
+  placementImage,
 } from '../../core/marketing-fallbacks';
 import type { Competition, MarketingPlacement, Post } from '../../core/models';
 import {
@@ -57,16 +59,19 @@ interface MarketSlide {
   action: string;
   icon: string;
   logo: string;
+  image: string;
   placement?: MarketingPlacement;
   league?: Competition;
 }
 
 const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
+import { PageHeroComponent } from '../../shared/page-hero.component';
 
 @Component({
   selector: 'fm-discover',
   standalone: true,
   imports: [
+    PageHeroComponent,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -112,11 +117,17 @@ const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
           <ion-button fill="clear" (click)="load()">Try again</ion-button>
         </div>
       } @else {
+        <fm-page-hero
+          eyebrow="Discover"
+          title="What's happening across Fair Measure"
+          subtitle="Results, ratings, standout players and the conversation from public competitions."
+          image="assets/landing/hero.jpg"
+        />
         <div class="discover-shell">
           <aside class="sponsored-rail left" aria-label="Corporate marketing">
             <p class="rail-kicker">Commercial</p>
             <h3 class="rail-title">Corporate</h3>
-            @for (ad of corporate(); track ad.id) {
+            @for (ad of corporate(); track ad.id; let i = $index) {
               <fm-promo-slot
                 kind="corporate"
                 eyebrow="Corporate"
@@ -124,6 +135,7 @@ const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
                 [body]="ad.tagline || ad.body"
                 [action]="ad.cta_label || 'Talk to partnerships'"
                 [logo]="ad.logo_url"
+                [image]="placementImage(ad, i)"
                 icon="briefcase-outline"
                 (open)="openPlacement(ad)"
               />
@@ -174,6 +186,7 @@ const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
                         [body]="slide.body"
                         [action]="slide.action"
                         [logo]="slide.logo"
+                        [image]="slide.image"
                         [icon]="slide.icon"
                         (open)="openMarket(slide)"
                       />
@@ -201,6 +214,7 @@ const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
               [title]="campaign().name"
               [body]="campaign().tagline || campaign().body"
               [action]="campaign().cta_label || 'Create a public league'"
+              [image]="placementImage(campaign())"
               icon="megaphone-outline"
               (open)="openPlacement(campaign())"
             />
@@ -296,6 +310,7 @@ const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
                     [body]="item.placement.tagline || item.placement.body"
                     [action]="item.placement.cta_label || 'Learn more'"
                     [logo]="item.placement.logo_url"
+                    [image]="placementImage(item.placement, index)"
                     [icon]="promoIcon(item.placement)"
                     (open)="openPlacement(item.placement)"
                   />
@@ -336,7 +351,7 @@ const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
           <aside class="sponsored-rail right" aria-label="Government and current competitions">
             <p class="rail-kicker">Public sector</p>
             <h3 class="rail-title">Government</h3>
-            @for (ad of government(); track ad.id) {
+            @for (ad of government(); track ad.id; let i = $index) {
               <fm-promo-slot
                 kind="government"
                 eyebrow="Government"
@@ -344,6 +359,7 @@ const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
                 [body]="ad.tagline || ad.body"
                 [action]="ad.cta_label || 'Plan a programme'"
                 [logo]="ad.logo_url"
+                [image]="placementImage(ad, i)"
                 icon="business-outline"
                 (open)="openPlacement(ad)"
               />
@@ -351,7 +367,7 @@ const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
 
             <p class="rail-kicker later">Featured</p>
             <h3 class="rail-title">Current competitions</h3>
-            @for (league of currentCompetitions().slice(0, 4); track league.id) {
+            @for (league of currentCompetitions().slice(0, 4); track league.id; let i = $index) {
               <fm-promo-slot
                 kind="competition"
                 eyebrow="Current competition"
@@ -359,6 +375,7 @@ const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
                 [body]="(league.sport || 'League') + ' · ' + league.participant_count + ' sides'"
                 action="Open"
                 [logo]="league.logo_url"
+                [image]="competitionImage(league, i)"
                 icon="trophy-outline"
                 (open)="open(league)"
               />
@@ -370,6 +387,7 @@ const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
                 title="Put your league here"
                 body="Opt in when you create a competition so Discover and the landing page carry it."
                 action="Create a public league"
+                image="assets/landing/moment-fans.jpg"
                 icon="megaphone-outline"
                 (open)="createLeague()"
               />
@@ -433,10 +451,13 @@ export class DiscoverPage implements OnInit {
     const rows = this.placements().filter((item) => item.slot === 'logo');
     return rows.length ? rows : FALLBACK_LOGOS;
   });
+  readonly placementImage = placementImage;
+  readonly competitionImage = competitionImage;
   readonly marketSlides = computed<MarketSlide[]>(() => {
     const slides: MarketSlide[] = [];
-    for (const ad of this.corporate()) {
+    for (const [i, ad] of this.corporate().entries()) {
       slides.push({
+        image: placementImage(ad, i),
         id: `corporate-${ad.id}`,
         kind: 'corporate',
         eyebrow: 'Corporate',
@@ -448,8 +469,9 @@ export class DiscoverPage implements OnInit {
         placement: ad,
       });
     }
-    for (const ad of this.government()) {
+    for (const [i, ad] of this.government().entries()) {
       slides.push({
+        image: placementImage(ad, i),
         id: `government-${ad.id}`,
         kind: 'government',
         eyebrow: 'Government',
@@ -461,8 +483,9 @@ export class DiscoverPage implements OnInit {
         placement: ad,
       });
     }
-    for (const league of this.currentCompetitions().slice(0, 4)) {
+    for (const [i, league] of this.currentCompetitions().slice(0, 4).entries()) {
       slides.push({
+        image: competitionImage(league, i),
         id: `league-${league.id}`,
         kind: 'competition',
         eyebrow: 'Current competition',

@@ -136,3 +136,41 @@ export const FALLBACK_CAMPAIGN: MarketingPlacement = {
   logo_url: '',
   display_order: 0,
 };
+
+const PHOTOS = {
+  kpi: `${SPONSOR_MEDIA}/corp-kpi.jpg`,
+  merch: `${SPONSOR_MEDIA}/corp-merch.jpg`,
+  office: `${SPONSOR_MEDIA}/moment-office.jpg`,
+  cleanup: `${SPONSOR_MEDIA}/gov-cleanup.jpg`,
+  programme: `${SPONSOR_MEDIA}/gov-programme.jpg`,
+  township: `${SPONSOR_MEDIA}/hero.jpg`,
+  fans: `${SPONSOR_MEDIA}/moment-fans.jpg`,
+  touchline: `${SPONSOR_MEDIA}/moment-touchline.jpg`,
+  rugby: `${SPONSOR_MEDIA}/moment-rugby.jpg`,
+};
+
+/** A photo for a marketing card: the placement's own image, else one that fits its subject. */
+export function placementImage(placement: MarketingPlacement, index = 0): string {
+  if (placement.image_url) return placement.image_url;
+  if (placement.slot === 'banner') return PHOTOS.township;
+  // Match the name before the tagline, so "national programmes" beats a passing "school-to-club".
+  for (const text of [placement.name.toLowerCase(), placement.tagline.toLowerCase()]) {
+    if (/national|provinc|federation/.test(text)) return PHOTOS.programme;
+    if (/kpi|workplace|office|staff/.test(text)) return PHOTOS.kpi;
+    if (/kit|brand|broadcast|merch|naming/.test(text)) return PHOTOS.merch;
+    if (/school|municipal|clean|civic/.test(text)) return PHOTOS.cleanup;
+  }
+  const pools: Record<string, string[]> = {
+    corporate: [PHOTOS.kpi, PHOTOS.merch, PHOTOS.office],
+    government: [PHOTOS.cleanup, PHOTOS.programme],
+  };
+  const pool = pools[placement.audience] ?? [PHOTOS.township, PHOTOS.fans, PHOTOS.rugby];
+  return pool[index % pool.length];
+}
+
+/** A photo for a competition card: its own banner, else a match-day picture. */
+export function competitionImage(competition: { banner_url?: string | null }, index = 0): string {
+  if (competition.banner_url) return competition.banner_url;
+  const pool = [PHOTOS.touchline, PHOTOS.rugby, PHOTOS.township, PHOTOS.fans];
+  return pool[index % pool.length];
+}

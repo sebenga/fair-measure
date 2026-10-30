@@ -3,7 +3,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { IonContent, IonIcon, IonSpinner } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
-import { eyeOffOutline, eyeOutline, logoGoogle } from 'ionicons/icons';
+import { arrowForwardOutline, eyeOffOutline, eyeOutline, logoGoogle } from 'ionicons/icons';
 
 import { environment } from '../../../environments/environment';
 import { AuthService } from '../../core/auth.service';
@@ -19,7 +19,11 @@ import { AuthShellComponent } from './auth-shell.component';
   styleUrl: './login.page.scss',
   template: `
     <ion-content [fullscreen]="true">
-      <fm-auth-shell>
+      <fm-auth-shell
+        eyebrow="Welcome back"
+        title="Your match day is waiting."
+        subtitle="Scores, tables, ratings and the conversation around them, right where you left them."
+      >
         <h2>Sign in</h2>
         <p class="lede">Your leagues, feed and workspace are here.</p>
 
@@ -72,6 +76,7 @@ import { AuthShellComponent } from './auth-shell.component';
               <ion-spinner name="crescent" />
             } @else {
               Sign in
+              <ion-icon name="arrow-forward-outline" aria-hidden="true" />
             }
           </button>
         </form>
@@ -108,7 +113,7 @@ export class LoginPage {
   });
 
   constructor() {
-    addIcons({ eyeOffOutline, eyeOutline, logoGoogle });
+    addIcons({ arrowForwardOutline, eyeOffOutline, eyeOutline, logoGoogle });
   }
 
   togglePassword(): void {

@@ -1,13 +1,13 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, afterNextRender, inject, input, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
-import {
-  briefcaseOutline,
-  chatbubblesOutline,
-  footballOutline,
-  radioOutline,
-} from 'ionicons/icons';
+import { arrowBackOutline, briefcaseOutline, chatbubblesOutline, footballOutline } from 'ionicons/icons';
 
+const MEDIA = 'assets/landing';
+const FADE_EVERY_MS = 5000;
+
+/** Sign-in and registration frame, in the landing page's style: match-day photos beside the form. */
 @Component({
   selector: 'fm-auth-shell',
   standalone: true,
@@ -16,51 +16,41 @@ import {
   styleUrl: './auth-shell.component.scss',
   template: `
     <div class="auth-page">
-      <div class="wash" aria-hidden="true">
-        <span class="glow glow-a"></span>
-        <span class="glow glow-b"></span>
-      </div>
-
-      <div class="ticker" aria-hidden="true">
-        <div class="ticker-track">
-          @for (pass of [0, 1]; track pass) {
-            <span><ion-icon name="radio-outline" /> Live Chiefs 2–1 Pirates</span>
-            <span>128 people on last night’s feed</span>
-            <span>Q3 board pack ready to export</span>
-            <span><ion-icon name="football-outline" /> League table updated</span>
-            <span>Three rating amendments logged</span>
-          }
-        </div>
-      </div>
+      <header class="nav">
+        <button type="button" class="brand" (click)="home()">
+          <span class="logo" aria-hidden="true"><span></span></span>
+          Fair Measure
+        </button>
+        <button type="button" class="back" (click)="home()">
+          <ion-icon name="arrow-back-outline" aria-hidden="true" />
+          Back to home
+        </button>
+      </header>
 
       <div class="auth-card">
-        <aside class="brand">
-          <div class="brand-top">
-            <span class="logo" aria-hidden="true"><span></span></span>
-            <span class="wordmark">Fair Measure</span>
-          </div>
-          <div class="brand-copy">
+        <aside class="story">
+          @for (photo of photos(); track photo; let i = $index) {
+            <img [src]="photo" alt="" [class.on]="i === shown()" [attr.loading]="i === 0 ? 'eager' : 'lazy'" />
+          }
+          <div class="story-copy">
             <p class="eyebrow">{{ eyebrow() }}</p>
             <h1>{{ title() }}</h1>
-            <p>{{ subtitle() }}</p>
+            <p class="lede">{{ subtitle() }}</p>
+            <ul class="perks">
+              <li>
+                <span class="icon"><ion-icon name="football-outline" aria-hidden="true" /></span>
+                <span><strong>Sport</strong><small>Live scores, tables and team sheets</small></span>
+              </li>
+              <li>
+                <span class="icon"><ion-icon name="chatbubbles-outline" aria-hidden="true" /></span>
+                <span><strong>Social</strong><small>A feed for every result and rating</small></span>
+              </li>
+              <li>
+                <span class="icon"><ion-icon name="briefcase-outline" aria-hidden="true" /></span>
+                <span><strong>Work</strong><small>KPI leagues, reports and an audit trail</small></span>
+              </li>
+            </ul>
           </div>
-          <ul class="audiences">
-            <li>
-              <ion-icon name="football-outline" aria-hidden="true" />
-              <strong>Sport</strong>
-              <span>Live scores, tables and team sheets</span>
-            </li>
-            <li>
-              <ion-icon name="chatbubbles-outline" aria-hidden="true" />
-              <strong>Social</strong>
-              <span>A feed for every result and rating</span>
-            </li>
-            <li>
-              <ion-icon name="briefcase-outline" aria-hidden="true" />
-              <strong>Work</strong>
-              <span>Admin, reports and an audit trail</span>
-            </li>
-          </ul>
         </aside>
         <section class="panel">
           <ng-content />
@@ -70,13 +60,35 @@ import {
   `,
 })
 export class AuthShellComponent {
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+
   readonly eyebrow = input('Sport · Social · Work');
   readonly title = input('Compete. Share. Run it properly.');
   readonly subtitle = input(
     'One workspace for match days, the conversation around them, and the people who administer both.',
   );
+  /** Photos that fade behind the copy; the first loads straight away. */
+  readonly photos = input<string[]>([
+    `${MEDIA}/moment-fans.jpg`,
+    `${MEDIA}/hero.jpg`,
+    `${MEDIA}/moment-office.jpg`,
+  ]);
+  readonly shown = signal(0);
 
   constructor() {
-    addIcons({ briefcaseOutline, chatbubblesOutline, footballOutline, radioOutline });
+    addIcons({ arrowBackOutline, briefcaseOutline, chatbubblesOutline, footballOutline });
+    afterNextRender(() => {
+      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+      const timer = setInterval(() => {
+        const count = this.photos().length;
+        if (!document.hidden && count > 1) this.shown.update((index) => (index + 1) % count);
+      }, FADE_EVERY_MS);
+      this.destroyRef.onDestroy(() => clearInterval(timer));
+    });
+  }
+
+  home(): void {
+    void this.router.navigateByUrl('/');
   }
 }

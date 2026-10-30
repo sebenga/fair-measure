@@ -58,9 +58,16 @@
   --ion-color-light-shade: #d4d8db;
   --ion-color-light-tint: #f2f6fa;
 
-  --fm-radius: 14px;
-  --fm-radius-sm: 10px;
-  --fm-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.06);
+  --fm-radius: 18px;
+  --fm-radius-sm: 12px;
+  --fm-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px rgba(15, 23, 42, 0.07);
+  /* The landing page look: a soft grey page so white cards lift off it. */
+  --ion-background-color: #f6f7f8;
+  --ion-background-color-rgb: 246, 247, 248;
+  --ion-toolbar-background: #f6f7f8;
+  --ion-item-background: #ffffff;
+  --ion-card-background: #ffffff;
+  --fm-gradient: linear-gradient(90deg, #0f766e, #0d9488);
 
   /* Button text follows the surface. Filled brand buttons stay light-on-colour. */
   --fm-ink: #0f172a;

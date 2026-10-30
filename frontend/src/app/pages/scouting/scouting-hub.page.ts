@@ -21,11 +21,13 @@ import { RatingQueueService } from '../../core/rating-queue.service';
 import { ROLE_GUIDE, ScoutingService } from '../../core/scouting.service';
 import { InboxTrayComponent } from '../../shared/inbox-tray.component';
 import { PromoSlotComponent } from '../../shared/promo-slot.component';
+import { PageHeroComponent } from '../../shared/page-hero.component';
 
 @Component({
   selector: 'fm-scouting-hub',
   standalone: true,
   imports: [
+    PageHeroComponent,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -72,22 +74,20 @@ import { PromoSlotComponent } from '../../shared/promo-slot.component';
           </aside>
 
           <div class="feed">
-        <section class="hero fm-enter">
-          <h2>Find talent. Get found.</h2>
-          <p>
-            Scouts discover players through the match data Fair Measure already records.
-            Players decide what is shown, and under-18s stay hidden until a guardian agrees.
-          </p>
+        <fm-page-hero
+          eyebrow="Scouting"
+          title="Find talent. Get found."
+          subtitle="Scouts discover players through the match data Fair Measure already records. Players decide what is shown, and under-18s stay hidden until a guardian agrees."
+          image="assets/landing/moment-touchline.jpg"
+        >
           @if (roleKeys().length) {
-            <div class="chips">
-              @for (key of roleKeys(); track key) {
-                <span class="badge info">{{ roleTitle(key) }}</span>
-              }
-            </div>
+            @for (key of roleKeys(); track key) {
+              <span class="hero-chip">{{ roleTitle(key) }}</span>
+            }
           } @else {
-            <p class="you"><strong>You have no scouting role yet.</strong> Pick one below.</p>
+            <span class="hero-chip">You have no scouting role yet. Pick one below.</span>
           }
-        </section>
+        </fm-page-hero>
 
         @if (incoming().length || me()?.pending_guardian_requests) {
           <fm-promo-slot

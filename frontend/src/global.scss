@@ -109,13 +109,116 @@ a.fm-card.report-link {
   }
 }
 
+// Section labels read like the landing page eyebrows: small, teal, spaced out.
 .fm-section-title {
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--ion-color-medium);
-  margin: 24px 16px 8px;
+  color: var(--fm-accent);
+  margin: 26px 16px 10px;
+}
+
+// --- Landing-page look, applied app-wide -------------------------------------
+
+ion-toolbar {
+  --border-width: 0;
+
+  ion-title {
+    font-weight: 750;
+    letter-spacing: -0.02em;
+  }
+}
+
+ion-header.header-md,
+ion-header {
+  box-shadow: none;
+}
+
+ion-button {
+  --border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+// Solid buttons in the brand colour get the same teal sweep as the landing CTAs.
+// Ionic marks the rendered fill with a class; toolbar buttons are clear, so they keep their look.
+ion-button.button-solid:not(.ion-color),
+ion-button.button-solid.ion-color-primary {
+  --background: var(--fm-gradient);
+  --background-hover: var(--fm-gradient);
+  --background-activated: var(--fm-gradient);
+  --box-shadow: 0 8px 18px rgba(15, 118, 110, 0.24);
+}
+
+ion-button.button-outline {
+  --border-width: 1px;
+  --border-color: var(--fm-line);
+}
+
+ion-searchbar {
+  --border-radius: 999px;
+  --box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  --background: var(--fm-surface);
+}
+
+ion-segment {
+  --background: var(--fm-surface);
+  border-radius: 999px;
+  padding: 3px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+}
+
+ion-segment-button {
+  --border-radius: 999px;
+  --indicator-color: var(--ion-color-primary);
+  --color-checked: var(--fm-on-fill);
+  min-height: 34px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+ion-list.list-inset,
+ion-list[inset='true'] {
+  border-radius: var(--fm-radius);
+  box-shadow: var(--fm-shadow);
+}
+
+ion-card {
+  border-radius: var(--fm-radius);
+  box-shadow: var(--fm-shadow);
+}
+
+// Small labels inside an fm-page-hero banner (roles, counts, filters).
+.hero-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+// Plain form fields across pages share the landing form style.
+.field input,
+.field select,
+.field textarea,
+label.field > input,
+label.field > select,
+label.field > textarea {
+  border-radius: 12px;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: 2px solid rgba(15, 118, 110, 0.35);
+  border-color: #0f766e;
 }
 
 .fm-empty {

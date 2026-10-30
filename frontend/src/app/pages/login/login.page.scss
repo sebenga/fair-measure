@@ -1,14 +1,14 @@
 :host {
-  background: #ecf4f2;
+  background: var(--ion-background-color, #f6f7f8);
 }
 
 ion-content {
-  --background: #ecf4f2;
+  --background: var(--ion-background-color, #f6f7f8);
 }
 
 ion-content::part(background),
 ion-content::part(scroll) {
-  background: #ecf4f2;
+  background: var(--ion-background-color, #f6f7f8);
 }
 
 form {
@@ -20,22 +20,23 @@ form {
   display: grid;
   gap: 8px;
   font-size: 0.86rem;
-  font-weight: 600;
-  color: #334155;
+  font-weight: 650;
+  color: var(--fm-ink);
 }
 
 .field input,
 .password-row {
   width: 100%;
   min-height: 48px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--fm-line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--fm-field-bg);
 }
 
 .field input {
-  padding: 0 18px;
-  color: #0f172a;
+  box-sizing: border-box;
+  padding: 0 16px;
+  color: var(--fm-ink);
   font: inherit;
   font-weight: 450;
 }
@@ -45,8 +46,8 @@ form {
 }
 
 .field input:focus {
-  outline: 2px solid #5eead4;
-  outline-offset: 1px;
+  outline: 2px solid rgb(15 118 110 / 35%);
+  border-color: #0f766e;
 }
 
 .password-row {
@@ -66,8 +67,8 @@ form {
 }
 
 .password-row:focus-within {
-  outline: 2px solid #5eead4;
-  outline-offset: 1px;
+  outline: 2px solid rgb(15 118 110 / 35%);
+  border-color: #0f766e;
 }
 
 .ghost,
@@ -83,7 +84,7 @@ form {
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: #64748b;
+  color: var(--ion-color-medium);
   display: grid;
   place-items: center;
 }
@@ -92,7 +93,7 @@ form {
   border: 0;
   background: none;
   padding: 0;
-  color: #0f766e;
+  color: var(--fm-accent);
   font: inherit;
   font-weight: 750;
 }
@@ -105,8 +106,12 @@ form {
 
 .primary,
 .google {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 48px;
-  border-radius: 12px;
+  border-radius: 999px;
   font: inherit;
   font-weight: 700;
 }
@@ -116,16 +121,14 @@ form {
   overflow: hidden;
   margin-top: 4px;
   border: 0;
-  background: #0f766e;
+  background: linear-gradient(90deg, #0f766e, #0d9488);
   color: #fff;
+  box-shadow: 0 8px 18px rgb(15 118 110 / 28%);
 }
 
-.primary::after {
-  content: none;
-}
 
 .primary:hover:not(:disabled) {
-  background: #0b5f58;
+  filter: brightness(1.05);
 }
 
 .primary:disabled {
@@ -143,7 +146,7 @@ form {
   align-items: center;
   gap: 12px;
   margin: 18px 0 14px;
-  color: #94a3b8;
+  color: var(--ion-color-medium);
   font-size: 0.8rem;
 }
 
@@ -151,27 +154,34 @@ form {
 .divider::after {
   content: '';
   height: 1px;
-  background: #e2e8f0;
+  background: var(--fm-line);
 }
 
 .google {
   display: flex;
+  width: 100%;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  color: #0f172a;
+  border: 1px solid var(--fm-line);
+  background: var(--fm-surface);
+  color: var(--fm-ink);
 }
 
 .google:hover:not(:disabled) {
-  background: #f8fafc;
+  background: var(--fm-chip-bg);
+}
+
+.hint {
+  margin: -4px 0 0;
+  color: var(--ion-color-medium);
+  font-size: 0.82rem;
 }
 
 .switch {
   margin: 22px 0 0;
   text-align: center;
-  color: #64748b;
+  color: var(--ion-color-medium);
   font-size: 0.9rem;
 }
 
@@ -185,18 +195,4 @@ form {
   line-height: 1.4;
 }
 
-@keyframes shine {
-  0% {
-    transform: translateX(0);
-  }
-  60%,
-  100% {
-    transform: translateX(420%);
-  }
-}
 
-@media (prefers-reduced-motion: reduce) {
-  .primary::after {
-    animation: none;
-  }
-}

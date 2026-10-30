@@ -16,11 +16,14 @@ import {
 import { extractErrorMessage } from '../../core/error-message';
 import type { Games, GamesKind, MedalRanking } from '../../core/games.service';
 import { GamesService } from '../../core/games.service';
+import { PageHeroComponent } from '../../shared/page-hero.component';
 
 @Component({
   selector: 'fm-games-list',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
+  imports: [
+    PageHeroComponent,
+    DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './games.scss',
   template: `
@@ -32,10 +35,12 @@ import { GamesService } from '../../core/games.service';
     </ion-header>
 
     <ion-content>
-      <p class="lede">
-        A multi-sport Games groups many events, each scored by its sport's locked rules. Medals roll up into one
-        medal table by country, house, school or province.
-      </p>
+      <fm-page-hero
+        eyebrow="Multi-sport Games"
+        title="Many sports, one medal table."
+        subtitle="Each event is scored by its sport's locked rules. Medals roll up by country, house, school or province."
+        image="assets/landing/gov-programme.jpg"
+      />
 
       @if (loading()) {
         <div class="centered"><ion-spinner name="crescent" /></div>

@@ -19,11 +19,14 @@ import {
   FALLBACK_LOGOS,
 } from '../../core/marketing-fallbacks';
 import type { MarketingAudience, MarketingPlacement } from '../../core/models';
+import { PageHeroComponent } from '../../shared/page-hero.component';
 
 @Component({
   selector: 'fm-partnerships',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent],
+  imports: [
+    PageHeroComponent,
+    IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './partnerships.page.scss',
   template: `
@@ -38,14 +41,12 @@ import type { MarketingAudience, MarketingPlacement } from '../../core/models';
 
     <ion-content>
       <div class="page">
-        <header class="hero">
-          <p>Commercial</p>
-          <h1>Book a corporate or government slot</h1>
-          <p class="lede">
-            Workplace leagues, civic programmes, naming rights and public results — one place to
-            brief partnerships as this catalogue grows.
-          </p>
-        </header>
+        <fm-page-hero
+          eyebrow="Commercial"
+          title="Book a corporate or government slot"
+          subtitle="Workplace leagues, civic programmes, naming rights and public results — one place to brief partnerships."
+          image="assets/landing/corp-kpi.jpg"
+        />
 
         <div class="layout">
           <div class="tracks">

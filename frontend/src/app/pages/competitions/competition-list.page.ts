@@ -25,11 +25,13 @@ import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { Competition, TeamPick } from '../../core/models';
 import { CompetitionCardComponent } from '../../shared/competition-card.component';
+import { PageHeroComponent } from '../../shared/page-hero.component';
 
 @Component({
   selector: 'fm-competition-list',
   standalone: true,
   imports: [
+    PageHeroComponent,
     DatePipe,
     RouterLink,
     IonHeader,
@@ -74,6 +76,20 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
       </ion-refresher>
 
       <div class="page-body">
+        <fm-page-hero
+          [eyebrow]="auth.isAuthenticated() ? 'My leagues' : 'Leagues'"
+          [title]="auth.isAuthenticated() ? 'Your leagues, live.' : 'See how a league runs.'"
+          subtitle="Run as many competitions as you need, each with its own scoring, table and feed."
+          image="assets/landing/moment-fans.jpg"
+        >
+          <ion-button
+            type="button"
+            [routerLink]="auth.isAuthenticated() ? '/tabs/competitions/new' : '/register'"
+            routerDirection="forward"
+          >
+            {{ auth.isAuthenticated() ? 'Create a competition' : 'Create an account' }}
+          </ion-button>
+        </fm-page-hero>
         @for (invite of invites(); track invite.id) {
           <div class="pick-banner">
             <p>
@@ -110,28 +126,18 @@ import { CompetitionCardComponent } from '../../shared/competition-card.componen
       } @else if (competitions().length === 0) {
         <div class="fm-empty">
           <ion-icon name="trophy-outline" aria-hidden="true" />
-          <h3>{{ auth.isAuthenticated() ? 'No competitions yet' : 'See how a league runs' }}</h3>
+          <h3>{{ auth.isAuthenticated() ? 'No competitions yet' : 'No featured leagues yet' }}</h3>
           <p>
             @if (auth.isAuthenticated()) {
               A league can hold several competitions — an official sport, or one
-              with scoring you define. Create one, then add more from here.
+              with scoring you define. Create one from the banner above.
             } @else {
-              Featured public leagues appear here. Open one to see the table,
-              fixtures and feed — no account needed.
+              Public leagues appear here once organisers feature them. Open one to see the
+              table, fixtures and feed — no account needed.
             }
           </p>
-          <ion-button
-            type="button"
-            [routerLink]="auth.isAuthenticated() ? '/tabs/competitions/new' : '/register'"
-            routerDirection="forward"
-          >
-            {{ auth.isAuthenticated() ? 'Create a competition' : 'Create an account' }}
-          </ion-button>
         </div>
       } @else {
-        <p class="lede">
-          You can run as many competitions as you need. Each has its own scoring.
-        </p>
         @for (competition of competitions(); track competition.id; let index = $index) {
           <fm-competition-card
             [style.--i]="index"
