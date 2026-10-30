@@ -16,6 +16,7 @@ class PlacementSerializer(serializers.ModelSerializer):
             "cta_label",
             "cta_url",
             "logo_url",
+            "image_url",
             "display_order",
         ]
 

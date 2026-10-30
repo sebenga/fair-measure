@@ -8,13 +8,31 @@ import { catchError } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { FALLBACK_CORPORATE, FALLBACK_GOVERNMENT, FALLBACK_LOGOS } from '../../core/marketing-fallbacks';
 import type { Competition, MarketingPlacement, Post, StandingRow } from '../../core/models';
+import {
+  CORPORATE_STORIES,
+  GOVERNMENT_STORIES,
+  HeroMediaComponent,
+  LandingMomentsComponent,
+  StoryTilesComponent,
+} from './landing-media.component';
+import { LandingEnquiryComponent } from './landing-enquiry.component';
+import { SponsorShowcaseComponent } from './sponsor-showcase.component';
 
 const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
 
 @Component({
   selector: 'fm-landing',
   standalone: true,
-  imports: [DatePipe, IonContent, IonSpinner],
+  imports: [
+    DatePipe,
+    IonContent,
+    IonSpinner,
+    HeroMediaComponent,
+    LandingMomentsComponent,
+    StoryTilesComponent,
+    SponsorShowcaseComponent,
+    LandingEnquiryComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'ion-page' },
   styleUrl: './landing.page.scss',
@@ -39,11 +57,12 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
         </header>
 
         <section class="hero" id="top">
-          <div>
+          <fm-hero-media />
+          <div class="hero-copy">
             <h1>Build any competition you can describe — then run it.</h1>
             <p>
-              Custom scoring, live results, league tables and a feed. Browse public competitions
-              below — no account needed to look around.
+              Custom scoring, live results, league tables and a feed to share every moment.
+              Browse public competitions below — no account needed to look around.
             </p>
             <div class="hero-actions">
               <button type="button" class="primary" (click)="startCompetition()">
@@ -54,11 +73,15 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
               </button>
             </div>
           </div>
-          <p class="live-pill">
-            <span></span>
-            {{ liveCount() }} competition{{ liveCount() === 1 ? '' : 's' }} live right now
-          </p>
+          @if (liveCount() > 0) {
+            <p class="live-pill">
+              <span></span>
+              {{ liveCount() }} competition{{ liveCount() === 1 ? '' : 's' }} live right now
+            </p>
+          }
         </section>
+
+        <fm-landing-moments />
 
         <section class="public" id="public">
           <div class="section-head">
@@ -164,6 +187,7 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
             Reserved commercial space for companies: staff competitions, naming rights, kit and
             live boards. Slots are managed in admin so a campaign can go live without a release.
           </p>
+          <fm-story-tiles [stories]="corporateStories" />
           <div class="offer-grid">
             @for (item of corporate(); track item.id) {
               <article class="offer">
@@ -187,6 +211,7 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
             Public-sector competitions stay readable without an account. Departments and
             federations get a named programme on this page and a route to partner.
           </p>
+          <fm-story-tiles [stories]="governmentStories" />
           <div class="offer-grid">
             @for (item of government(); track item.id) {
               <article class="offer">
@@ -206,14 +231,10 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
         <section class="sponsors" id="sponsors">
           <p class="eyebrow">Sponsors</p>
           <h2>Partners on the pitch, the feed, and at work</h2>
-          <ul>
-            @for (sponsor of logos(); track sponsor.id) {
-              <li>
-                <strong>{{ sponsor.name }}</strong>
-                <span>{{ sponsor.tagline }}</span>
-              </li>
-            }
-          </ul>
+          <fm-sponsor-showcase [sponsors]="logos()" (open)="openPlacement($event)" />
+          <button type="button" class="text become" (click)="scrollTo('enquire')">
+            Become a sponsor or partner →
+          </button>
         </section>
 
         <section class="happening" id="happening">
@@ -226,6 +247,12 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
             </p>
             <div class="phone" aria-hidden="true">
               <div class="phone-bar">Fair Measure</div>
+              <article class="feed-item photo">
+                <img src="assets/landing/moment-rugby.jpg" alt="" loading="lazy" width="900" height="675" />
+                <strong>Full time at the club</strong>
+                <small>Photo post · Club league</small>
+                <p>What a finish. Rate the players before Sunday.</p>
+              </article>
               @for (post of previewPosts(); track post.id) {
                 <article class="feed-item">
                   <strong>{{ post.author.display_name || 'Member' }}</strong>
@@ -262,62 +289,8 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
           </div>
         </section>
 
-        <section class="enquire" id="enquire">
-          <p class="eyebrow">Partnerships</p>
-          <h2>Book a corporate or government slot</h2>
-          <p class="lede">
-            Tell us who you are. We place logos, banners and feature cards on this landing page
-            and on public competitions.
-          </p>
-          <form class="enquire-form" (submit)="submitEnquiry($event)">
-            <div class="audience">
-              <button
-                type="button"
-                class="vis"
-                [class.selected]="enquiryAudience() === 'corporate'"
-                (click)="enquiryAudience.set('corporate')"
-              >
-                Corporate
-              </button>
-              <button
-                type="button"
-                class="vis"
-                [class.selected]="enquiryAudience() === 'government'"
-                (click)="enquiryAudience.set('government')"
-              >
-                Government
-              </button>
-            </div>
-            <label>
-              Organisation
-              <input name="organisation" required maxlength="200" [disabled]="enquirySending()" />
-            </label>
-            <label>
-              Your name
-              <input name="contact_name" required maxlength="160" [disabled]="enquirySending()" />
-            </label>
-            <label>
-              Email
-              <input name="email" type="email" required [disabled]="enquirySending()" />
-            </label>
-            <label>
-              Cellphone number
-              <input name="phone" type="tel" required maxlength="32" autocomplete="tel" [disabled]="enquirySending()" />
-            </label>
-            <label>
-              What would you like to run or sponsor?
-              <textarea name="message" required minlength="12" rows="4" [disabled]="enquirySending()"></textarea>
-            </label>
-            @if (enquiryError()) {
-              <p class="hint" role="alert">{{ enquiryError() }}</p>
-            }
-            @if (enquirySent()) {
-              <p class="hint">Received. Partnerships will come back to you.</p>
-            }
-            <button type="submit" class="primary" [disabled]="enquirySending()">
-              {{ enquirySending() ? 'Sending…' : 'Send enquiry' }}
-            </button>
-          </form>
+        <section id="enquire">
+          <fm-landing-enquiry />
         </section>
       </div>
     </ion-content>
@@ -327,6 +300,8 @@ export class LandingPage {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
 
+  readonly corporateStories = CORPORATE_STORIES;
+  readonly governmentStories = GOVERNMENT_STORIES;
   readonly loading = signal(true);
   readonly competitions = signal<Competition[]>([]);
   readonly table = signal<StandingRow[]>([]);
@@ -334,10 +309,6 @@ export class LandingPage {
   readonly previewPosts = signal<Post[]>([]);
   readonly liveCount = signal(0);
   readonly placements = signal<MarketingPlacement[]>([]);
-  readonly enquiryAudience = signal<'corporate' | 'government'>('corporate');
-  readonly enquirySending = signal(false);
-  readonly enquirySent = signal(false);
-  readonly enquiryError = signal<string | null>(null);
 
   readonly banners = computed(() =>
     this.placements().filter((item) => item.slot === 'banner'),
@@ -395,43 +366,6 @@ export class LandingPage {
     void this.router.navigate(['/partnerships'], {
       queryParams: { audience, placement: placement.id },
     });
-  }
-
-  submitEnquiry(event: Event): void {
-    event.preventDefault();
-    const form = event.target as HTMLFormElement;
-    const data = new FormData(form);
-    const organisation = String(data.get('organisation') ?? '').trim();
-    const contact_name = String(data.get('contact_name') ?? '').trim();
-    const email = String(data.get('email') ?? '').trim();
-    const phone = String(data.get('phone') ?? '').trim();
-    const message = String(data.get('message') ?? '').trim();
-    if (!organisation || !contact_name || !email || phone.length < 7 || message.length < 12) {
-      this.enquiryError.set('Fill in the organisation, your name, email, cellphone and a short note.');
-      return;
-    }
-    this.enquirySending.set(true);
-    this.enquiryError.set(null);
-    this.api
-      .sendEnquiry({
-        audience: this.enquiryAudience(),
-        organisation,
-        contact_name,
-        email,
-        phone,
-        message,
-      })
-      .subscribe({
-        next: () => {
-          this.enquirySending.set(false);
-          this.enquirySent.set(true);
-          form.reset();
-        },
-        error: () => {
-          this.enquirySending.set(false);
-          this.enquiryError.set('Could not send that just now. Try again, or email partnerships.');
-        },
-      });
   }
 
   scrollTo(id: string): void {

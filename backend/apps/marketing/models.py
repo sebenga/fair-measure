@@ -27,6 +27,9 @@ class Placement(BaseModel):
     cta_label = models.CharField(max_length=80, blank=True)
     cta_url = models.URLField(blank=True)
     logo_url = models.URLField(blank=True)
+    # Wide photo for the rotating sponsor showcase; the logo stays a small mark.
+    # A full URL, or a path to an image shipped with the app (assets/...).
+    image_url = models.CharField(blank=True, max_length=500)
     active = models.BooleanField(default=True)
     display_order = models.PositiveIntegerField(default=0)
 

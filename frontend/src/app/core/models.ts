@@ -993,6 +993,8 @@ export interface MarketingPlacement {
   cta_label: string;
   cta_url: string;
   logo_url: string;
+  /** Wide photo for the rotating sponsor showcase. */
+  image_url?: string;
   display_order: number;
 }
 

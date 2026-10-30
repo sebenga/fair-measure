@@ -37,7 +37,6 @@ ion-content::part(scroll) {
 .card-foot,
 .board,
 .cards,
-.sponsors ul,
 .happening {
   display: flex;
 }
@@ -132,9 +131,46 @@ nav {
 }
 
 .hero {
+  position: relative;
   display: grid;
+  align-content: end;
   gap: 20px;
-  padding: 36px 8px 8px;
+  min-height: 440px;
+  margin-top: 14px;
+  padding: 72px 20px 22px;
+  overflow: hidden;
+  border-radius: 24px;
+  color: #fff;
+
+  > :not(fm-hero-media) {
+    position: relative;
+    z-index: 1;
+  }
+
+  .hero-copy p {
+    max-width: 52ch;
+    color: rgb(255 255 255 / 86%);
+  }
+
+  .ghost {
+    border-color: rgb(255 255 255 / 45%);
+    background: rgb(255 255 255 / 12%);
+    color: #fff;
+  }
+
+  .live-pill {
+    color: var(--fm-ink);
+  }
+}
+
+.feed-item.photo img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  max-height: 180px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  object-fit: cover;
 }
 
 .hero h1 {
@@ -186,13 +222,12 @@ nav {
 .happening,
 .partners,
 .commercial,
-.enquire {
+#enquire {
   margin-top: 36px;
 }
 
 .commercial .banner,
-.offer,
-.enquire-form {
+.offer {
   background: var(--fm-surface);
   border-radius: 18px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
@@ -222,55 +257,11 @@ nav {
   }
 }
 
-.enquire-form {
-  display: grid;
-  gap: 12px;
-  margin-top: 16px;
-  padding: 18px 16px;
-}
 
-.enquire-form label {
-  display: grid;
-  gap: 6px;
-  font-size: 0.82rem;
-  font-weight: 650;
-}
 
-.enquire-form input,
-.enquire-form textarea {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  font: inherit;
-  color: var(--fm-ink);
-  background: var(--fm-field-bg);
-}
 
-.audience {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
 
-.audience .vis,
-.audience .vis:not(.selected) {
-  min-height: 40px;
-  border: 1.5px solid var(--line);
-  border-radius: 12px;
-  background: var(--fm-chip-bg);
-  color: var(--fm-ink);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
 
-.audience .vis.selected {
-  border-color: var(--teal);
-  background: var(--fm-chip-selected);
-  color: var(--fm-ink);
-}
 
 .section-head {
   align-items: center;
@@ -348,8 +339,7 @@ h3 {
 }
 
 .card ol,
-.updates ul,
-.sponsors ul {
+.updates ul {
   list-style: none;
   margin: 12px 0 0;
   padding: 0;
@@ -369,6 +359,11 @@ h3 {
   color: var(--muted);
 }
 
+.become {
+  margin-top: 12px;
+  padding: 0;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: var(--teal);
@@ -376,27 +371,6 @@ h3 {
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-}
-
-.sponsors ul {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.sponsors li {
-  padding: 16px;
-  border-radius: 16px;
-  background: var(--fm-surface);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
-}
-
-.sponsors span {
-  display: block;
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 0.78rem;
 }
 
 .happening {
@@ -488,7 +462,8 @@ h3 {
   .hero {
     grid-template-columns: 1fr auto;
     align-items: end;
-    padding-top: 56px;
+    min-height: 540px;
+    padding: 120px 44px 40px;
   }
 
   .board {
@@ -502,18 +477,8 @@ h3 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .sponsors ul {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-
-  .offer-grid,
-  .enquire-form {
+  .offer-grid {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .enquire-form .audience,
-  .enquire-form button.primary {
-    grid-column: 1 / -1;
   }
 
   .happening {

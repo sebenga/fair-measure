@@ -16,6 +16,24 @@ def test_anonymous_visitors_can_read_commercial_placements(anon_api):
     assert any(row["audience"] == "government" for row in response.data)
 
 
+def test_sponsors_carry_a_showcase_image_and_copy(anon_api):
+    sponsors = [
+        row for row in anon_api.get("/api/v1/marketing/placements").data if row["slot"] == "logo"
+    ]
+    assert sponsors
+    assert all(row["image_url"] and row["body"] for row in sponsors)
+
+    custom = Placement.objects.create(
+        audience="general",
+        slot="logo",
+        name="Riverside Bank",
+        tagline="Finance",
+        image_url="https://cdn.example.com/riverside-wide.jpg",
+    )
+    rows = {row["name"]: row for row in anon_api.get("/api/v1/marketing/placements").data}
+    assert rows[custom.name]["image_url"] == "https://cdn.example.com/riverside-wide.jpg"
+
+
 def test_anonymous_visitors_can_send_a_partnership_enquiry(anon_api):
     response = anon_api.post(
         "/api/v1/marketing/enquiries",
