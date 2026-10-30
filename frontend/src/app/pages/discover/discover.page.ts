@@ -66,12 +66,14 @@ interface MarketSlide {
 
 const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
 import { PageHeroComponent } from '../../shared/page-hero.component';
+import { SponsorShowcaseComponent } from '../landing/sponsor-showcase.component';
 
 @Component({
   selector: 'fm-discover',
   standalone: true,
   imports: [
     PageHeroComponent,
+    SponsorShowcaseComponent,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -143,17 +145,7 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
             @if (logos().length) {
               <div class="logo-card">
                 <p>Partners on this page</p>
-                <div class="logo-row">
-                  @for (logo of logos(); track logo.id) {
-                    <button type="button" (click)="openPlacement(logo)">
-                      @if (logo.logo_url) {
-                        <img [src]="logo.logo_url" [alt]="logo.name" />
-                      } @else {
-                        <span>{{ logo.name }}</span>
-                      }
-                    </button>
-                  }
-                </div>
+                <fm-sponsor-showcase [sponsors]="logos()" compact (open)="openPlacement($event)" />
               </div>
             }
           </aside>

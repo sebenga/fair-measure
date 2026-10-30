@@ -20,6 +20,7 @@ const TINTS = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
   selector: 'fm-sponsor-showcase',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '[class.compact]': 'compact()' },
   template: `
     <div
       class="stage"
@@ -70,7 +71,19 @@ const TINTS = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
         </span>
       }
     </div>
-    @if (sponsors().length > 1) {
+    @if (sponsors().length > 1 && compact()) {
+      <div class="dots" role="group" aria-label="Choose a sponsor">
+        @for (sponsor of sponsors(); track sponsor.id; let i = $index) {
+          <button
+            type="button"
+            [class.on]="i === index()"
+            [attr.aria-label]="'Show ' + sponsor.name"
+            [attr.aria-current]="i === index() ? 'true' : null"
+            (click)="show(i)"
+          ></button>
+        }
+      </div>
+    } @else if (sponsors().length > 1) {
       <div class="picker" role="group" aria-label="Choose a sponsor">
         @for (sponsor of sponsors(); track sponsor.id; let i = $index) {
           <button
@@ -242,6 +255,44 @@ const TINTS = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
         padding: 32px 36px 40px;
       }
     }
+    :host(.compact) {
+      margin-top: 0;
+    }
+    :host(.compact) .stage {
+      min-height: 240px;
+      border-radius: 18px;
+    }
+    :host(.compact) .copy {
+      gap: 4px;
+      padding: 14px 14px 18px;
+    }
+    :host(.compact) h3 {
+      font-size: 1.1rem;
+    }
+    :host(.compact) p {
+      font-size: 0.8rem;
+      line-height: 1.4;
+    }
+    .dots {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .dots button {
+      width: 8px;
+      height: 8px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: var(--fm-line, #cbd5e1);
+      cursor: pointer;
+    }
+    .dots button.on {
+      width: 20px;
+      border-radius: 999px;
+      background: #0f766e;
+    }
     @media (prefers-reduced-motion: reduce) {
       .slide,
       .slide.on,
@@ -257,6 +308,8 @@ export class SponsorShowcaseComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly sponsors = input.required<MarketingPlacement[]>();
+  /** Narrow sidebars: a shorter stage and dots instead of name chips. */
+  readonly compact = input(false, { transform: (value: boolean | string) => value !== false });
   readonly open = output<MarketingPlacement>();
 
   private readonly position = signal(0);

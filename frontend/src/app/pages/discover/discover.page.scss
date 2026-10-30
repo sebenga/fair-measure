@@ -103,10 +103,6 @@
 
 .logo-card {
   margin-top: 8px;
-  padding: 12px 10px;
-  border-radius: 16px;
-  background: var(--ion-card-background, #fff);
-  box-shadow: var(--fm-shadow);
 }
 
 .logo-card p {
@@ -118,30 +114,8 @@
   color: var(--ion-color-medium);
 }
 
-.logo-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
 
-.logo-row button {
-  min-height: 36px;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--fm-chip-bg);
-  color: var(--fm-ink);
-  font: inherit;
-  font-size: 0.72rem;
-  font-weight: 650;
-}
 
-.logo-row img {
-  display: block;
-  width: 72px;
-  height: 28px;
-  object-fit: contain;
-}
 
 .composer-wrap {
   margin: 12px 0 4px;
