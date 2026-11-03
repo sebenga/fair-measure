@@ -230,11 +230,17 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         if cup_stage is not None:
             cup_fixtures = cup_fixtures.filter(stage=cup_stage)
 
-        latest = (
-            cup_fixtures.order_by("-round_number")
-            .values_list("round_number", flat=True)
-            .first()
-        )
+        # Ties scheduled ahead wait without sides; the round to advance from is the
+        # last one whose ties all have their teams.
+        rounds: dict[int, bool] = {}
+        for number, sided in (
+            cup_fixtures.exclude(round_number__isnull=True)
+            .annotate(side_count=Count("sides"))
+            .values_list("round_number", "side_count")
+        ):
+            rounds[number] = rounds.get(number, True) and sided > 0
+        filled = [number for number, ready in rounds.items() if ready]
+        latest = max(filled) if filled else None
         if latest is None:
             raise ValidationError("There is no round to advance.")
         current = list(
@@ -246,10 +252,29 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         if len(winners) < 2:
             return Response({"advanced": False, "detail": "The bracket is complete."})
 
+        pairs, bye = pair_advancers(winners)
+        waiting = list(cup_fixtures.filter(round_number=latest + 1).order_by("created_at"))
+        if waiting and len(waiting) >= len(pairs):
+            filled_ids = []
+            with transaction.atomic():
+                for fixture, (home_id, away_id) in zip(waiting, pairs):
+                    if fixture.sides.exists():
+                        continue
+                    FixtureSide.objects.create(
+                        fixture=fixture, participant_id=home_id, position=0, is_home=True
+                    )
+                    FixtureSide.objects.create(
+                        fixture=fixture, participant_id=away_id, position=1, is_home=False
+                    )
+                    filled_ids.append(str(fixture.id))
+            return Response(
+                {"advanced": True, "round_number": latest + 1, "fixtures": filled_ids},
+                status=status.HTTP_201_CREATED,
+            )
+
         reserved = list((competition.settings_json or {}).get("cup_slot_datetimes") or [])
         raw_kickoff = reserved.pop(0) if reserved else None
         next_kickoff = parse_datetime(raw_kickoff) if isinstance(raw_kickoff, str) else raw_kickoff
-        pairs, bye = pair_advancers(winners)
         created = []
         with transaction.atomic():
             for home_id, away_id in pairs:

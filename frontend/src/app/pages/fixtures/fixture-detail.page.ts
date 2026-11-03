@@ -38,10 +38,14 @@ import type {
   CompetitionDetail,
   FixtureDetail,
   FixtureSide,
+  MatchPhase,
   ProfileSummary,
   RosterMember,
   ScoreEvent,
   ScoringCategory,
+  ShootoutKick,
+  ShootoutKicker,
+  ShootoutState,
 } from '../../core/models';
 import { teamSheetOf } from '../../core/models';
 import { RealtimeService, fixtureRoom } from '../../core/realtime.service';
@@ -173,18 +177,27 @@ interface Celebration {
               <div class="match-clock">
                 <span class="readout">{{ clockLabel() }}</span>
                 <span class="chip">{{ periodLabel() }}</span>
-                @if (canScore()) {
-                  <button type="button" [disabled]="kickoffBlocked() || !canToggleClock()" (click)="startOrPause()">
-                    {{ clockButtonLabel() }}
+                @if (canKickOff()) {
+                  <button type="button" [disabled]="kickoffBlocked() || phaseBusy()" (click)="kickOff()">
+                    Kick off
                   </button>
-                  @if (canEndHalf()) {
-                    <button type="button" class="end-game" (click)="endHalf()">End half</button>
-                  }
-                  @if (canEndGame()) {
-                    <button type="button" class="end-game" (click)="endGame()">End game</button>
-                  }
+                }
+                @if (canScore() && canToggleClock()) {
+                  <button type="button" (click)="startOrPause()">{{ clockButtonLabel() }}</button>
+                }
+                @if (canEndHalf()) {
+                  <button type="button" class="end-game" [disabled]="phaseBusy()" (click)="endHalf()">End half</button>
+                }
+                @if (canEndGame()) {
+                  <button type="button" class="end-game" [disabled]="phaseBusy()" (click)="endGame()">End game</button>
+                }
+                @if (breakAction(); as next) {
+                  <button type="button" [disabled]="phaseBusy()" (click)="runBreakAction()">{{ next.label }}</button>
                 }
               </div>
+              @if (phase() === 'extra_time') {
+                <p class="phase-note">Level at full time. Extra time decides this knockout game.</p>
+              }
             }
             <span class="kickoff">{{ gameTimeLabel() }}</span>
           </div>
@@ -212,6 +225,65 @@ interface Celebration {
             }
           </div>
         </section>
+
+        @if (fx.shootout; as so) {
+          <section class="shootout fm-card fm-enter" aria-label="Penalty shootout">
+            <header>
+              <h3>Penalty shootout</h3>
+              <strong class="tally">{{ so.score[fx.sides[0].id] }} – {{ so.score[fx.sides[1].id] }}</strong>
+            </header>
+            @for (side of fx.sides; track side.id) {
+              <div class="kick-row">
+                <span class="name">{{ side.participant.short_name || side.participant.name }}</span>
+                <span class="dots">
+                  @for (kick of kicksFor(so, side.id); track $index) {
+                    <span class="dot" [class.scored]="kick.scored" [attr.title]="kick.name">
+                      {{ kick.scored ? '✓' : '✗' }}
+                    </span>
+                  }
+                </span>
+              </div>
+            }
+            @if (so.winner) {
+              <p class="verdict">{{ sideName(so.winner) }} win on penalties.</p>
+            } @else if (canScore() && so.next_side) {
+              <p class="next">
+                Next kick: <strong>{{ sideName(so.next_side) }}</strong>. Pick the kicker from the line-up.
+              </p>
+              <div class="kickers">
+                @for (player of so.eligible[so.next_side]; track player.player_id) {
+                  <button
+                    type="button"
+                    class="kicker"
+                    [class.on]="kicker() === player.player_id"
+                    [disabled]="!canKick(so, so.next_side, player)"
+                    (click)="kicker.set(player.player_id)"
+                  >
+                    @if (player.number !== null) {
+                      <span class="num">{{ player.number }}</span>
+                    }
+                    {{ player.name }}
+                  </button>
+                } @empty {
+                  <p class="hint">No players on the team sheet. Add the line-up first.</p>
+                }
+              </div>
+              <div class="kick-actions">
+                <button type="button" class="scored" [disabled]="!kicker() || phaseBusy()" (click)="recordKick(so.next_side, true)">
+                  Scored
+                </button>
+                <button type="button" class="missed" [disabled]="!kicker() || phaseBusy()" (click)="recordKick(so.next_side, false)">
+                  Missed
+                </button>
+                @if (so.kicks.length) {
+                  <button type="button" class="undo" [disabled]="phaseBusy()" (click)="undoKick()">Undo last kick</button>
+                }
+              </div>
+            } @else if (so.next_side) {
+              <p class="next">Next kick: <strong>{{ sideName(so.next_side) }}</strong>.</p>
+            }
+          </section>
+        }
 
         @if (tab() === 'overview') {
           <fm-fixture-overview
@@ -263,7 +335,8 @@ interface Celebration {
           <h3 class="fm-section-title">Game time</h3>
           <p class="hint">
             Prescribed time is split into two halves. A half must end after it overruns by 10% of the
-            prescribed time. Overtime is optional; remove it for a game that ends at full time.
+            prescribed time. A knockout game that is level at full time plays extra time in two halves,
+            then a penalty shootout. Set overtime to 0 to go straight to penalties.
           </p>
           <form class="game-time" (submit)="saveGameTime($event)">
             <label>
@@ -333,7 +406,14 @@ interface Celebration {
           />
         }
 
-        @if (tab() === 'live' && canScore() && !wordScorer() && fx.status !== 'completed' && fx.status !== 'cancelled') {
+        @if (
+          tab() === 'live' &&
+          canScore() &&
+          !wordScorer() &&
+          fx.status !== 'completed' &&
+          fx.status !== 'cancelled' &&
+          phase() !== 'penalties'
+        ) {
           <h3 class="fm-section-title">Record a score</h3>
 
           @if (units().length) {
@@ -602,6 +682,14 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     this.load();
     this.realtime.subscribe(fixtureRoom(this.fixtureId));
 
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      const tab = params.get('tab') as FixtureTab | null;
+      if (tab && FIXTURE_TABS.includes(tab) && tab !== this.selectedTab()) {
+        this.tabChosen = true;
+        this.selectedTab.set(tab);
+      }
+    });
+
     this.realtime
       .onAny<{ fixture_id: string }>([
         'score.recorded',
@@ -667,7 +755,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     const half = formatDurationMinutes(halfMinutes(limits.regulation));
     const added = formatDurationMinutes(halfOverrunMinutes(limits.regulation));
     const halves = `2 × ${half} min · half ends at +${added}`;
-    return limits.overtime > 0 ? `${halves} · ${limits.overtime} overtime` : halves;
+    return limits.overtime > 0 ? `${halves} · ${limits.overtime} extra time if a knockout is level` : halves;
   }
 
   saveGameTime(event: Event): void {
@@ -705,55 +793,139 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     });
   }
 
+  readonly phase = computed<MatchPhase>(() => this.fixture()?.phase ?? '');
+  readonly phaseBusy = signal(false);
+  readonly kicker = signal<string | null>(null);
+
   periodLabel(): string {
-    this.now();
-    const clock = this.clock();
-    if (clock.overtime) return clock.overtimeEnded ? 'Overtime ended' : 'Overtime';
-    if (clock.half === 1) return clock.halfEnded ? 'Half-time' : 'First half';
-    return clock.halfEnded ? 'Full time' : 'Second half';
+    const phase = this.phase();
+    if (phase) return PHASE_LABELS[phase];
+    return this.fixture()?.status === 'live' ? 'Live' : 'Before kick-off';
   }
 
   private clockPeriodName(): string {
-    const clock = this.clock();
-    if (clock.overtime) return 'Overtime';
-    return clock.half === 1 ? 'First half' : 'Second half';
+    const phase = this.phase();
+    return phase && PLAYING.has(phase) ? PHASE_LABELS[phase] : 'First half';
   }
 
-  canEndGame(): boolean {
-    const fixture = this.fixture();
-    if (!fixture || !this.canScore()) return false;
-    const clock = this.clock();
-    return (
-      fixture.status === 'live' ||
-      clock.half === 2 ||
-      clock.overtime ||
-      this.displayedElapsed() > 0 ||
-      this.clockRunning()
-    );
+  canKickOff(): boolean {
+    return this.canScore() && this.fixture()?.status === 'scheduled' && !this.phase();
   }
 
+  /** A half ends only in a first half (normal time or extra time). */
   canEndHalf(): boolean {
-    if (!this.canScore() || this.kickoffBlocked()) return false;
-    const clock = this.clock();
-    if (clock.overtime || clock.halfEnded) return false;
-    return this.clockRunning() || this.displayedElapsed() > 0;
+    const phase = this.phase();
+    return this.canScore() && (phase === 'first_half' || phase === 'extra_first');
+  }
+
+  /** The game ends only in a second half. A level knockout then moves on to extra time or penalties. */
+  canEndGame(): boolean {
+    const phase = this.phase();
+    return this.canScore() && (phase === 'second_half' || phase === 'extra_second');
+  }
+
+  breakAction(): { action: string; label: string } | null {
+    if (!this.canScore()) return null;
+    switch (this.phase()) {
+      case 'half_time':
+        return { action: 'start_second_half', label: 'Start second half' };
+      case 'extra_time':
+        return { action: 'start_extra_time', label: 'Start extra time' };
+      case 'extra_half_time':
+        return { action: 'start_second_half', label: 'Start extra-time second half' };
+      default:
+        return null;
+    }
   }
 
   canToggleClock(): boolean {
-    if (this.clockRunning()) return true;
-    const clock = this.clock();
-    if (clock.overtimeEnded) return false;
-    if (clock.halfEnded && clock.half === 2 && !(this.hasOvertime() && !clock.overtime)) return false;
-    return true;
+    const phase = this.phase();
+    return !!phase && PLAYING.has(phase);
   }
 
-  endGame(): void {
-    this.pauseClock();
-    this.setStatus('completed');
+  kickOff(): void {
+    this.advance('kick_off');
   }
 
   endHalf(): void {
-    this.endCurrentHalf();
+    this.advance('end_half');
+  }
+
+  endGame(): void {
+    this.advance('end_game');
+  }
+
+  runBreakAction(): void {
+    const next = this.breakAction();
+    if (next) this.advance(next.action);
+  }
+
+  private advance(action: string): void {
+    if (this.phaseBusy()) return;
+    this.phaseBusy.set(true);
+    if (this.clockRunning()) this.pauseClock();
+    this.api.fixturePhase(this.competitionId, this.fixtureId, action).subscribe({
+      next: async (fixture) => {
+        this.phaseBusy.set(false);
+        this.applyFixture(fixture);
+        const message = fixture.status === 'completed' ? 'Full time.' : PHASE_TOASTS[fixture.phase ?? ''];
+        if (message) await this.showToast(message, 'success');
+      },
+      error: async (err: unknown) => {
+        this.phaseBusy.set(false);
+        await this.showToast(extractErrorMessage(err, 'Could not move the game on.'), 'danger');
+      },
+    });
+  }
+
+  kicksFor(state: ShootoutState, sideId: string): ShootoutKick[] {
+    return state.kicks.filter((kick) => kick.side === sideId);
+  }
+
+  sideName(sideId: string): string {
+    const side = this.fixture()?.sides.find((item) => item.id === sideId);
+    return side?.participant.short_name || side?.participant.name || 'This side';
+  }
+
+  /** Everyone on the pitch kicks once before anyone kicks again. */
+  canKick(state: ShootoutState, sideId: string, player: ShootoutKicker): boolean {
+    const pool = state.eligible[sideId] ?? [];
+    const fewest = Math.min(...pool.map((row) => row.kicks));
+    return player.kicks <= fewest;
+  }
+
+  recordKick(sideId: string, scored: boolean): void {
+    const player = this.kicker();
+    if (!player || this.phaseBusy()) return;
+    this.phaseBusy.set(true);
+    this.api.shootoutKick(this.competitionId, this.fixtureId, { side: sideId, player, scored }).subscribe({
+      next: async (fixture) => {
+        this.phaseBusy.set(false);
+        this.kicker.set(null);
+        this.applyFixture(fixture);
+        const winner = fixture.shootout?.winner;
+        if (winner) await this.showToast(`${this.sideName(winner)} win on penalties.`, 'success');
+      },
+      error: async (err: unknown) => {
+        this.phaseBusy.set(false);
+        await this.showToast(extractErrorMessage(err, 'Could not record the kick.'), 'danger');
+      },
+    });
+  }
+
+  undoKick(): void {
+    if (this.phaseBusy()) return;
+    this.phaseBusy.set(true);
+    this.api.undoShootoutKick(this.competitionId, this.fixtureId).subscribe({
+      next: (fixture) => {
+        this.phaseBusy.set(false);
+        this.applyFixture(fixture);
+      },
+      error: async (err: unknown) => {
+        this.phaseBusy.set(false);
+        await this.showToast(extractErrorMessage(err, 'Could not undo the kick.'), 'danger');
+      },
+    });
   }
 
   clockRunning(): boolean {
@@ -761,15 +933,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   }
 
   clockButtonLabel(): string {
-    if (this.clockRunning()) return 'Pause';
-    const clock = this.clock();
-    if (clock.halfEnded && clock.half === 1 && !clock.overtime) return 'Start second half';
-    if (clock.halfEnded && clock.half === 2 && this.hasOvertime() && !clock.overtime) return 'Start overtime';
-    if (clock.overtimeEnded || (clock.halfEnded && clock.half === 2)) return 'Ended';
-    if (this.fixture()?.status === 'live' || this.displayedElapsed() > 0 || clock.half === 2 || clock.overtime) {
-      return 'Resume';
-    }
-    return 'Start';
+    return this.clockRunning() ? 'Pause' : 'Resume';
   }
 
   clockLabel(): string {
@@ -830,55 +994,20 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       this.pauseClock();
       return;
     }
-    const clock = this.clock();
-    if (clock.halfEnded && clock.half === 1 && !clock.overtime) {
-      this.beginPeriod(2);
-      return;
-    }
-    if (clock.halfEnded && clock.half === 2 && this.hasOvertime() && !clock.overtime) {
-      this.beginPeriod(2, true);
-      return;
-    }
     if (this.periodIsCapped()) {
-      this.endCurrentHalf();
+      void this.showToast(
+        this.canEndGame() ? 'Time is up. End the game.' : 'Time is up. End the half.',
+        'warning',
+      );
       return;
     }
     this.startClock();
   }
 
   private startClock(): void {
-    const clock = this.clock();
-    const next: MatchClock = {
-      ...clock,
-      running: true,
-      elapsedMs: clock.elapsedMs,
-      runStartedAt: Date.now(),
-      halfEnded: false,
-    };
+    const next: MatchClock = { ...this.clock(), running: true, runStartedAt: Date.now() };
     this.clock.set(next);
     writeMatchClock(this.fixtureId, next);
-    this.syncUnitIndex();
-    if (this.fixture()?.status === 'scheduled') {
-      this.setStatus('live');
-    }
-  }
-
-  private beginPeriod(half: 1 | 2, overtime = false): void {
-    const next: MatchClock = {
-      running: true,
-      elapsedMs: 0,
-      runStartedAt: Date.now(),
-      half,
-      halfEnded: false,
-      overtime,
-      overtimeEnded: false,
-    };
-    this.clock.set(next);
-    writeMatchClock(this.fixtureId, next);
-    this.syncUnitIndex();
-    if (this.fixture()?.status === 'scheduled') {
-      this.setStatus('live');
-    }
   }
 
   private resetClock(): void {
@@ -897,39 +1026,42 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     writeMatchClock(this.fixtureId, next);
   }
 
-  private endCurrentHalf(): void {
+  /** A new half starts its clock from zero; a first half already under way picks up from kick-off. */
+  private syncClockToPhase(): void {
+    const phase = this.phase();
     const clock = this.clock();
-    if (clock.overtime ? clock.overtimeEnded : clock.halfEnded) return;
-    const max = this.periodMaxMs();
-    const elapsed = max === null ? this.uncappedElapsed() : Math.min(this.uncappedElapsed(), max);
+    if (clock.phase === phase) return;
+    const playing = PLAYING.has(phase);
+    const startedAt = this.fixture()?.started_at;
+    const sinceKickoff =
+      phase === 'first_half' && !clock.phase && startedAt ? Date.now() - Date.parse(startedAt) : 0;
     const next: MatchClock = {
-      ...clock,
-      running: false,
-      elapsedMs: elapsed,
-      runStartedAt: null,
-      halfEnded: !clock.overtime,
-      overtimeEnded: clock.overtime,
+      phase,
+      running: playing,
+      elapsedMs: Math.max(0, sinceKickoff),
+      runStartedAt: playing ? Date.now() : null,
     };
     this.clock.set(next);
     writeMatchClock(this.fixtureId, next);
-    this.syncUnitIndex();
-    const label = clock.overtime ? 'Overtime ended.' : clock.half === 1 ? 'First half ended.' : 'Second half ended.';
-    void this.showToast(label, 'success');
   }
 
+  /** At the overrun limit the clock stops; the scorer still has to end the half or the game. */
   private enforcePeriodCap(): void {
     if (!this.clock().running || !this.periodIsCapped()) return;
-    this.endCurrentHalf();
-  }
-
-  private hasOvertime(): boolean {
-    return (this.timeLimits()?.overtime ?? 0) > 0;
+    this.pauseClock();
+    void this.showToast(
+      this.canEndGame() ? 'Time is up. End the game.' : 'Time is up. End the half.',
+      'warning',
+    );
   }
 
   private periodMaxMs(): number | null {
     const limits = this.timeLimits();
     if (!limits) return null;
-    if (this.clock().overtime) return limits.overtime * 60_000;
+    const phase = this.phase();
+    if (phase === 'extra_first' || phase === 'extra_second') {
+      return halfMaxMinutes(limits.overtime) * 60_000;
+    }
     return halfMaxMinutes(limits.regulation) * 60_000;
   }
 
@@ -950,25 +1082,40 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     return clock.elapsedMs + Math.max(0, this.now() - clock.runStartedAt);
   }
 
-  /** Match minute: first half from 0, second half from half length, overtime from full time. */
+  /** Match minute: each half counts on from where the one before it ended. */
   private matchElapsedMs(): number {
     const limits = this.timeLimits();
-    const clock = this.clock();
     const current = this.displayedElapsed();
-    if (clock.overtime) return (limits?.regulation ?? 0) * 60_000 + current;
-    if (clock.half === 2) return (limits ? halfMinutes(limits.regulation) : 0) * 60_000 + current;
-    return current;
+    const regulation = limits?.regulation ?? 0;
+    const extra = limits?.overtime ?? 0;
+    switch (this.phase()) {
+      case 'second_half':
+        return halfMinutes(regulation) * 60_000 + current;
+      case 'extra_first':
+        return regulation * 60_000 + current;
+      case 'extra_second':
+        return (regulation + halfMinutes(extra)) * 60_000 + current;
+      default:
+        return current;
+    }
+  }
+
+  /** Match unit for an event: halves 0 and 1, extra-time halves 2 and 3. */
+  private phaseUnit(): number {
+    const units: Partial<Record<MatchPhase, number>> = {
+      second_half: 1,
+      extra_time: 1,
+      extra_first: 2,
+      extra_half_time: 2,
+      extra_second: 3,
+    };
+    return units[this.phase()] ?? 0;
   }
 
   private syncUnitIndex(): void {
     const slots = this.units();
     if (!slots.length) return;
-    const clock = this.clock();
-    if (clock.overtime) {
-      this.unitIndex.set(slots.length - 1);
-      return;
-    }
-    this.unitIndex.set(Math.min(clock.half - 1, slots.length - 1));
+    this.unitIndex.set(Math.min(this.phaseUnit(), slots.length - 1));
   }
 
   load(): void {
@@ -1022,6 +1169,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       if (rose.length && next.status !== 'completed') this.celebrate(next, rose[0]);
     }
     this.fixture.set(next);
+    if (next.status === 'live') this.syncClockToPhase();
     this.syncUnitIndex();
   }
 
@@ -1532,7 +1680,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       body['unit_index'] = this.unitIndex();
       body['period'] = this.unitLabel({ unit_index: this.unitIndex() } as ScoreEvent);
     } else {
-      body['unit_index'] = this.clock().overtime ? 2 : this.clock().half - 1;
+      body['unit_index'] = this.phaseUnit();
       body['period'] = this.clockPeriodName();
     }
     const minute = this.clockMinute(category);
@@ -1699,24 +1847,40 @@ interface MatchClock {
   running: boolean;
   elapsedMs: number;
   runStartedAt: number | null;
-  half: 1 | 2;
-  halfEnded: boolean;
-  overtime: boolean;
-  overtimeEnded: boolean;
+  /** The phase this elapsed time belongs to; a new phase restarts the clock. */
+  phase: MatchPhase;
 }
+
+const PLAYING = new Set<MatchPhase>(['first_half', 'second_half', 'extra_first', 'extra_second']);
+
+const PHASE_LABELS: Record<MatchPhase, string> = {
+  '': 'Before kick-off',
+  first_half: 'First half',
+  half_time: 'Half-time',
+  second_half: 'Second half',
+  extra_time: 'Full time · extra time',
+  extra_first: 'Extra time · first half',
+  extra_half_time: 'Extra time · half-time',
+  extra_second: 'Extra time · second half',
+  penalties: 'Penalties',
+  full_time: 'Full time',
+};
+
+const PHASE_TOASTS: Partial<Record<MatchPhase, string>> = {
+  first_half: 'Kick-off. First half under way.',
+  half_time: 'Half-time.',
+  second_half: 'Second half under way.',
+  extra_time: 'Level at full time. Extra time is next.',
+  extra_first: 'Extra time under way.',
+  extra_half_time: 'Extra time: half-time.',
+  extra_second: 'Extra time: second half under way.',
+  penalties: 'Still level. Penalty shootout.',
+};
 
 const HALF_OVERRUN_RATIO = 0.1;
 
 function emptyClock(): MatchClock {
-  return {
-    running: false,
-    elapsedMs: 0,
-    runStartedAt: null,
-    half: 1,
-    halfEnded: false,
-    overtime: false,
-    overtimeEnded: false,
-  };
+  return { running: false, elapsedMs: 0, runStartedAt: null, phase: '' };
 }
 
 function halfMinutes(regulation: number): number {
@@ -1750,10 +1914,7 @@ function readMatchClock(fixtureId: string): MatchClock {
       running: parsed.running === true,
       elapsedMs: typeof parsed.elapsedMs === 'number' ? parsed.elapsedMs : 0,
       runStartedAt: typeof parsed.runStartedAt === 'number' ? parsed.runStartedAt : null,
-      half: parsed.half === 2 ? 2 : 1,
-      halfEnded: parsed.halfEnded === true,
-      overtime: parsed.overtime === true,
-      overtimeEnded: parsed.overtimeEnded === true,
+      phase: typeof parsed.phase === 'string' ? (parsed.phase as MatchPhase) : '',
     };
   } catch {
     return empty;

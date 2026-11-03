@@ -154,6 +154,15 @@ class ScoreEventSerializer(serializers.ModelSerializer):
                     )
                 }
             )
+        if (
+            self.instance is None
+            and fixture.phase == "penalties"
+            and category is not None
+            and category.affects_score
+        ):
+            raise serializers.ValidationError(
+                {"scoring_category": "The match is in a penalty shootout. Record kicks there."}
+            )
         from .raters import player_stat_codes
 
         if category is not None and category.code in player_stat_codes(fixture.competition):
@@ -269,6 +278,12 @@ class PlayerMatchRatingSerializer(serializers.ModelSerializer):
 class FixtureListSerializer(serializers.ModelSerializer):
     sides = FixtureSideSerializer(many=True, read_only=True)
     highlights = serializers.SerializerMethodField()
+    phase = serializers.SerializerMethodField()
+
+    def get_phase(self, obj) -> str:
+        from .phases import current_phase
+
+        return current_phase(obj)
     ratings = PlayerMatchRatingSerializer(many=True, read_only=True)
 
     def get_highlights(self, obj) -> list[dict]:
@@ -306,6 +321,7 @@ class FixtureListSerializer(serializers.ModelSerializer):
             "overtime_minutes",
             "location",
             "status",
+            "phase",
             "sides",
             "highlights",
             "ratings",
@@ -319,10 +335,14 @@ class FixtureDetailSerializer(FixtureListSerializer):
     referees = serializers.SerializerMethodField()
     kickoff_problems = serializers.SerializerMethodField()
     raters_count = serializers.SerializerMethodField()
+    knockout = serializers.SerializerMethodField()
+    shootout = serializers.SerializerMethodField()
 
     class Meta(FixtureListSerializer.Meta):
         fields = [
             *FixtureListSerializer.Meta.fields,
+            "knockout",
+            "shootout",
             "notes",
             "events",
             "referees",
@@ -330,6 +350,16 @@ class FixtureDetailSerializer(FixtureListSerializer):
             "kickoff_problems",
             "created_at",
         ]
+
+    def get_knockout(self, obj) -> bool:
+        from .phases import is_knockout
+
+        return is_knockout(obj)
+
+    def get_shootout(self, obj) -> dict | None:
+        from .phases import shootout_state
+
+        return shootout_state(obj)
 
     def get_raters_count(self, obj) -> int:
         return obj.raters.count()
@@ -414,6 +444,13 @@ class FixtureWriteSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance: Fixture, validated_data: dict) -> Fixture:
+        if (
+            validated_data.get("status") == Fixture.Status.COMPLETED
+            and instance.status == Fixture.Status.LIVE
+        ):
+            from .phases import assert_can_complete
+
+            assert_can_complete(instance)
         sides_data = validated_data.pop("sides", None)
         fixture = super().update(instance, validated_data)
 

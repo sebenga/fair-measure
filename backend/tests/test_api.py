@@ -2120,7 +2120,7 @@ def test_a_sample_league_can_be_generated_updated_and_removed(api):
     generated = api.post(demo_url, {}, format="json")
     assert generated.status_code == 201, generated.data
     assert generated.data["active"] is True
-    assert generated.data["teams"] == 6
+    assert generated.data["teams"] == 16
     assert generated.data["fixtures"] >= 15
     assert generated.data["officials"] >= 2
     assert generated.data["picks"] >= 12
@@ -2131,7 +2131,7 @@ def test_a_sample_league_can_be_generated_updated_and_removed(api):
     assert generated.data["expires_at"]
     detail = api.get(f"/api/v1/competitions/{competition_id}")
     demo_teams = [row for row in detail.data["participants"] if (row.get("metadata") or {}).get("demo")]
-    assert len(demo_teams) == 6
+    assert len(demo_teams) == 16
     assert all(row["roster"] for row in demo_teams)
     assert all(any(member.get("user") for member in row["roster"]) for row in demo_teams)
     assert detail.data["settings_json"]["demo_league"]["active"] is True
@@ -2140,10 +2140,40 @@ def test_a_sample_league_can_be_generated_updated_and_removed(api):
     assert TeamPick.objects.filter(
         participant__competition_id=competition_id, status=TeamPick.Status.ACCEPTED
     ).count() >= 12
+    info = detail.data["settings_json"]["demo_league"]
+    assert detail.data["format"] == "league_knockout"
     live = Fixture.objects.filter(competition_id=competition_id, status=Fixture.Status.LIVE)
-    assert live.count() == 1
-    match = live.get()
+    assert {str(f.id) for f in live} == {
+        info["live_fixture"],
+        info["live_cup_fixture"],
+        info["penalty_fixture"],
+    }
+    match = live.get(id=info["live_fixture"])
     assert match.sides.filter(participant__isnull=False).count() == 2
+    cup = Fixture.objects.filter(competition_id=competition_id, stage_id=info["cup_stage"])
+    assert sorted(cup.values_list("round_number", flat=True)) == [1] * 8 + [2] * 4 + [3] * 2 + [4]
+    assert all(fixture.scheduled_at for fixture in cup)
+    assert cup.get(id=info["live_cup_fixture"]).phase == "second_half"
+    shootout = cup.get(id=info["penalty_fixture"])
+    assert shootout.phase == "penalties" and len(shootout.shootout) == 6
+    settled = [f for f in cup.filter(round_number=1) if f.shootout]
+    assert len(settled) == 1
+    assert settled[0].sides.filter(outcome="win").count() == 1
+    waiting = cup.filter(round_number=3).order_by("created_at")[1]
+    assert not waiting.sides.exists()
+    for fixture_id in (info["live_cup_fixture"], info["penalty_fixture"]):
+        played_out = Fixture.objects.get(id=fixture_id)
+        played_out.status = Fixture.Status.COMPLETED
+        played_out.save(update_fields=["status"])
+        home, away = played_out.sides.order_by("position")
+        home.outcome, away.outcome = "win", "loss"
+        home.save(update_fields=["outcome"])
+        away.save(update_fields=["outcome"])
+    advanced = api.post(f"/api/v1/competitions/{competition_id}/advance", {}, format="json")
+    assert advanced.status_code == 201, advanced.data
+    assert advanced.data["fixtures"] == [str(waiting.id)]
+    assert waiting.sides.count() == 2
+    assert cup.count() == 15
     assert timezone.now() - timedelta(hours=1) < match.started_at <= timezone.now()
     expires = datetime.fromisoformat(generated.data["expires_at"])
     assert timedelta(minutes=59) < expires - timezone.now() <= timedelta(hours=1)
@@ -2189,7 +2219,7 @@ def test_a_sample_league_can_be_generated_updated_and_removed(api):
     updated = api.post(demo_url, {}, format="json")
     assert updated.status_code == 201, updated.data
     after_update = api.get(f"/api/v1/competitions/{competition_id}")
-    assert len(after_update.data["participants"]) == 6
+    assert len(after_update.data["participants"]) == 16
 
     occupied = api.post(
         "/api/v1/competitions",
@@ -2230,9 +2260,9 @@ def test_a_sample_league_can_be_generated_updated_and_removed(api):
     assert points.status_code == 201, points.data
     filled = api.post(f"/api/v1/competitions/{points.data['id']}/demo-league", {}, format="json")
     assert filled.status_code == 201, filled.data
-    assert filled.data["entrants"] == 6
+    assert filled.data["entrants"] == 16
     table = api.get(f"/api/v1/competitions/{points.data['id']}")
-    assert len(table.data["participants"]) == 6
+    assert len(table.data["participants"]) == 16
     assert all(row["kind"] == "individual" for row in table.data["participants"])
     removed = api.delete(f"/api/v1/competitions/{points.data['id']}/demo-league")
     assert removed.status_code == 200

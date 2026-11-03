@@ -11,8 +11,8 @@ from .matchday import (
 from .raters import FixtureRatersView, RaterPlayerStatsView, RaterScoresView
 from .scrabble import (
     ScrabbleBoardView,
-    ScrabbleMoveView,
     ScrabbleMovesView,
+    ScrabbleMoveView,
     ScrabblePreviewView,
     ScrabbleRacksView,
 )
@@ -24,6 +24,8 @@ fixture_detail = FixtureViewSet.as_view(
 )
 fixture_generate = FixtureViewSet.as_view({"post": "generate"})
 fixture_set_status = FixtureViewSet.as_view({"post": "set_status"})
+fixture_phase = FixtureViewSet.as_view({"post": "phase"})
+fixture_shootout = FixtureViewSet.as_view({"post": "shootout", "delete": "shootout"})
 
 event_list = ScoreEventViewSet.as_view({"get": "list", "post": "create"})
 event_detail = ScoreEventViewSet.as_view(
@@ -51,6 +53,16 @@ urlpatterns = [
         "competitions/<uuid:competition_pk>/fixtures/<uuid:pk>/set-status",
         fixture_set_status,
         name="fixture-set-status",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:pk>/phase",
+        fixture_phase,
+        name="fixture-phase",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:pk>/shootout",
+        fixture_shootout,
+        name="fixture-shootout",
     ),
     path(
         "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/referees",

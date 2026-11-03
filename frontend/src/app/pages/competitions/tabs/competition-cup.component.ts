@@ -468,7 +468,15 @@ export class CompetitionCupComponent implements OnInit {
     if (role !== 'owner' && role !== 'admin') return false;
     const cup = this.activeCupFixtures();
     if (!cup.length || this.champion()) return false;
-    const latest = Math.max(...cup.map((fixture) => fixture.round_number ?? 1));
+    // Ties scheduled ahead wait without sides; advance from the last round whose ties all have teams.
+    const drawn = new Map<number, boolean>();
+    for (const fixture of cup) {
+      const round = fixture.round_number ?? 1;
+      drawn.set(round, (drawn.get(round) ?? true) && fixture.sides.length > 0);
+    }
+    const ready = [...drawn.entries()].filter(([, all]) => all).map(([round]) => round);
+    if (!ready.length) return false;
+    const latest = Math.max(...ready);
     const current = cup.filter((fixture) => (fixture.round_number ?? 1) === latest);
     const winners = current.filter((fixture) => fixture.sides.some((side) => side.outcome === 'win'));
     return current.length > 0 && current.every(isFinished) && winners.length >= 2;

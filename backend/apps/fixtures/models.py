@@ -58,6 +58,11 @@ class Fixture(BaseModel):
     notes = models.TextField(blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    # Where a timed game is: first_half, half_time, second_half, extra_time, … (see phases.py).
+    # Empty for games run without the match clock.
+    phase = models.CharField(max_length=20, blank=True, default="")
+    # Penalty shootout kicks in order: {"side", "player", "name", "scored"}.
+    shootout = models.JSONField(default=list, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -117,6 +122,7 @@ class Fixture(BaseModel):
             from apps.competitions.engine import settle_fixture
 
             settle_fixture(self)
+            self._apply_shootout()
             return
 
         totals = (
@@ -160,6 +166,23 @@ class Fixture(BaseModel):
                 side.outcome = FixtureSide.Outcome.PENDING
 
         FixtureSide.objects.bulk_update(sides, ["score", "outcome"])
+        self._apply_shootout()
+
+    def _apply_shootout(self) -> None:
+        """A decided shootout settles a level game: its winner wins, the other side loses."""
+
+        if not self.shootout:
+            return
+        from .phases import shootout_winner
+
+        winner = shootout_winner(self)
+        if winner is None:
+            return
+        for side in self.sides.all():
+            outcome = FixtureSide.Outcome.WIN if str(side.id) == winner else FixtureSide.Outcome.LOSS
+            if side.outcome != outcome:
+                side.outcome = outcome
+                side.save(update_fields=["outcome", "updated_at"])
 
 
 class FixtureSide(BaseModel):

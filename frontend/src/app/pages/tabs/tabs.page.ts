@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 
 import { AuthService } from '../../core/auth.service';
 import { ReleasesService } from '../../core/releases.service';
+import { DemoGuideComponent } from '../../shared/demo-guide.component';
 import {
   IonIcon,
   IonLabel,
@@ -13,7 +14,7 @@ import {
 @Component({
   selector: 'fm-tabs',
   standalone: true,
-  imports: [IonTabs, IonTabBar, IonTabButton, IonIcon, IonLabel],
+  imports: [IonTabs, IonTabBar, IonTabButton, IonIcon, IonLabel, DemoGuideComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ion-tabs>
@@ -48,6 +49,7 @@ import {
         }
       </ion-tab-bar>
     </ion-tabs>
+    <fm-demo-guide />
   `,
 })
 export class TabsPage {

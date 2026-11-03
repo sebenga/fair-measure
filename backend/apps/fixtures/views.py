@@ -53,6 +53,15 @@ def user_can_score_fixture(fixture: Fixture, user) -> bool:
     return has_at_least(fixture.competition, user, Role.SCORER)
 
 
+def _assert_can_finalise(fixture: Fixture, user) -> None:
+    """Where officials sign off results, only they may end a game."""
+
+    from apps.results.services import assert_can_decide, officials_required
+
+    if officials_required(fixture.competition):
+        assert_can_decide(fixture.competition, user)
+
+
 def _scores(fixture: Fixture) -> dict:
     return {
         side.participant.name: {"score": str(side.score), "outcome": side.outcome}
@@ -385,6 +394,15 @@ class FixtureViewSet(viewsets.ModelViewSet):
         new_status = serializer.validated_data["status"]
         if new_status == Fixture.Status.LIVE and fixture.status == Fixture.Status.SCHEDULED:
             _assert_ready_for_kickoff(fixture)
+        if new_status == Fixture.Status.COMPLETED and fixture.status == Fixture.Status.LIVE:
+            from .phases import assert_can_complete
+
+            assert_can_complete(fixture)
+        self._change_status(fixture, request, new_status)
+        return Response(FixtureDetailSerializer(fixture).data)
+
+    def _change_status(self, fixture: Fixture, request: Request, new_status: str) -> None:
+        """Move a fixture to a new status: officials, amendment log, feed posts and season end."""
 
         from apps.results.services import assert_can_decide, officials_required
 
@@ -409,12 +427,17 @@ class FixtureViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             fixture.status = new_status
+            if reopening:
+                # A reopened result is corrected by hand, outside the half-by-half flow.
+                fixture.phase = ""
             if new_status == Fixture.Status.LIVE and fixture.started_at is None:
                 fixture.started_at = timezone.now()
             if new_status in {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT}:
                 fixture.completed_at = timezone.now()
                 fixture.recalculate_scores()
-            fixture.save(update_fields=["status", "started_at", "completed_at", "updated_at"])
+            fixture.save(
+                update_fields=["status", "phase", "started_at", "completed_at", "updated_at"]
+            )
             if new_status in {Fixture.Status.LIVE, Fixture.Status.COMPLETED}:
                 from .matchday import sync_minutes
 
@@ -447,6 +470,71 @@ class FixtureViewSet(viewsets.ModelViewSet):
                     {"competition_id": str(fixture.competition_id)},
                     [competition_room(fixture.competition_id)],
                 )
+
+    @extend_schema(
+        tags=["Fixtures"],
+        summary="Move a timed game on: kick off, end a half, start the second half, end the game",
+        request=dict,
+        responses={200: FixtureDetailSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="phase")
+    def phase(self, request: Request, **kwargs) -> Response:
+        from . import phases
+
+        fixture = self.get_object()
+        self._assert_can_score()
+        action_name = str(request.data.get("action") or "")
+        with transaction.atomic():
+            fixture = Fixture.objects.select_for_update().get(pk=fixture.pk)
+            target = phases.next_phase(fixture, action_name)
+            if action_name == "kick_off":
+                _assert_ready_for_kickoff(fixture)
+            if target == phases.FULL_TIME:
+                _assert_can_finalise(fixture, request.user)
+            fixture.phase = target
+            fixture.save(update_fields=["phase", "updated_at"])
+        if action_name == "kick_off":
+            self._change_status(fixture, request, Fixture.Status.LIVE)
+        elif target == phases.FULL_TIME:
+            self._change_status(fixture, request, Fixture.Status.COMPLETED)
+        else:
+            self._broadcast(fixture, "fixture.updated")
+        fixture.refresh_from_db()
+        return Response(FixtureDetailSerializer(fixture).data)
+
+    @extend_schema(
+        tags=["Fixtures"],
+        summary="Record a penalty shootout kick, or undo the last one",
+        request=dict,
+        responses={200: FixtureDetailSerializer},
+    )
+    @action(detail=True, methods=["post", "delete"], url_path="shootout")
+    def shootout(self, request: Request, **kwargs) -> Response:
+        from . import phases
+
+        fixture = self.get_object()
+        self._assert_can_score()
+        with transaction.atomic():
+            fixture = Fixture.objects.select_for_update().get(pk=fixture.pk)
+            if request.method == "DELETE":
+                phases.undo_kick(fixture)
+            else:
+                _assert_can_finalise(fixture, request.user)
+                phases.add_kick(
+                    fixture,
+                    str(request.data.get("side") or ""),
+                    str(request.data.get("player") or ""),
+                    bool(request.data.get("scored")),
+                )
+            decided = phases.shootout_winner(fixture) is not None
+            if decided:
+                fixture.phase = phases.FULL_TIME
+                fixture.save(update_fields=["phase", "updated_at"])
+        if decided:
+            self._change_status(fixture, request, Fixture.Status.COMPLETED)
+        else:
+            self._broadcast(fixture, "fixture.updated")
+        fixture.refresh_from_db()
         return Response(FixtureDetailSerializer(fixture).data)
 
 

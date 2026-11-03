@@ -45,6 +45,9 @@ DEMO_TTL = timedelta(hours=1)
 LIVE_FOR_MINUTES = 18
 DEMO_EMAIL_DOMAIN = "fairmeasure.demo"
 
+# Every demo fills 16 entrants: enough for a full cup (round of 16 to the final).
+DEMO_SIZE = 16
+
 DEMO_TEAMS = [
     ("Harbour Hawks", "Hawks"),
     ("Northside Nomads", "Nomads"),
@@ -52,24 +55,60 @@ DEMO_TEAMS = [
     ("Kingsley Kestrels", "Kestrels"),
     ("Old Quarry Oaks", "Oaks"),
     ("Seaview Sharks", "Sharks"),
+    ("Eastgate Eagles", "Eagles"),
+    ("Westbrook Wolves", "Wolves"),
+    ("Hilltop Hornets", "Hornets"),
+    ("Lakeside Lions", "Lions"),
+    ("Southpark Spartans", "Spartans"),
+    ("Mill Lane Mustangs", "Mustangs"),
+    ("Cedar Vale Cobras", "Cobras"),
+    ("Dockside Dolphins", "Dolphins"),
+    ("Granite Peak Griffins", "Griffins"),
+    ("Valley View Vipers", "Vipers"),
 ]
 
 DEMO_PAIRS = [
-    ("Mensah / Cruz", "M/C"),
-    ("Okeke / Alvarez", "O/A"),
-    ("Voss / Nasser", "V/N"),
-    ("Ito / Bello", "I/B"),
-    ("Moreau / Blake", "M/B"),
-    ("Novak / Osei", "N/O"),
+    (f"{FAMILY_A} / {FAMILY_B}", f"{FAMILY_A[0]}/{FAMILY_B[0]}")
+    for FAMILY_A, FAMILY_B in [
+        ("Mensah", "Cruz"),
+        ("Okeke", "Alvarez"),
+        ("Voss", "Nasser"),
+        ("Ito", "Bello"),
+        ("Moreau", "Blake"),
+        ("Novak", "Osei"),
+        ("Silva", "Rahman"),
+        ("Chen", "Nowak"),
+        ("Cruz", "Okeke"),
+        ("Alvarez", "Voss"),
+        ("Nasser", "Ito"),
+        ("Bello", "Moreau"),
+        ("Blake", "Novak"),
+        ("Osei", "Silva"),
+        ("Rahman", "Chen"),
+        ("Nowak", "Mensah"),
+    ]
 ]
 
 DEMO_COMBOS = [
-    ("Harbour Star / Ada Mensah", "Harbour"),
-    ("Northwind / Benito Cruz", "Northwind"),
-    ("River Song / Chioma Okeke", "River"),
-    ("Kestrel / Diego Alvarez", "Kestrel"),
-    ("Quarry / Elena Voss", "Quarry"),
-    ("Seaview / Farid Nasser", "Seaview"),
+    (f"{horse} / {rider}", horse)
+    for horse, rider in [
+        ("Harbour Star", "Ada Mensah"),
+        ("Northwind", "Benito Cruz"),
+        ("River Song", "Chioma Okeke"),
+        ("Kestrel", "Diego Alvarez"),
+        ("Quarry", "Elena Voss"),
+        ("Seaview", "Farid Nasser"),
+        ("Eastgate", "Grace Ito"),
+        ("Westbrook", "Hassan Bello"),
+        ("Hilltop", "Ines Moreau"),
+        ("Lakeside", "Jonah Blake"),
+        ("Southpark", "Kira Novak"),
+        ("Mill Lane", "Liam Osei"),
+        ("Cedar Vale", "Marta Silva"),
+        ("Dockside", "Nabil Rahman"),
+        ("Granite", "Olivia Chen"),
+        ("Valley View", "Piotr Nowak"),
+    ]
 ]
 
 GIVEN_NAMES = [
@@ -188,10 +227,20 @@ def generate_demo_league(competition: Competition, actor) -> dict:
         picks = _pick_squads(competition, entrants, actor, users)
         officials = _appoint_officials(competition, actor, users)
         _open_team_entry(competition)
+        cup_stage = _prepare_cup(competition)
         fixtures = _schedule(competition, entrants)
+        if cup_stage is not False:
+            fixtures = _drop_generated_cup(competition, fixtures, cup_stage)
         _staff_fixtures(competition, fixtures, officials, actor)
         _ensure_stat_categories(competition)
-        played = _play_past_fixtures(competition, fixtures, actor)
+        played, live = _play_past_fixtures(competition, fixtures, actor)
+        cup = (
+            _build_cup(competition, entrants, cup_stage, officials, actor)
+            if cup_stage is not False
+            else {}
+        )
+        fixtures = fixtures + cup.get("fixtures", [])
+        played += cup.get("played", 0)
         played += _award_sample_points(competition, entrants, actor)
         ratings = _rate_players(fixtures)
         stats = _record_player_stats(competition, fixtures, actor)
@@ -214,6 +263,11 @@ def generate_demo_league(competition: Competition, actor) -> dict:
             "stats": stats,
             "squad": squad_picks,
             "fantasy": fantasy_teams,
+            # The guided tour opens these matches.
+            "live_fixture": str(live.id) if live is not None else None,
+            "live_cup_fixture": cup.get("live"),
+            "penalty_fixture": cup.get("penalties"),
+            "cup_stage": cup.get("stage"),
         }
         competition.settings_json = settings
         fields = ["settings_json", "updated_at"]
@@ -386,7 +440,7 @@ def _demo_user(competition: Competition, given: str, family: str, suffix: str, u
 def _create_entrants(competition: Competition, users: list) -> list[Participant]:
     kind_key = _participant_type(competition)
     if kind_key == "individual":
-        names = [(f"{given} {family}", family) for given, family in ( _name_at(i) for i in range(6))]
+        names = [(f"{given} {family}", family) for given, family in (_name_at(i) for i in range(DEMO_SIZE))]
         kind = Participant.Kind.INDIVIDUAL
     elif kind_key == "pair":
         names = DEMO_PAIRS
@@ -442,7 +496,7 @@ def _pick_squads(competition: Competition, teams: list[Participant], actor, user
     if needed == 0:
         return 0
     picks = 0
-    next_index = 6
+    next_index = DEMO_SIZE
     for team in teams:
         for offset in range(needed):
             given, family = _name_at(next_index)
@@ -533,6 +587,9 @@ def _staff_fixtures(competition: Competition, fixtures: list[Fixture], officials
         raters = [row.user for row in officials[:2]]
     sheet = team_sheet_config(competition)
     starters_needed = team_sheet_minimum(sheet) if sheet else 0
+    # Team sheets for what has been played and the next week and a half; later rounds
+    # are picked nearer the day, as a real league would.
+    sheets_until = timezone.now() + timedelta(days=10)
     for fixture in fixtures:
         updates = []
         if duration and not fixture.duration_minutes:
@@ -552,7 +609,7 @@ def _staff_fixtures(competition: Competition, fixtures: list[Fixture], officials
                 user=rater,
                 defaults={"assigned_by": actor if getattr(actor, "is_authenticated", False) else None},
             )
-        if starters_needed:
+        if starters_needed and (fixture.scheduled_at is None or fixture.scheduled_at <= sheets_until):
             _submit_team_sheets(fixture, starters_needed, actor, sheet)
 
 
@@ -650,7 +707,8 @@ def _live_candidate(fixtures: list[Fixture], now) -> Fixture | None:
     )
     if upcoming:
         return upcoming[0]
-    return next((f for f in fixtures if ready(f)), None)
+    # A knockout's later rounds have no sides yet: keep the latest tie with both sides live.
+    return next((f for f in reversed(fixtures) if ready(f)), None)
 
 
 def _play_past_fixtures(competition: Competition, fixtures: list[Fixture], actor) -> int:
@@ -663,8 +721,9 @@ def _play_past_fixtures(competition: Competition, fixtures: list[Fixture], actor
     now = timezone.now()
     rng = random.Random(str(competition.id))
     played = 0
+    live = _live_candidate(fixtures, now)
     for fixture in fixtures:
-        if fixture.status == Fixture.Status.COMPLETED:
+        if fixture.status == Fixture.Status.COMPLETED or fixture is live:
             continue
         if fixture.scheduled_at is None or fixture.scheduled_at > now:
             continue
@@ -688,14 +747,14 @@ def _play_past_fixtures(competition: Competition, fixtures: list[Fixture], actor
         fixture.save(update_fields=["status", "started_at", "completed_at", "updated_at"])
         fixture.recalculate_scores()
         played += 1
-    live = _live_candidate(fixtures, now)
     if live is not None:
         # Kicked off a few minutes ago, so the match is in play for the whole hour the demo lives.
         kickoff = now - timedelta(minutes=LIVE_FOR_MINUTES)
         live.status = Fixture.Status.LIVE
+        live.phase = "first_half"
         live.scheduled_at = kickoff
         live.started_at = kickoff
-        live.save(update_fields=["status", "scheduled_at", "started_at", "updated_at"])
+        live.save(update_fields=["status", "phase", "scheduled_at", "started_at", "updated_at"])
         side = live.sides.first()
         if side is not None:
             player = side.participant.roster.filter(is_active=True).order_by("number").first()
@@ -710,7 +769,7 @@ def _play_past_fixtures(competition: Competition, fixtures: list[Fixture], actor
                 recorded_by=actor,
             )
             live.recalculate_scores()
-    return played
+    return played, live
 
 
 def _rate_players(fixtures: list[Fixture]) -> int:
@@ -734,25 +793,27 @@ def _rate_players(fixtures: list[Fixture]) -> int:
                 ]
             else:
                 members = list(side.participant.roster.filter(is_active=True).order_by("number")[:11])
-            for member in members:
-                PlayerAppearance.objects.update_or_create(
-                    fixture=fixture,
-                    player=member,
-                    defaults={"minutes": 90},
-                )
-                players.append(member)
+            players.extend(members)
         if not players:
             continue
+        PlayerAppearance.objects.bulk_create(
+            [PlayerAppearance(fixture=fixture, player=member, minutes=90) for member in players],
+            ignore_conflicts=True,
+        )
         rng = random.Random(str(fixture.id))
-        for rater in raters:
-            for player in players:
-                mark = Decimal(str(rng.randint(55, 90) / 10))
-                RaterScore.objects.update_or_create(
+        RaterScore.objects.bulk_create(
+            [
+                RaterScore(
                     fixture=fixture,
                     rater=rater,
                     player=player,
-                    defaults={"rating": mark},
+                    rating=Decimal(str(rng.randint(55, 90) / 10)),
                 )
+                for rater in raters
+                for player in players
+            ],
+            ignore_conflicts=True,
+        )
         recompute(fixture)
         rated += fixture.ratings.count()
     return rated
@@ -968,3 +1029,228 @@ def _fill_fantasy(competition: Competition, actor) -> int:
             continue
         made += 1
     return FantasyTeam.objects.filter(competition=competition).count() or made
+
+
+# --- The demo cup -------------------------------------------------------------
+#
+# A full 16-team bracket, every round scheduled: the round of 16 played two weeks
+# ago (one tie settled on penalties), quarter-finals today with one in play and
+# one in a shootout, then the semi-finals and final ahead. Ties whose teams are
+# not known yet wait without sides until the bracket is advanced.
+
+CUP_ROUND_NAMES = ["Round of 16", "Quarter-finals", "Semi-finals", "Final"]
+
+
+def _prepare_cup(competition: Competition):
+    """The cup stage for the demo bracket: a Stage, None for a pure knockout, or False for none."""
+
+    if _is_points_table(competition):
+        return False
+    if competition.format == Competition.Format.KNOCKOUT:
+        return None
+    if competition.format == Competition.Format.LEAGUE:
+        # A demo shows everything, so a plain league also gets a cup.
+        competition.format = Competition.Format.LEAGUE_KNOCKOUT
+        competition.save(update_fields=["format", "updated_at"])
+    if competition.format != Competition.Format.LEAGUE_KNOCKOUT:
+        return False
+    from .cups import ensure_league_and_cup_stages
+
+    _, cups = ensure_league_and_cup_stages(competition)
+    return cups[0] if cups else False
+
+
+def _drop_generated_cup(competition: Competition, fixtures: list[Fixture], stage) -> list[Fixture]:
+    """The schedulers write cup round 1 only; the demo writes the whole bracket itself."""
+
+    if competition.format == Competition.Format.KNOCKOUT:
+        Fixture.objects.filter(id__in=[f.id for f in fixtures]).delete()
+        return []
+    cup_ids = {f.id for f in fixtures if stage is not None and f.stage_id == stage.id}
+    Fixture.objects.filter(id__in=cup_ids).delete()
+    settings = dict(competition.settings_json or {})
+    settings["cup_slot_datetimes"] = []
+    competition.settings_json = settings
+    competition.save(update_fields=["settings_json", "updated_at"])
+    return [f for f in fixtures if f.id not in cup_ids]
+
+
+def _cup_fixture(competition, stage, round_number: int, index: int, when, pair=None) -> Fixture:
+    from apps.fixtures.models import FixtureSide
+
+    prefix = stage.name if stage is not None else "Cup"
+    fixture = Fixture.objects.create(
+        competition=competition,
+        stage=stage,
+        round_number=round_number,
+        label=f"{prefix} {CUP_ROUND_NAMES[round_number - 1].lower()} — match {index + 1}",
+        scheduled_at=when,
+        location="Demo stadium",
+    )
+    if pair is not None:
+        home, away = pair
+        FixtureSide.objects.create(fixture=fixture, participant=home, position=0, is_home=True)
+        FixtureSide.objects.create(fixture=fixture, participant=away, position=1, is_home=False)
+    return fixture
+
+
+def _goal_category(competition: Competition):
+    return (
+        competition.scoring_categories.filter(affects_score=True).order_by("display_order").first()
+    )
+
+
+def _score_goals(fixture: Fixture, side, goals: int, rng, actor, category, minutes=(1, 90)) -> None:
+    squad = list(side.participant.roster.filter(is_active=True).order_by("number", "created_at"))
+    outfield = [p for p in squad if not _is_keeper(p)] or squad
+    for _ in range(goals):
+        player = rng.choice(outfield) if outfield else None
+        ScoreEvent.objects.create(
+            fixture=fixture,
+            side=side,
+            scoring_category=category,
+            player=player,
+            player_name=player.name if player is not None else "",
+            quantity=Decimal("1"),
+            minute=rng.randint(*minutes),
+            recorded_by=actor,
+        )
+
+
+def _shootout_kicks(fixture: Fixture, rng, pattern: list[tuple[bool, bool]]) -> list[dict]:
+    """Kicks in turn from each side's players on the pitch, one (home, away) pair per round."""
+
+    from apps.fixtures.phases import eligible_kickers
+
+    home, away = list(fixture.sides.order_by("position"))
+    pools = {side.id: eligible_kickers(fixture, side) for side in (home, away)}
+    kicks = []
+    for round_index, (home_scores, away_scores) in enumerate(pattern):
+        for side, scored in ((home, home_scores), (away, away_scores)):
+            pool = pools[side.id]
+            if not pool:
+                continue
+            taker = pool[(len(pool) - 1 - round_index) % len(pool)]
+            kicks.append(
+                {"side": str(side.id), "player": taker["player_id"], "name": taker["name"],
+                 "scored": scored}
+            )
+    return kicks
+
+
+def _finish(fixture: Fixture, kickoff) -> None:
+    fixture.status = Fixture.Status.COMPLETED
+    fixture.phase = "full_time"
+    fixture.started_at = kickoff
+    fixture.completed_at = kickoff + timedelta(minutes=110)
+    fixture.save(
+        update_fields=["status", "phase", "shootout", "started_at", "completed_at", "updated_at"]
+    )
+    fixture.recalculate_scores()
+
+
+def _play_to(fixture: Fixture, home_goals: int, away_goals: int, rng, actor, category) -> None:
+    home, away = list(fixture.sides.order_by("position"))
+    _score_goals(fixture, home, home_goals, rng, actor, category)
+    _score_goals(fixture, away, away_goals, rng, actor, category)
+
+
+def _winner(fixture: Fixture):
+    fixture.refresh_from_db()
+    side = fixture.sides.filter(outcome="win").select_related("participant").first()
+    return side.participant if side is not None else None
+
+
+def _build_cup(competition: Competition, teams: list[Participant], stage, officials, actor) -> dict:
+    from apps.fixtures.services import knockout_slots
+
+    category = _goal_category(competition)
+    pairs = [pair for pair in knockout_slots(teams) if pair[1] is not None]
+    if category is None or len(pairs) < 8:
+        return {}
+    rng = random.Random(f"{competition.id}-cup")
+    now = timezone.now()
+    today_three = now.replace(hour=15, minute=0, second=0, microsecond=0)
+    round_one_at = today_three - timedelta(days=14)
+    staffed = []
+
+    # Round of 16, two weeks ago. Match 3 is level and goes to penalties.
+    round_one = [
+        _cup_fixture(competition, stage, 1, index, round_one_at + timedelta(minutes=30 * (index % 2)), pair)
+        for index, pair in enumerate(pairs[:8])
+    ]
+    _staff_fixtures(competition, round_one, officials, actor)
+    staffed += round_one
+    for index, fixture in enumerate(round_one):
+        if index == 2:
+            _play_to(fixture, 1, 1, rng, actor, category)
+            fixture.shootout = _shootout_kicks(
+                fixture, rng, [(True, True), (True, False), (True, True), (True, True), (True, True)]
+            )
+        else:
+            home_goals = rng.randint(1, 4)
+            _play_to(fixture, home_goals, rng.randint(0, home_goals - 1), rng, actor, category)
+        _finish(fixture, fixture.scheduled_at)
+    winners = [_winner(fixture) for fixture in round_one]
+
+    # Quarter-finals today: two finished, one in play, one in a penalty shootout.
+    quarter_pairs = [(winners[i], winners[i + 1]) for i in range(0, 8, 2)]
+    kickoffs = [
+        now - timedelta(hours=5),
+        now - timedelta(hours=3, minutes=30),
+        now - timedelta(minutes=72),
+        now - timedelta(minutes=138),
+    ]
+    quarters = [
+        _cup_fixture(competition, stage, 2, index, kickoffs[index], pair)
+        for index, pair in enumerate(quarter_pairs)
+    ]
+    _staff_fixtures(competition, quarters, officials, actor)
+    staffed += quarters
+    played = 8
+    for fixture in quarters[:2]:
+        _play_to(fixture, 2, 1, rng, actor, category)
+        _finish(fixture, fixture.scheduled_at)
+        played += 1
+
+    live_cup = quarters[2]
+    _play_to(live_cup, 1, 0, rng, actor, category)
+    live_cup.status = Fixture.Status.LIVE
+    live_cup.phase = "second_half"
+    live_cup.started_at = live_cup.scheduled_at
+    live_cup.save(update_fields=["status", "phase", "started_at", "updated_at"])
+    live_cup.recalculate_scores()
+
+    penalties = quarters[3]
+    _play_to(penalties, 2, 2, rng, actor, category)
+    penalties.shootout = _shootout_kicks(
+        penalties, rng, [(True, True), (False, True), (True, False)]
+    )
+    penalties.status = Fixture.Status.LIVE
+    penalties.phase = "penalties"
+    penalties.started_at = penalties.scheduled_at
+    penalties.save(update_fields=["status", "phase", "shootout", "started_at", "updated_at"])
+    penalties.recalculate_scores()
+
+    # Semi-finals next week (the first already has its teams), final the week after.
+    semi_one = _cup_fixture(
+        competition,
+        stage,
+        3,
+        0,
+        today_three + timedelta(days=7),
+        (_winner(quarters[0]), _winner(quarters[1])),
+    )
+    semi_two = _cup_fixture(competition, stage, 3, 1, today_three + timedelta(days=7, hours=2))
+    final = _cup_fixture(competition, stage, 4, 0, today_three + timedelta(days=14))
+    _staff_fixtures(competition, [semi_one], officials, actor)
+    for fixture in (semi_two, final):
+        _staff_fixtures(competition, [fixture], officials, actor)
+
+    return {
+        "fixtures": [*round_one, *quarters, semi_one, semi_two, final],
+        "played": played,
+        "live": str(live_cup.id),
+        "penalties": str(penalties.id),
+        "stage": str(stage.id) if stage is not None else None,
+    }

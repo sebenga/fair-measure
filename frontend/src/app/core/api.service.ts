@@ -517,6 +517,31 @@ export class ApiService {
     );
   }
 
+  /** Kick off, end a half, start the next half, or end the game; the server checks the order. */
+  fixturePhase(competitionId: string, fixtureId: string, action: string) {
+    return this.http.post<FixtureDetail>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/phase`,
+      { action },
+    );
+  }
+
+  shootoutKick(
+    competitionId: string,
+    fixtureId: string,
+    body: { side: string; player: string; scored: boolean },
+  ) {
+    return this.http.post<FixtureDetail>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/shootout`,
+      body,
+    );
+  }
+
+  undoShootoutKick(competitionId: string, fixtureId: string) {
+    return this.http.delete<FixtureDetail>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/shootout`,
+    );
+  }
+
   // --- Score events ---------------------------------------------------------
 
   getScrabbleBoard(competitionId: string, fixtureId: string): Observable<ScrabbleBoard> {

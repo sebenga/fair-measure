@@ -31,6 +31,7 @@ import { forkJoin, of } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { ReleasesService } from '../../core/releases.service';
+import { DemoGuideService } from '../../core/demo-guide.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail, TeamPick } from '../../core/models';
 import { isPointsTable, showsFantasy } from '../../core/models';
@@ -145,7 +146,11 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
       } @else if (competition(); as comp) {
         @if (demoExpiryLabel(); as expiry) {
           <div class="pick-banner">
-            <p>This is a one-hour demo. It deletes at {{ expiry }}.</p>
+            <p>This is a one-hour demo with 16 teams, a league and a full cup. It deletes at {{ expiry }}.</p>
+            <ion-button size="small" (click)="startTour(comp)">
+              <ion-icon slot="start" name="school-outline" aria-hidden="true" />
+              Guided tour
+            </ion-button>
           </div>
         }
         @if (!auth.isAuthenticated()) {
@@ -494,6 +499,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   readonly auth = inject(AuthService);
   readonly releases = inject(ReleasesService);
+  private readonly guide = inject(DemoGuideService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly alerts = inject(AlertController);
@@ -569,6 +575,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
     }).subscribe({
       next: ({ competition, picks }) => {
         this.competition.set(competition);
+        this.guide.offerFor(competition);
         this.myPicks.set(picks);
         if (isPointsTable(competition) && this.tab() === 'fixtures') {
           this.selectTab('standings');
@@ -637,6 +644,11 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   howItScores(): string {
     const value = this.competition()?.settings_json?.['description'];
     return typeof value === 'string' ? value : '';
+  }
+
+  startTour(competition: CompetitionDetail): void {
+    const ctx = this.guide.contextFor(competition);
+    if (ctx) this.guide.start(ctx);
   }
 
   demoExpiryLabel(): string {

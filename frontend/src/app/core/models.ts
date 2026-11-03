@@ -504,6 +504,8 @@ export interface Fixture {
   overtime_minutes: number | null;
   location: string;
   status: FixtureStatus;
+  /** Where a timed game is; empty before kick-off and for games without the match clock. */
+  phase?: MatchPhase;
   sides: FixtureSide[];
   highlights?: FixtureHighlight[];
   ratings?: MatchRating[];
@@ -530,7 +532,45 @@ export interface MatchRating {
   rating: string;
 }
 
+export type MatchPhase =
+  | ''
+  | 'first_half'
+  | 'half_time'
+  | 'second_half'
+  | 'extra_time'
+  | 'extra_first'
+  | 'extra_half_time'
+  | 'extra_second'
+  | 'penalties'
+  | 'full_time';
+
+export interface ShootoutKick {
+  side: string;
+  player: string;
+  name: string;
+  scored: boolean;
+}
+
+export interface ShootoutKicker {
+  player_id: string;
+  name: string;
+  number: number | null;
+  kicks: number;
+}
+
+export interface ShootoutState {
+  kicks: ShootoutKick[];
+  score: Record<string, number>;
+  taken: Record<string, number>;
+  next_side: string | null;
+  winner: string | null;
+  /** Players who finished the game on the pitch, per side. */
+  eligible: Record<string, ShootoutKicker[]>;
+}
+
 export interface FixtureDetail extends Fixture {
+  knockout?: boolean;
+  shootout?: ShootoutState | null;
   notes: string;
   events: ScoreEvent[];
   ratings: MatchRating[];
