@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -17,6 +18,7 @@ const TYPE_EVERY_MS = 16;
 @Component({
   selector: 'fm-demo-guide',
   standalone: true,
+  imports: [NgTemplateOutlet],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './demo-guide.component.scss',
   template: `
@@ -30,6 +32,17 @@ const TYPE_EVERY_MS = 16;
             · {{ progress.done }} of {{ progress.total }}
           }
         </span>
+        @if (guide.voice.supported) {
+          <button
+            type="button"
+            class="voice"
+            [attr.aria-label]="guide.voice.on() ? 'Turn the voice off' : 'Turn the voice on'"
+            [attr.aria-pressed]="guide.voice.on()"
+            (click)="guide.voice.toggle()"
+          >
+            <ng-container *ngTemplateOutlet="speaker" />
+          </button>
+        }
         <button type="button" (click)="guide.halt()">Stop</button>
       </div>
     }
@@ -56,7 +69,7 @@ const TYPE_EVERY_MS = 16;
           type="button"
           class="coach"
           [attr.data-pose]="step.pose"
-          [class.talking]="typing()"
+          [class.talking]="typing() || guide.voice.speaking()"
           [attr.aria-label]="guide.minimized() ? 'Open the guided tour' : 'Coach Kaya'"
           (click)="guide.minimized() ? guide.toggleMinimized() : finishTyping()"
         >
@@ -81,6 +94,18 @@ const TYPE_EVERY_MS = 16;
             <header>
               <span class="count">{{ guide.index() + 1 }} / {{ guide.steps().length }}</span>
               <span class="who">Coach Kaya · platform tour</span>
+              @if (guide.voice.supported) {
+                <button
+                  type="button"
+                  class="icon voice"
+                  [class.off]="!guide.voice.on()"
+                  [attr.aria-label]="guide.voice.on() ? 'Turn the voice off' : 'Turn the voice on'"
+                  [attr.aria-pressed]="guide.voice.on()"
+                  (click)="toggleVoice(step.body)"
+                >
+                  <ng-container *ngTemplateOutlet="speaker" />
+                </button>
+              }
               <button type="button" class="icon" aria-label="Minimise the tour" (click)="guide.toggleMinimized()">–</button>
               <button type="button" class="icon" aria-label="Close the tour" (click)="guide.close()">×</button>
             </header>
@@ -113,6 +138,17 @@ const TYPE_EVERY_MS = 16;
         }
       </aside>
     }
+
+    <ng-template #speaker>
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+        <path d="M4 9v6h4l5 4V5L8 9H4Z" fill="currentColor" />
+        @if (guide.voice.on()) {
+          <path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        } @else {
+          <path d="m16 9 5 6m0-6-5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        }
+      </svg>
+    </ng-template>
   `,
 })
 export class DemoGuideComponent {
@@ -138,6 +174,12 @@ export class DemoGuideComponent {
   @HostListener('window:resize')
   onResize(): void {
     this.viewportWidth.set(window.innerWidth);
+  }
+
+  /** Turning the voice on reads the current step aloud straight away. */
+  toggleVoice(body: string): void {
+    this.guide.voice.toggle();
+    if (this.guide.voice.on() && !this.guide.driving()) void this.guide.voice.say(body);
   }
 
   finishTyping(): void {

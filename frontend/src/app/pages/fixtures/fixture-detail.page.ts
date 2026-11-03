@@ -894,9 +894,21 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     return player.kicks <= fewest;
   }
 
-  recordKick(sideId: string, scored: boolean): void {
+  async recordKick(sideId: string, scored: boolean): Promise<void> {
     const player = this.kicker();
     if (!player || this.phaseBusy()) return;
+    const kicker = this.fixture()?.shootout?.eligible[sideId]?.find((row) => row.player_id === player);
+    const alert = await this.alerts.create({
+      header: scored ? 'Penalty scored' : 'Penalty missed',
+      message: `Record a ${scored ? 'scored' : 'missed'} penalty for ${kicker?.name ?? 'this player'} (${this.sideName(sideId)})?`,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Record', role: 'confirm' },
+      ],
+    });
+    await alert.present();
+    const { role } = await alert.onDidDismiss();
+    if (role !== 'confirm' || this.phaseBusy() || this.kicker() !== player) return;
     this.phaseBusy.set(true);
     this.api.shootoutKick(this.competitionId, this.fixtureId, { side: sideId, player, scored }).subscribe({
       next: async (fixture) => {
@@ -1576,7 +1588,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
         ...options.map((option) => ({
           text: option.label,
           handler: () => {
-            void this.record(side, option.category as ScoringCategory, pick.playerId);
+            void this.confirmRecord(side, option.category as ScoringCategory, pick.playerId, pick.name);
           },
         })),
         ...(pick.canSubstitute
@@ -1604,9 +1616,11 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     if (this.saving() || this.kickoffBlocked()) return;
     const minute = this.clockMinute(category);
     const when = minute !== null ? ` at ${minute}'` : '';
+    const team = side.participant.short_name || side.participant.name;
+    const forWho = who && who !== team ? `${who} (${team})` : team;
     const alert = await this.alerts.create({
       header: category.name,
-      message: `Record ${category.name.toLowerCase()} for ${who}${when}?`,
+      message: `Record ${category.name.toLowerCase()} for ${forWho}${when}?`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         { text: 'Record', role: 'confirm' },

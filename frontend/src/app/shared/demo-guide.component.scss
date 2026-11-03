@@ -291,6 +291,17 @@
     }
   }
 
+  .icon.voice {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--kit);
+
+    &.off {
+      color: var(--ion-color-medium);
+    }
+  }
+
   h3 {
     margin: 8px 0 4px;
     font-size: 1.02rem;
@@ -538,6 +549,13 @@ footer .show-me {
     border-radius: 50%;
     background: #ef4444;
     animation: blink-rec 1.2s ease-in-out infinite;
+  }
+
+  .voice {
+    display: inline-flex;
+    padding: 5px 8px;
+    background: rgb(255 255 255 / 18%);
+    color: #fff;
   }
 
   button {

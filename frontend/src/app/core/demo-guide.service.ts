@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 
+import { DemoVoiceService } from './demo-voice.service';
 import type { CompetitionDetail } from './models';
 import { FeatureKey, ReleasesService } from './releases.service';
 
@@ -64,7 +65,7 @@ const fixture = (id: string | null, ctx: GuideContext, tab: string) => ({
   query: { tab },
 });
 
-const SHIRT = 'fm-match-day .pitch button.shirt.tappable';
+const SHIRT = 'fm-match-day .pitch button.shirt.tappable:not(.off)';
 const SHEET_BUTTON = 'ion-action-sheet button.action-sheet-button';
 const ALERT_BUTTON = 'ion-alert button.alert-button';
 const KICKER = '.shootout button.kicker:not([disabled])';
@@ -180,16 +181,18 @@ const STEPS: GuideStep[] = [
     key: 'lineups',
     title: 'Recording a goal, a card and a sub',
     body:
-      'Each team submits a team sheet before kick-off. During the game you record everything from the line-up: tap a player, choose what happened, and the clock stamps the minute.',
+      'Each team submits a team sheet before kick-off. During the game you record everything from the line-up: tap a player, choose what happened, then confirm. The clock stamps the minute.',
     pose: 'think',
     route: (ctx) => fixture(ctx.liveFixture, ctx, 'lineups'),
     target: 'fm-match-day',
     needs: 'liveFixture',
     actions: [
       { say: 'Tap the player who scored.', target: SHIRT, nth: 0 },
-      { say: 'Choose Goal. The score and the feed update straight away.', target: SHEET_BUTTON, text: 'Goal' },
+      { say: 'Choose Goal.', target: SHEET_BUTTON, text: 'Goal' },
+      { say: 'Check the player and minute, then tap Record. The score and the feed update straight away.', target: ALERT_BUTTON, text: 'Record' },
       { say: 'For a booking, tap the player…', target: SHIRT, nth: 3 },
       { say: '…and choose Yellow card.', target: SHEET_BUTTON, text: 'Yellow card' },
+      { say: 'Confirm the booking with Record.', target: ALERT_BUTTON, text: 'Record' },
       { say: 'For a substitution, tap the player coming on from the bench.', target: 'fm-match-day button.bench-shirt.tappable' },
       { say: 'Pick who comes off.', target: 'ion-alert button.alert-radio-button', nth: 0 },
       { say: 'Confirm with Substitute.', target: ALERT_BUTTON, text: 'Substitute' },
@@ -230,18 +233,21 @@ const STEPS: GuideStep[] = [
     key: 'penalties',
     title: 'Scoring a penalty shootout',
     body:
-      'This tie is on penalties. Pick the kicker from the players still on the pitch, then tap Scored or Missed. Teams alternate, five each then sudden death, and the winner goes through automatically.',
+      'This tie is on penalties. Pick the kicker from the players still on the pitch, tap Scored or Missed, then confirm. Teams alternate, five each then sudden death, and the winner goes through automatically.',
     pose: 'cheer',
     route: (ctx) => fixture(ctx.penaltyFixture, ctx, 'live'),
     target: '.shootout',
     needs: 'penaltyFixture',
     actions: [
       { say: 'Pick the next kicker from the line-up.', target: KICKER, optional: true },
-      { say: 'Scored!', target: '.shootout button.scored', optional: true },
+      { say: 'Tap Scored…', target: '.shootout button.scored', optional: true },
+      { say: '…and confirm with Record.', target: ALERT_BUTTON, text: 'Record', optional: true },
       { say: 'Now the other team. Pick their kicker…', target: KICKER, optional: true },
       { say: '…saved! Tap Missed.', target: '.shootout button.missed', optional: true },
+      { say: 'Confirm the miss.', target: ALERT_BUTTON, text: 'Record', optional: true },
       { say: 'One more kick can settle it.', target: KICKER, optional: true },
-      { say: 'Scored. The shootout is decided.', target: '.shootout button.scored', optional: true },
+      { say: 'Scored…', target: '.shootout button.scored', optional: true },
+      { say: '…confirm, and the shootout is decided.', target: ALERT_BUTTON, text: 'Record', optional: true },
       { say: 'The winner goes through.', target: '.shootout .verdict', point: true, optional: true },
     ],
   },
@@ -310,6 +316,7 @@ interface SavedState {
 export class DemoGuideService {
   private readonly router = inject(Router);
   private readonly releases = inject(ReleasesService);
+  readonly voice = inject(DemoVoiceService);
 
   readonly context = signal<GuideContext | null>(null);
   readonly index = signal(0);
@@ -361,7 +368,12 @@ export class DemoGuideService {
   /** Opens the tour the first time someone lands on a demo competition. */
   offerFor(competition: CompetitionDetail): void {
     const ctx = this.contextFor(competition);
-    if (!ctx || this.open()) return;
+    if (!ctx) return;
+    if (this.open()) {
+      if (this.context()?.competitionId === ctx.competitionId) return;
+      // A tour left open for another (possibly deleted) demo points at the wrong games.
+      this.close();
+    }
     if (localStorage.getItem(SEEN_KEY + ctx.competitionId)) return;
     localStorage.setItem(SEEN_KEY + ctx.competitionId, '1');
     this.start(ctx, false);
@@ -374,7 +386,10 @@ export class DemoGuideService {
     this.minimized.set(false);
     this.save();
     if (navigate) this.show();
-    else this.spotlight();
+    else {
+      this.spotlight();
+      void this.voice.say(this.step()?.body ?? '');
+    }
   }
 
   next(): void {
@@ -414,6 +429,7 @@ export class DemoGuideService {
   /** Stops the coach mid-demonstration; whatever was clicked stays done. */
   halt(): void {
     this.run++;
+    this.voice.hush();
     this.driving.set(false);
     this.cursor.set(null);
     this.progress.set(null);
@@ -451,7 +467,10 @@ export class DemoGuideService {
           pressing: false,
           say: action.say,
         });
-        await pause(Math.min(2600, 900 + action.say.length * 22));
+        await Promise.all([
+          pause(this.voice.on() ? 750 : Math.min(2600, 900 + action.say.length * 22)),
+          this.voice.say(action.say),
+        ]);
         if (!live()) return;
         if (action.type !== undefined) {
           await this.typeInto(element, action.type, live);
@@ -523,9 +542,10 @@ export class DemoGuideService {
     const run = this.run;
     void this.router.navigate(path, { queryParams: query ?? {} }).then(async () => {
       this.spotlight();
+      const told = this.voice.say(step.body);
       if (!step.actions?.length) return;
-      // Give the speech bubble a moment before the hand starts moving.
-      await pause(2200);
+      // Let the coach finish explaining before the hand starts moving.
+      await Promise.all([pause(2200), told]);
       if (run === this.run && this.step() === step) void this.demonstrate();
     });
   }
