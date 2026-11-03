@@ -3,7 +3,7 @@ import { inject } from '@angular/core';
 import { ToastController } from '@ionic/angular/standalone';
 import { TimeoutError, timeout, retry, timer, catchError, throwError } from 'rxjs';
 
-import { environment } from '../../environments/environment';
+import { isApiUrl } from './api-url';
 import { extractErrorMessage } from './error-message';
 
 const TIMEOUT_MS = 15_000;
@@ -22,7 +22,7 @@ const AUTH = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/google'];
 
 export const reliabilityInterceptor: HttpInterceptorFn = (request, next) => {
   const toasts = inject(ToastController);
-  const isApi = request.url.startsWith(environment.apiBaseUrl);
+  const isApi = isApiUrl(request.url);
   const quiet = QUIET.some((path) => request.url.includes(path));
   const authCall = AUTH.some((path) => request.url.includes(path));
   const isRead = request.method === 'GET' || request.method === 'HEAD';

@@ -1,4 +1,7 @@
-"""Squad shape, budget and club limits — the same constraints as official FPL."""
+"""Squad shape, budget and club limits — the same constraints as official FPL.
+
+Money is in millions of rands: the budget is R100m.
+"""
 
 from __future__ import annotations
 
@@ -42,15 +45,15 @@ VALID_FORMATIONS = {
     (5, 4, 1),
 }
 
-BASE_PRICES: dict[str, Decimal] = {
-    FantasySlot.GKP: Decimal("4.5"),
-    FantasySlot.DEF: Decimal("4.5"),
-    FantasySlot.MID: Decimal("5.0"),
-    FantasySlot.FWD: Decimal("6.5"),
-}
-
 RULES_PUBLIC = {
+    "currency": "ZAR",
     "budget": str(BUDGET),
+    "value": {
+        "start": "0",
+        "per_point": "0.1",
+        "rating_par": "6.0",
+        "per_rating_point": "0.1",
+    },
     "squad_size": SQUAD_SIZE,
     "starters": STARTERS,
     "max_per_club": MAX_PER_CLUB,
@@ -120,7 +123,9 @@ def validate_picks(picks: list[dict], *, complete: bool, club_count: int = 0) ->
 
     spent = sum((pick["price"] for pick in picks), Decimal("0"))
     if spent > BUDGET:
-        raise ValidationError({"picks": f"That squad costs {spent} and the budget is {BUDGET}."})
+        raise ValidationError(
+            {"picks": f"That squad costs R{spent}m and the budget is R{BUDGET}m."}
+        )
 
     starters = [pick for pick in picks if pick["is_starter"]]
     captains = [pick for pick in picks if pick["is_captain"]]

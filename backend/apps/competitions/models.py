@@ -395,6 +395,11 @@ class TeamPick(BaseModel):
 class RosterMember(BaseModel):
     """An individual within a participant, so events can name a scorer."""
 
+    class Availability(models.TextChoices):
+        AVAILABLE = "available", _("Available")
+        INJURED = "injured", _("Injured")
+        SUSPENDED = "suspended", _("Suspended")
+
     participant = models.ForeignKey(Participant, on_delete=models.CASCADE, related_name="roster")
     name = models.CharField(max_length=160)
     number = models.PositiveIntegerField(null=True, blank=True, validators=[MinValueValidator(0)])
@@ -414,9 +419,23 @@ class RosterMember(BaseModel):
         related_name="roster_entries",
     )
     is_active = models.BooleanField(default=True)
+    availability = models.CharField(
+        max_length=12,
+        choices=Availability.choices,
+        default=Availability.AVAILABLE,
+        help_text=_("Injured and suspended players cannot be named on a team sheet."),
+    )
+    availability_note = models.CharField(max_length=200, blank=True)
+    available_from = models.DateField(
+        null=True, blank=True, help_text=_("When an injured or suspended player is expected back.")
+    )
 
     class Meta:
         ordering = ["number", "name"]
+
+    @property
+    def is_available(self) -> bool:
+        return self.availability == self.Availability.AVAILABLE
 
     def __str__(self) -> str:
         return self.name

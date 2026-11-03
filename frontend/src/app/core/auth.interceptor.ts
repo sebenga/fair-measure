@@ -8,7 +8,7 @@ import { inject } from '@angular/core';
 import { BehaviorSubject, Observable, throwError } from 'rxjs';
 import { catchError, filter, switchMap, take } from 'rxjs/operators';
 
-import { environment } from '../../environments/environment';
+import { isApiUrl } from './api-url';
 import { AuthService } from './auth.service';
 
 // Shared across concurrent requests so a burst of 401s triggers one refresh
@@ -25,7 +25,7 @@ export function authInterceptor(
 ): Observable<HttpEvent<unknown>> {
   const auth = inject(AuthService);
 
-  const isOurApi = request.url.startsWith(environment.apiBaseUrl);
+  const isOurApi = isApiUrl(request.url);
   const isPublic = PUBLIC_PATHS.some((path) => request.url.includes(path));
 
   const token = auth.getAccessToken();

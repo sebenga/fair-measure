@@ -26,7 +26,16 @@ import { forkJoin } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
-import type { CompetitionDetail, Membership, Participant, ProfileSummary, TeamPick } from '../../core/models';
+import type {
+  Availability,
+  CompetitionDetail,
+  Membership,
+  Participant,
+  ProfileSummary,
+  RosterMember,
+  TeamPick,
+} from '../../core/models';
+import { AVAILABILITY_LABELS, availabilityText, isUnavailable } from '../../core/player-status';
 import { squadSizeOf } from '../../core/models';
 
 @Component({
@@ -153,7 +162,23 @@ import { squadSizeOf } from '../../core/models';
                       }
                       {{ member.user ? 'Open bio and league stats' : 'Member' }}
                     </p>
+                    @if (statusOf(member); as status) {
+                      <p class="availability" [class.sus]="member.availability === 'suspended'">{{ status }}</p>
+                    }
                   </ion-label>
+                  @if (canManage()) {
+                    <ion-button
+                      slot="end"
+                      size="small"
+                      fill="outline"
+                      [color]="isOut(member) ? 'danger' : 'medium'"
+                      [disabled]="busy()"
+                      [attr.aria-label]="'Availability for ' + member.name"
+                      (click)="$event.stopPropagation(); $event.preventDefault(); setAvailability(member)"
+                    >
+                      {{ availabilityLabel(member) }}
+                    </ion-button>
+                  }
                   @if (canManage() && (playingNumbers().length || usesHandicap())) {
                     <span class="playing" slot="end" (click)="$event.stopPropagation(); $event.preventDefault()">
                       @if (playingNumbers().length) {
@@ -387,6 +412,81 @@ export class TeamProfilePage implements OnInit {
           await this.toast(extractErrorMessage(err, 'Could not save that change.'), 'danger');
         },
       });
+  }
+
+  readonly statusOf = availabilityText;
+  readonly isOut = isUnavailable;
+
+  availabilityLabel(member: RosterMember): string {
+    return AVAILABILITY_LABELS[member.availability ?? 'available'];
+  }
+
+  /** Mark a player available, injured or suspended; injured and suspended players miss team sheets. */
+  async setAvailability(member: RosterMember): Promise<void> {
+    const current = member.availability ?? 'available';
+    const choose = await this.alerts.create({
+      header: member.name,
+      subHeader: 'Injured and suspended players cannot be named on a team sheet.',
+      inputs: (Object.keys(AVAILABILITY_LABELS) as Availability[]).map((key) => ({
+        type: 'radio' as const,
+        label: AVAILABILITY_LABELS[key],
+        value: key,
+        checked: key === current,
+      })),
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Next', role: 'confirm' },
+      ],
+    });
+    await choose.present();
+    const picked = await choose.onDidDismiss<{ values: Availability }>();
+    if (picked.role !== 'confirm' || !picked.data?.values) return;
+    const availability = picked.data.values;
+    const body: Record<string, unknown> = { availability };
+
+    if (availability !== 'available') {
+      const details = await this.alerts.create({
+        header: AVAILABILITY_LABELS[availability],
+        subHeader: member.name,
+        inputs: [
+          {
+            name: 'note',
+            type: 'text',
+            placeholder: availability === 'injured' ? 'Injury, e.g. hamstring' : 'Reason, e.g. red card',
+            value: member.availability === availability ? member.availability_note ?? '' : '',
+            attributes: { maxlength: 200 },
+          },
+          {
+            name: 'back',
+            type: 'date',
+            label: 'Expected back',
+            value: member.availability === availability ? member.available_from ?? '' : '',
+          },
+        ],
+        buttons: [
+          { text: 'Cancel', role: 'cancel' },
+          { text: 'Save', role: 'confirm' },
+        ],
+      });
+      await details.present();
+      const filled = await details.onDidDismiss<{ values: { note?: string; back?: string } }>();
+      if (filled.role !== 'confirm') return;
+      body['availability_note'] = (filled.data?.values?.note ?? '').trim();
+      body['available_from'] = filled.data?.values?.back || null;
+    }
+
+    this.busy.set(true);
+    this.api.updateRosterMember(this.competitionId, this.participantId, member.id, body).subscribe({
+      next: async () => {
+        this.busy.set(false);
+        this.refreshTeam();
+        await this.toast(`${member.name} is now ${AVAILABILITY_LABELS[availability].toLowerCase()}.`, 'success');
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not update availability.'), 'danger');
+      },
+    });
   }
 
   readonly canManage = computed(() => {

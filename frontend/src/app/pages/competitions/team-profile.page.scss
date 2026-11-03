@@ -93,3 +93,12 @@
     margin: 0;
   }
 }
+
+.availability {
+  color: var(--ion-color-danger) !important;
+  font-weight: 600;
+
+  &.sus {
+    color: #b45309 !important;
+  }
+}

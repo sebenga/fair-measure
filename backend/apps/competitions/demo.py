@@ -246,6 +246,7 @@ def generate_demo_league(competition: Competition, actor) -> dict:
         stats = _record_player_stats(competition, fixtures, actor)
         _ensure_player_profiles(competition)
         squad_picks = _pick_league_squad(competition, actor)
+        _mark_unavailable(competition)
         fantasy_teams = _fill_fantasy(competition, actor)
         refresh_standings(competition)
         expires = timezone.now() + DEMO_TTL
@@ -989,6 +990,35 @@ def _pick_league_squad(competition: Competition, actor) -> int:
     squad.notified_users = [str(user_id) for user_id in squad.picks.values_list("user_id", flat=True)]
     squad.save(update_fields=["status", "published_at", "notified_users", "updated_at"])
     return squad.picks.count()
+
+
+def _mark_unavailable(competition: Competition) -> None:
+    """One injured and one suspended substitute, taken off every upcoming team sheet."""
+
+    upcoming = LineupEntry.objects.filter(
+        lineup__fixture__competition=competition, lineup__fixture__status=Fixture.Status.SCHEDULED
+    )
+    busy = LineupEntry.objects.filter(
+        Q(lineup__fixture__status=Fixture.Status.LIVE)
+        | Q(lineup__fixture__status=Fixture.Status.SCHEDULED, role=LineupEntry.Role.STARTER),
+        lineup__fixture__competition=competition,
+    ).values_list("player_id", flat=True)
+    spare = list(
+        RosterMember.objects.filter(participant__competition=competition, is_active=True)
+        .exclude(pk__in=busy)
+        .order_by("participant__name", "number", "name")[:2]
+    )
+    upcoming.filter(player__in=spare).delete()
+    today = timezone.localdate()
+    marks = [
+        (RosterMember.Availability.INJURED, "Hamstring strain", today + timedelta(days=10)),
+        (RosterMember.Availability.SUSPENDED, "Red card — one-match ban", today + timedelta(days=7)),
+    ]
+    for member, (status, note, back) in zip(spare, marks):
+        member.availability = status
+        member.availability_note = note
+        member.available_from = back
+        member.save(update_fields=["availability", "availability_note", "available_from", "updated_at"])
 
 
 def _fill_fantasy(competition: Competition, actor) -> int:

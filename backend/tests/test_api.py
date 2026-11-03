@@ -2133,6 +2133,13 @@ def test_a_sample_league_can_be_generated_updated_and_removed(api):
     demo_teams = [row for row in detail.data["participants"] if (row.get("metadata") or {}).get("demo")]
     assert len(demo_teams) == 16
     assert all(row["roster"] for row in demo_teams)
+    statuses = sorted(
+        member["availability"]
+        for row in demo_teams
+        for member in row["roster"]
+        if member["availability"] != "available"
+    )
+    assert statuses == ["injured", "suspended"]
     assert all(any(member.get("user") for member in row["roster"]) for row in demo_teams)
     assert detail.data["settings_json"]["demo_league"]["active"] is True
     assert detail.data["settings_json"]["demo_league"]["expires_at"]

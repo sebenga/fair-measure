@@ -61,7 +61,7 @@ def market(competition, *, query: str = "", slot: str = "", club: str = "") -> l
             continue
         if needle and needle not in member.name.lower() and needle not in member.participant.name.lower():
             continue
-        price = stats.get("price") or Decimal("4.5")
+        price = stats.get("price", Decimal("0"))
         rows.append(_player_payload(member, member_slot, member_slots, stats, price))
     rows.sort(key=lambda row: (-Decimal(row["points"]), Decimal(row["price"]), row["name"].lower()))
     return rows
@@ -82,8 +82,13 @@ def _player_payload(
         "team_short": member.participant.short_name or member.participant.name[:3].upper(),
         "user_id": str(member.user_id) if member.user_id else None,
         "price": money(price),
+        "value": money(stats.get("price", Decimal("0"))),
+        "value_change": money(stats.get("price_change", Decimal("0"))),
         "points": points_text(stats.get("points") or Decimal("0")),
         "event_points": points_text(stats.get("event_points") or Decimal("0")),
+        "availability": member.availability,
+        "availability_note": member.availability_note,
+        "available_from": member.available_from.isoformat() if member.available_from else None,
     }
 
 
@@ -110,7 +115,7 @@ def parse_picks(competition, raw_picks) -> list[dict]:
             raise ValidationError(
                 {"picks": f"{member.name} has not played as a {slot} in this competition."}
             )
-        price = stats.get("price") or Decimal("4.5")
+        price = stats.get("price", Decimal("0"))
         parsed.append(
             {
                 "player": member,
@@ -141,6 +146,15 @@ def is_complete(picks: list[dict]) -> bool:
 @transaction.atomic
 def save_team(competition, user, *, name: str, raw_picks) -> FantasyTeam:
     picks = parse_picks(competition, raw_picks)
+    # Players already in the squad keep the value they were bought at.
+    bought = dict(
+        FantasyPick.objects.filter(team__competition=competition, team__user=user).values_list(
+            "player_id", "price"
+        )
+    )
+    for pick in picks:
+        if pick["player"].id in bought:
+            pick["price"] = bought[pick["player"].id]
     complete = is_complete(picks)
     validate_picks(
         picks,
@@ -182,6 +196,7 @@ def team_payload(team: FantasyTeam, totals: dict | None = None) -> dict:
     picks = list(team.picks.select_related("player__participant"))
     rows = []
     spent = Decimal("0")
+    worth = Decimal("0")
     points = Decimal("0")
     event_points = Decimal("0")
     captain_id = None
@@ -194,6 +209,7 @@ def team_payload(team: FantasyTeam, totals: dict | None = None) -> dict:
         if (stats.get("minutes") or 0) > 0:
             played.add(pick.player_id)
         spent += pick.price
+        worth += stats.get("price", Decimal("0"))
         if pick.is_captain:
             captain_id = pick.player_id
         if pick.is_vice:
@@ -250,6 +266,7 @@ def team_payload(team: FantasyTeam, totals: dict | None = None) -> dict:
         "complete": is_complete(parsed),
         "budget_used": money(spent),
         "budget_remaining": money(BUDGET - spent),
+        "squad_value": money(worth),
         "points": points_text(points),
         "event_points": points_text(event_points),
         "formation": "-".join(str(n) for n in shape) if shape else "",
@@ -283,7 +300,7 @@ def standings(competition) -> list[dict]:
 
 
 def auto_pick(competition) -> list[dict]:
-    """Cheapest legal complete squad, preferring players who have scored."""
+    """Cheapest legal complete squad, preferring fit players who have scored."""
 
     available = market(competition)
     if len(available) < SQUAD_SIZE:
@@ -310,7 +327,12 @@ def auto_pick(competition) -> list[dict]:
                 continue
             options = sorted(
                 by_slot.get(slot, []),
-                key=lambda row: (Decimal(row["price"]), -Decimal(row["points"]), row["name"].lower()),
+                key=lambda row: (
+                    row["availability"] != RosterMember.Availability.AVAILABLE,
+                    Decimal(row["price"]),
+                    -Decimal(row["points"]),
+                    row["name"].lower(),
+                ),
             )
             pick = next(
                 (
@@ -343,12 +365,22 @@ def auto_pick(competition) -> list[dict]:
     starters: list[str] = []
     for slot, count in starter_quota.items():
         slot_picks = [player for player in chosen if player["slot"] == slot]
-        slot_picks.sort(key=lambda row: (-Decimal(row["points"]), Decimal(row["price"])))
+        slot_picks.sort(
+            key=lambda row: (
+                row["availability"] != RosterMember.Availability.AVAILABLE,
+                -Decimal(row["points"]),
+                Decimal(row["price"]),
+            )
+        )
         starters.extend(player["id"] for player in slot_picks[:count])
 
-    captain = max(chosen, key=lambda row: Decimal(row["points"]))
+    def leader_key(row: dict) -> tuple:
+        fit = row["id"] in starters and row["availability"] == RosterMember.Availability.AVAILABLE
+        return (fit, Decimal(row["points"]))
+
+    captain = max(chosen, key=leader_key)
     vice_options = [player for player in chosen if player["id"] != captain["id"]]
-    vice = max(vice_options, key=lambda row: Decimal(row["points"])) if vice_options else captain
+    vice = max(vice_options, key=leader_key) if vice_options else captain
 
     bench_cursor = {FantasySlot.GKP: 0, FantasySlot.DEF: 0, FantasySlot.MID: 0, FantasySlot.FWD: 0}
     picks = []

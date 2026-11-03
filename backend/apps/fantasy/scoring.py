@@ -1,8 +1,11 @@
-"""Fantasy points and market prices, derived from recorded match events.
+"""Fantasy points and player values, derived from recorded match events.
 
 Points follow official FPL (appearance, goals by position, assists, cards,
 saves, clean sheets). The event codes come from whatever the competition
 already records — nothing here invents a new score type.
+
+Values are in millions of rands. Every player starts the season at R0 and
+their value moves after each counted match with how they scored and were rated.
 """
 
 from __future__ import annotations
@@ -16,7 +19,6 @@ from apps.fixtures.models import Fixture, PlayerAppearance, PlayerMatchRating, S
 from apps.fixtures.played import lineup_position_by_match, lineup_positions
 
 from .models import FantasySlot
-from .rules import BASE_PRICES
 
 GOAL_CODES = {"goal", "try"}
 ASSIST_CODES = {"assist"}
@@ -29,6 +31,11 @@ PENALTY_SAVE_CODES = {"penalty-save", "pen-save"}
 COUNTED = {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT}
 TWO = Decimal("2")
 TENTH = Decimal("0.1")
+
+# R100,000 per fantasy point, and per rating point above (or below) a par 6.0.
+VALUE_PER_POINT = Decimal("0.1")
+RATING_PAR = Decimal("6.0")
+VALUE_PER_RATING_POINT = Decimal("0.1")
 
 
 def classify_slot(position: str) -> str:
@@ -243,8 +250,10 @@ def _match_rows(competition, members: list[RosterMember]) -> tuple[dict, list[Fi
         events_by_player[(event.fixture_id, event.player_id)].append(event)
         appeared.add((event.fixture_id, event.player_id))
 
+    ratings: dict[tuple[object, object], Decimal] = {}
     for rating in PlayerMatchRating.objects.filter(fixture_id__in=fixture_ids, player_id__in=by_id):
         appeared.add((rating.fixture_id, rating.player_id))
+        ratings[(rating.fixture_id, rating.player_id)] = Decimal(rating.rating)
 
     appearances: dict[tuple[object, object], PlayerAppearance] = {}
     for row in PlayerAppearance.objects.filter(fixture_id__in=fixture_ids, player_id__in=by_id):
@@ -263,6 +272,7 @@ def _match_rows(competition, members: list[RosterMember]) -> tuple[dict, list[Fi
                     "fixture": fixture,
                     "side": sides_by_fixture[fixture.id].get(member.participant_id),
                     "conceded": conceded.get((fixture.id, member.participant_id), Decimal("0")),
+                    "rating": ratings.get(key),
                     "breakdown": match_breakdown(
                         slot=classify_slot(shirt) if shirt else primary,
                         minutes=_minutes_for(appearances.get(key), fixture, key in appeared),
@@ -276,7 +286,7 @@ def _match_rows(competition, members: list[RosterMember]) -> tuple[dict, list[Fi
 
 
 def season_totals(competition) -> dict[object, dict]:
-    """Per-player season points, last-fixture points, and a suggested price.
+    """Per-player season points, last-fixture points, and current value.
 
     The season total is the sum of the player's match points.
     """
@@ -288,19 +298,21 @@ def season_totals(competition) -> dict[object, dict]:
     if not members:
         return {}
 
-    slots, fixtures, rows = _match_rows(competition, members)
+    slots, _fixtures, rows = _match_rows(competition, members)
     totals: dict[object, dict] = {}
     for member in members:
         primary = slots[member.id][0]
         member_rows = rows.get(member.id, [])
         season = sum((row["breakdown"]["points"] for row in member_rows), Decimal("0"))
+        value, change = value_after(member_rows)
         totals[member.id] = {
             "points": season,
             "event_points": member_rows[-1]["breakdown"]["points"] if member_rows else Decimal("0"),
             "minutes": sum(row["breakdown"]["minutes"] for row in member_rows),
             "slot": primary,
             "slots": slots[member.id],
-            "price": _price_for(primary, season) if fixtures else BASE_PRICES[primary],
+            "price": value,
+            "price_change": change,
         }
     return totals
 
@@ -360,16 +372,32 @@ def player_performance(competition, member: RosterMember) -> dict:
     }
 
 
-def _price_for(slot: str, season_points: Decimal) -> Decimal:
-    """Start from the FPL-style floor, then rise with output."""
+def match_value_change(points: Decimal, rating: Decimal | None) -> Decimal:
+    """How much one match moves a player's value, in millions of rands."""
 
-    bump = (season_points / Decimal("10")).quantize(TENTH, rounding=ROUND_HALF_UP)
-    price = BASE_PRICES[slot] + bump
-    if price < Decimal("4.0"):
-        return Decimal("4.0")
-    if price > Decimal("15.0"):
-        return Decimal("15.0")
-    return price
+    change = points * VALUE_PER_POINT
+    if rating is not None:
+        change += (rating - RATING_PAR) * VALUE_PER_RATING_POINT
+    return change
+
+
+def value_after(member_rows: list[dict]) -> tuple[Decimal, Decimal]:
+    """A player's value after every counted match (from R0), and the last match's move.
+
+    Value never drops below R0. Matches the player did not play leave it alone.
+    """
+
+    value = Decimal("0")
+    change = Decimal("0")
+    for row in member_rows:
+        breakdown = row["breakdown"]
+        if breakdown["minutes"] <= 0:
+            continue
+        moved = match_value_change(breakdown["points"], row.get("rating"))
+        new_value = max(Decimal("0"), value + moved).quantize(TENTH, rounding=ROUND_HALF_UP)
+        change = new_value - value
+        value = new_value
+    return value, change
 
 
 def money(value: Decimal) -> str:

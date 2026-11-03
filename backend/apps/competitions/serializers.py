@@ -300,8 +300,19 @@ class RosterMemberSerializer(serializers.ModelSerializer):
             "user",
             "user_display_name",
             "is_active",
+            "availability",
+            "availability_note",
+            "available_from",
         ]
         read_only_fields = ["user_display_name"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        status = attrs.get("availability", getattr(self.instance, "availability", None))
+        if status == RosterMember.Availability.AVAILABLE:
+            attrs["availability_note"] = ""
+            attrs["available_from"] = None
+        return attrs
 
     def _settings(self) -> dict:
         participant = self.context.get("participant") or getattr(self.instance, "participant", None)

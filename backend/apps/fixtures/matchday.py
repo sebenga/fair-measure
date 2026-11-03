@@ -316,6 +316,9 @@ def _side_payload(
             "name": member.name,
             "number": member.number,
             "position": member.position,
+            "availability": member.availability,
+            "availability_note": member.availability_note,
+            "available_from": member.available_from,
         }
         for member in side.participant.roster.filter(is_active=True).order_by("number", "name")
     ]
@@ -532,6 +535,11 @@ class TeamSheetView(_FixtureView):
                 raise ValidationError({role: "Pick players from this team's squad."})
             if player_id in seen:
                 raise ValidationError({role: f"{squad[player_id].name} is named twice."})
+            if not squad[player_id].is_available:
+                member = squad[player_id]
+                raise ValidationError(
+                    {role: f"{member.name} is {member.get_availability_display().lower()} and cannot be named."}
+                )
             seen.add(player_id)
             number = (row or {}).get("number")
             if number in ("", None):

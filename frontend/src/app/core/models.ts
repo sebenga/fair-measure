@@ -160,7 +160,16 @@ export interface Stage {
 
 export type ParticipantKind = 'individual' | 'team';
 
-export interface RosterMember {
+export type Availability = 'available' | 'injured' | 'suspended';
+
+/** Whether a player can be picked, with why not and when they are due back. */
+export interface AvailabilityInfo {
+  availability?: Availability;
+  availability_note?: string;
+  available_from?: string | null;
+}
+
+export interface RosterMember extends AvailabilityInfo {
   id: string;
   name: string;
   number: number | null;
@@ -367,7 +376,7 @@ export interface TeamSheetSide {
   participant_id: string;
   name: string;
   can_edit: boolean;
-  squad: Array<MatchPlayer & { position: string }>;
+  squad: Array<MatchPlayer & AvailabilityInfo & { position: string }>;
   lineup: {
     formation: string;
     slots: FormationSlot[];
@@ -941,7 +950,7 @@ export interface FantasyRules {
   scoring: Array<{ label: string; points: string }>;
 }
 
-export interface FantasyPlayer {
+export interface FantasyPlayer extends AvailabilityInfo {
   id: string;
   name: string;
   number: number | null;
@@ -952,7 +961,10 @@ export interface FantasyPlayer {
   team_name: string;
   team_short: string;
   user_id: string | null;
+  /** In millions of rands: the current value, or what was paid for a saved pick. */
   price: string;
+  value?: string;
+  value_change?: string;
   points: string;
   event_points: string;
   pick_id?: string;
@@ -969,6 +981,7 @@ export interface FantasyTeam {
   complete: boolean;
   budget_used: string;
   budget_remaining: string;
+  squad_value?: string;
   points: string;
   event_points: string;
   formation: string;

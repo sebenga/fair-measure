@@ -17,6 +17,7 @@ import { AlertController, ToastController } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
+import { availabilityText, isUnavailable } from '../../core/player-status';
 import type {
   FormationSlot,
   LineupPlayer,
@@ -25,6 +26,8 @@ import type {
   SubstitutionRecord,
   TeamSheetSide,
 } from '../../core/models';
+
+type SquadPlayer = TeamSheetSide['squad'][number];
 
 const KITS: Array<[string, string]> = [
   ['#c81e1e', '#fff'],
@@ -340,7 +343,7 @@ interface Draft {
             }
           </p>
           <div class="chips">
-            @for (player of side.squad; track player.player_id) {
+            @for (player of fit(side.squad); track player.player_id) {
               <button
                 type="button"
                 class="pick"
@@ -373,6 +376,17 @@ interface Draft {
             <span class="muted">Everyone in the squad is starting.</span>
           }
         </div>
+
+        @if (unavailable().length) {
+          <p class="hint">Not available</p>
+          <ul class="unavailable">
+            @for (player of unavailable(); track player.player_id) {
+              <li [class.sus]="player.availability === 'suspended'">
+                <b>{{ label(player) }}</b> {{ statusOf(player) }}
+              </li>
+            }
+          </ul>
+        }
 
         <label class="field">
           Captain
@@ -708,6 +722,20 @@ interface Draft {
         display: grid;
         gap: 10px;
       }
+      .unavailable {
+        margin: 0 0 8px;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 4px;
+        font-size: 0.82rem;
+        color: var(--ion-color-danger);
+      }
+
+      .unavailable .sus {
+        color: #b45309;
+      }
+
       .chips {
         display: flex;
         flex-wrap: wrap;
@@ -1149,10 +1177,12 @@ export class MatchDayComponent implements OnInit {
 
   edit(side: TeamSheetSide): void {
     const lineup = side.lineup;
+    const out = new Set(side.squad.filter(isUnavailable).map((player) => player.player_id));
     const formation = lineup?.formation || this.formationKeys()[0] || '';
     const slots: Record<number, string> = {};
     const starters: string[] = [];
     for (const player of lineup?.starters ?? []) {
+      if (out.has(player.player_id)) continue;
       if (player.slot !== null && this.formationKeys().length) slots[player.slot] = player.player_id;
       else starters.push(player.player_id);
     }
@@ -1168,8 +1198,8 @@ export class MatchDayComponent implements OnInit {
       formation,
       slots,
       starters,
-      bench: (lineup?.bench ?? []).map((player) => player.player_id),
-      captain: lineup?.captain_id ?? '',
+      bench: (lineup?.bench ?? []).map((player) => player.player_id).filter((id) => !out.has(id)),
+      captain: lineup?.captain_id && !out.has(lineup.captain_id) ? lineup.captain_id : '',
       numbers,
     });
   }
@@ -1178,10 +1208,25 @@ export class MatchDayComponent implements OnInit {
     this.draft.set(null);
   }
 
-  private squad(): Array<MatchPlayer & { position: string }> {
+  /** Injured and suspended players are left out of every team-sheet choice. */
+  private squad(): SquadPlayer[] {
+    return this.fit(this.wholeSquad());
+  }
+
+  private wholeSquad(): SquadPlayer[] {
     const sideId = this.draft()?.sideId;
     return this.sides().find((side) => side.side_id === sideId)?.squad ?? [];
   }
+
+  fit(players: SquadPlayer[]): SquadPlayer[] {
+    return players.filter((player) => !isUnavailable(player));
+  }
+
+  unavailable(): SquadPlayer[] {
+    return this.wholeSquad().filter(isUnavailable);
+  }
+
+  readonly statusOf = availabilityText;
 
   private startingIds(draft: Draft): string[] {
     return this.draftSlots().length ? Object.values(draft.slots).filter(Boolean) : draft.starters;

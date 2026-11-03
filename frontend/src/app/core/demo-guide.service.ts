@@ -155,7 +155,7 @@ const STEPS: GuideStep[] = [
       { say: 'Start from an empty squad.', target: 'fm-competition-fantasy .actions ion-button', text: 'Reset', optional: true },
       { say: 'Tap an empty shirt to fill that position.', target: 'fm-competition-fantasy .pitch button.empty' },
       { say: 'Pick a player from the market. Price and points are shown.', target: 'fm-competition-fantasy .sheet .market ion-button', text: 'Select' },
-      { say: 'Auto Pick fills the rest of the squad inside the £100m budget.', target: 'fm-competition-fantasy .actions ion-button', text: 'Auto Pick' },
+      { say: 'Auto Pick fills the rest of the squad inside the R100m budget.', target: 'fm-competition-fantasy .actions ion-button', text: 'Auto Pick' },
       { say: 'Tap a player on your pitch…', target: 'fm-competition-fantasy .pitch button.shirt', nth: -1 },
       { say: '…and make them captain. The captain scores double.', target: ALERT_BUTTON, text: 'Captain' },
       { say: 'Save the team. Points arrive as games are played.', target: 'fm-competition-fantasy .actions ion-button', text: 'Save team' },

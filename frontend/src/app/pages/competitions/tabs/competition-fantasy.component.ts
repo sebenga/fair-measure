@@ -22,6 +22,7 @@ import {
 import { ApiService } from '../../../core/api.service';
 import { AuthService } from '../../../core/auth.service';
 import { extractErrorMessage } from '../../../core/error-message';
+import { availabilityTag, availabilityText, rands, randsChange } from '../../../core/player-status';
 import type {
   CompetitionDetail,
   FantasyOverview,
@@ -104,7 +105,7 @@ const KITS: Array<[string, string]> = [
                 selected
               </span>
               <span>
-                <em>£{{ remaining() }}m</em>
+                <em>{{ rands(remaining()) }}</em>
                 remaining
               </span>
               <span>
@@ -140,10 +141,13 @@ const KITS: Array<[string, string]> = [
                           V
                         }
                       </i>
+                      @if (tagOf(pick.player); as tag) {
+                        <i class="flag" [class.sus]="tag === 'SUS'" [attr.title]="statusOf(pick.player)">{{ tag }}</i>
+                      }
                       <span class="kit">{{ numberOf(pick.player) }}</span>
                       <span class="who">
                         <b>{{ shortName(pick.player.name) }}</b>
-                        <small>£{{ pick.player.price }}m · {{ pick.player.points }} pts</small>
+                        <small>{{ rands(pick.player.price) }} · {{ pick.player.points }} pts</small>
                       </span>
                     </button>
                   } @else {
@@ -163,10 +167,13 @@ const KITS: Array<[string, string]> = [
               @for (cell of benchCells(); track cell.key) {
                 @if (cell.pick; as pick) {
                   <button type="button" class="shirt bench-shirt" (click)="actOn(pick)">
+                    @if (tagOf(pick.player); as tag) {
+                      <i class="flag" [class.sus]="tag === 'SUS'" [attr.title]="statusOf(pick.player)">{{ tag }}</i>
+                    }
                     <span class="kit slim">{{ numberOf(pick.player) }}</span>
                     <span class="who">
                       <b>{{ shortName(pick.player.name) }}</b>
-                      <small>{{ pick.slot }} · £{{ pick.player.price }}m</small>
+                      <small>{{ pick.slot }} · {{ rands(pick.player.price) }}</small>
                     </span>
                   </button>
                 } @else if (cell.slot) {
@@ -189,8 +196,12 @@ const KITS: Array<[string, string]> = [
             </ion-button>
           </div>
           <p class="hint">
-            15 players, £100m, max {{ overview()?.rules?.max_per_club ?? 3 }} from one club.
-            Captain scores double. Points come from this competition’s recorded match stats.
+            15 players, {{ rands(budget()) }} budget, max {{ overview()?.rules?.max_per_club ?? 3 }} from one club.
+            Captain scores double. Every player starts the season at R0; their value rises and falls
+            with their fantasy points and match ratings, and you keep the price you paid.
+            @if (saved()?.squad_value; as worth) {
+              Your squad is worth {{ rands(worth) }} today.
+            }
           </p>
         }
         @case ('players') {
@@ -216,8 +227,16 @@ const KITS: Array<[string, string]> = [
                 <span class="info">
                   <strong>{{ player.name }}</strong>
                   <small>{{ player.team_name }} · {{ player.points }} pts</small>
+                  @if (statusOf(player); as status) {
+                    <small class="status" [class.sus]="player.availability === 'suspended'">{{ status }}</small>
+                  }
                 </span>
-                <em>£{{ player.price }}m</em>
+                <em>
+                  {{ rands(player.price) }}
+                  @if (changeOf(player); as change) {
+                    <small class="move" [class.down]="change.startsWith('-')">{{ change }}</small>
+                  }
+                </em>
                 @if (pickedIds().has(player.id)) {
                   <ion-button size="small" fill="clear" color="medium" (click)="removePlayer(player.id)">
                     Remove
@@ -299,7 +318,10 @@ const KITS: Array<[string, string]> = [
                 <span class="pos">{{ slotLabel(player) }}</span>
                 <span class="info">
                   <strong>{{ player.name }}</strong>
-                  <small>{{ player.team_name }} · £{{ player.price }}m · {{ player.points }} pts</small>
+                  <small>{{ player.team_name }} · {{ rands(player.price) }} · {{ player.points }} pts</small>
+                  @if (statusOf(player); as status) {
+                    <small class="status" [class.sus]="player.availability === 'suspended'">{{ status }}</small>
+                  }
                 </span>
                 <ion-button size="small" (click)="choose(player)" [disabled]="!canAdd(player, pickState.replaceId, pickState.slot)">
                   Select
@@ -466,6 +488,25 @@ const KITS: Array<[string, string]> = [
         place-items: center;
       }
 
+      .flag {
+        position: absolute;
+        top: -4px;
+        left: 6px;
+        padding: 1px 5px;
+        border-radius: 999px;
+        background: #dc2626;
+        color: #fff;
+        font-size: 0.55rem;
+        font-weight: 800;
+        font-style: normal;
+        letter-spacing: 0.04em;
+      }
+
+      .flag.sus {
+        background: #f59e0b;
+        color: #111;
+      }
+
       .empty {
         display: grid;
         justify-items: center;
@@ -569,8 +610,28 @@ const KITS: Array<[string, string]> = [
       }
 
       .market em {
+        display: grid;
+        justify-items: end;
         font-style: normal;
         font-weight: 700;
+      }
+
+      .market .move {
+        color: #15803d;
+        font-size: 0.7rem;
+      }
+
+      .market .move.down {
+        color: #b91c1c;
+      }
+
+      .status {
+        color: #b91c1c;
+        font-weight: 600;
+      }
+
+      .status.sus {
+        color: #b45309;
       }
 
       .market .none {
@@ -678,10 +739,18 @@ export class CompetitionFantasyComponent implements OnInit {
   readonly saved = computed(() => this.overview()?.team ?? null);
   readonly pickedCount = computed(() => this.picks().length);
   readonly pickedIds = computed(() => new Set(this.picks().map((pick) => pick.player.id)));
+  readonly budget = computed(() => Number(this.overview()?.rules?.budget ?? 100));
   readonly remaining = computed(() => {
     const used = this.picks().reduce((sum, pick) => sum + Number(pick.player.price), 0);
-    return (100 - used).toFixed(1);
+    return (this.budget() - used).toFixed(1);
   });
+  readonly rands = rands;
+  readonly tagOf = availabilityTag;
+  readonly statusOf = availabilityText;
+
+  changeOf(player: FantasyPlayer): string {
+    return randsChange(player.value_change);
+  }
   readonly dirty = computed(() => this.snapshotOf(this.picks(), this.teamName()) !== this.savedSnapshot());
   readonly me = computed(() => this.auth.user()?.id ?? '');
 
@@ -816,7 +885,7 @@ export class CompetitionFantasyComponent implements OnInit {
       return false;
     }
     const used = others.reduce((sum, pick) => sum + Number(pick.player.price), 0);
-    return used + Number(player.price) <= 100.0001;
+    return used + Number(player.price) <= this.budget() + 0.0001;
   }
 
   addPlayer(player: FantasyPlayer, bench = false, asSlot?: FantasySlot): void {
@@ -864,7 +933,9 @@ export class CompetitionFantasyComponent implements OnInit {
   async actOn(pick: DraftPick): Promise<void> {
     const alert = await this.alerts.create({
       header: pick.player.name,
-      subHeader: `${pick.player.team_name} · £${pick.player.price}m`,
+      subHeader: [pick.player.team_name, rands(pick.player.price), availabilityText(pick.player)]
+        .filter(Boolean)
+        .join(' · '),
       buttons: [
         { text: 'Captain', handler: () => this.setRole(pick.player.id, 'captain') },
         { text: 'Vice-captain', handler: () => this.setRole(pick.player.id, 'vice') },
