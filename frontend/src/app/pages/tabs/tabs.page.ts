@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 
 import { AuthService } from '../../core/auth.service';
+import { ReleasesService } from '../../core/releases.service';
 import {
   IonIcon,
   IonLabel,
@@ -23,14 +24,18 @@ import {
         </ion-tab-button>
 
         @if (auth.isAuthenticated()) {
-          <ion-tab-button tab="discover" href="/tabs/discover">
-            <ion-icon name="search-outline" aria-hidden="true" />
-            <ion-label>Discover</ion-label>
-          </ion-tab-button>
-          <ion-tab-button tab="scouting" href="/tabs/scouting">
-            <ion-icon name="ribbon-outline" aria-hidden="true" />
-            <ion-label>Scouting</ion-label>
-          </ion-tab-button>
+          @if (releases.isOpen('discover')) {
+            <ion-tab-button tab="discover" href="/tabs/discover">
+              <ion-icon name="search-outline" aria-hidden="true" />
+              <ion-label>Discover</ion-label>
+            </ion-tab-button>
+          }
+          @if (releases.isOpen('scouting')) {
+            <ion-tab-button tab="scouting" href="/tabs/scouting">
+              <ion-icon name="ribbon-outline" aria-hidden="true" />
+              <ion-label>Scouting</ion-label>
+            </ion-tab-button>
+          }
           <ion-tab-button tab="profile" href="/tabs/profile">
             <ion-icon name="person-circle-outline" aria-hidden="true" />
             <ion-label>Profile</ion-label>
@@ -47,4 +52,5 @@ import {
 })
 export class TabsPage {
   readonly auth = inject(AuthService);
+  readonly releases = inject(ReleasesService);
 }

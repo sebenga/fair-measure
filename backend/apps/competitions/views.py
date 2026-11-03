@@ -67,14 +67,29 @@ from .serializers import (
 User = get_user_model()
 
 
+def released_competitions() -> Q:
+    """Public competitions the platform admin has not held back."""
+
+    from apps.releases.services import hidden_sports
+
+    released = Q(is_private=False, platform_hidden=False)
+    hidden = hidden_sports()
+    if hidden:
+        # A subquery on the primary key: negating the JSON lookup directly
+        # would also drop competitions that never recorded a preset.
+        held_back = Competition.objects.filter(settings_json__preset__in=hidden).values("pk")
+        released &= ~Q(pk__in=held_back)
+    return released
+
+
 def visible_competitions(user) -> QuerySet[Competition]:
-    """Public competitions, plus any private ones the user belongs to."""
+    """Released public competitions, plus any the user belongs to."""
 
     queryset = Competition.objects.select_related("owner")
     if not user or not user.is_authenticated:
-        return queryset.filter(is_private=False)
+        return queryset.filter(released_competitions())
     return queryset.filter(
-        Q(is_private=False) | Q(owner=user) | Q(memberships__user=user)
+        released_competitions() | Q(owner=user) | Q(memberships__user=user)
     ).distinct()
 
 
@@ -158,7 +173,11 @@ class CompetitionViewSet(viewsets.ModelViewSet):
     )
     @action(detail=False, methods=["get"], permission_classes=[])
     def presets(self, request: Request) -> Response:
-        return Response([public_preset(key, preset) for key, preset in PRESETS.items()])
+        from apps.releases.services import sport_is_live
+
+        return Response(
+            [public_preset(key, preset) for key, preset in PRESETS.items() if sport_is_live(key)]
+        )
 
     @extend_schema(
         tags=["Competitions"],
@@ -169,7 +188,7 @@ class CompetitionViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="apply-preset")
     def apply_preset(self, request: Request, pk: str | None = None) -> Response:
         competition = self.get_object()
-        serializer = ApplyPresetSerializer(data=request.data)
+        serializer = ApplyPresetSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         if scoring_is_locked(competition):
             raise PermissionDenied(SCORING_LOCKED_MESSAGE)

@@ -152,10 +152,11 @@ def _postgres_fallback(index_name: str, query: str, limit: int) -> list[dict]:
 
     if index_name == COMPETITIONS_INDEX:
         from apps.competitions.models import Competition
+        from apps.competitions.views import released_competitions
 
         rows = Competition.objects.filter(
             Q(name__icontains=query) | Q(description__icontains=query) | Q(sport__icontains=query),
-            is_private=False,
+            released_competitions(),
         ).select_related("owner")[:limit]
         return [competition_document(row) for row in rows]
 

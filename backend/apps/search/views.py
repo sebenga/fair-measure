@@ -6,6 +6,8 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.jobs import valid_uuids
+
 from .services import COMPETITIONS_INDEX, PARTICIPANTS_INDEX, POSTS_INDEX, search
 
 INDEXES = {
@@ -56,6 +58,25 @@ class SearchView(APIView):
         for label, index_name in targets.items():
             # Competitions are not scoped by competition_id, so skip the filter there.
             index_filter = "" if index_name == COMPETITIONS_INDEX else filters
-            results[label] = search(index_name, query, filters=index_filter, limit=limit)
+            hits = search(index_name, query, filters=index_filter, limit=limit)
+            if index_name == COMPETITIONS_INDEX:
+                hits = _released_only(hits)
+            results[label] = hits
 
         return Response({"query": query, "results": results})
+
+
+def _released_only(hits: list[dict]) -> list[dict]:
+    """The index can lag behind a release switch, so check the database."""
+
+    from apps.competitions.models import Competition
+    from apps.competitions.views import released_competitions
+
+    ids = valid_uuids({hit.get("id") for hit in hits})
+    allowed = {
+        str(pk)
+        for pk in Competition.objects.filter(released_competitions(), pk__in=ids).values_list(
+            "pk", flat=True
+        )
+    }
+    return [hit for hit in hits if str(hit.get("id")) in allowed]

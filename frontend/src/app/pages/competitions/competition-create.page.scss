@@ -2,8 +2,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   padding: 8px 12px 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .step {
@@ -48,8 +50,22 @@
   }
 }
 
+// Seven steps do not fit with every label on a phone: show only the current one.
+@media (max-width: 720px) {
+  .step:not(.active) .label {
+    display: none;
+  }
+}
+
+.step-count {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ion-color-medium);
+}
+
 .rail {
-  width: 28px;
+  flex: 0 1 20px;
+  min-width: 6px;
   height: 1.5px;
   background: var(--ion-color-step-150, #dbe2ea);
 }

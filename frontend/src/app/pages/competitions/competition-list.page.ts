@@ -21,6 +21,7 @@ import {
 } from '@ionic/angular/standalone';
 
 import { AuthService } from '../../core/auth.service';
+import { ReleasesService } from '../../core/releases.service';
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { Competition, TeamPick } from '../../core/models';
@@ -56,10 +57,12 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
         <ion-title>{{ auth.isAuthenticated() ? 'My leagues' : 'Leagues' }}</ion-title>
         <ion-buttons slot="end">
           @if (auth.isAuthenticated()) {
-            <ion-button type="button" routerLink="/tabs/games" routerDirection="forward">
-              <ion-icon slot="start" name="trophy-outline" aria-hidden="true" />
-              Games
-            </ion-button>
+            @if (releases.isOpen('games')) {
+              <ion-button type="button" routerLink="/tabs/games" routerDirection="forward">
+                <ion-icon slot="start" name="trophy-outline" aria-hidden="true" />
+                Games
+              </ion-button>
+            }
             <ion-button type="button" routerLink="/tabs/competitions/new" routerDirection="forward">
               <ion-icon slot="icon-only" name="add-outline" aria-label="New competition" />
             </ion-button>
@@ -214,6 +217,7 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
 export class CompetitionListPage {
   private readonly api = inject(ApiService);
   readonly auth = inject(AuthService);
+  readonly releases = inject(ReleasesService);
   private readonly router = inject(Router);
   private readonly alerts = inject(AlertController);
   private readonly toasts = inject(ToastController);

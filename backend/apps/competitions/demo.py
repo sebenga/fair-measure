@@ -41,6 +41,8 @@ from apps.standings.services import refresh_standings
 User = get_user_model()
 
 DEMO_TTL = timedelta(hours=1)
+# How long the demo's live match has already been running when the demo starts.
+LIVE_FOR_MINUTES = 18
 DEMO_EMAIL_DOMAIN = "fairmeasure.demo"
 
 DEMO_TEAMS = [
@@ -633,6 +635,24 @@ def _award_sample_points(competition: Competition, entrants: list[Participant], 
     return awarded
 
 
+def _live_candidate(fixtures: list[Fixture], now) -> Fixture | None:
+    """The one demo match shown live: the next fixture with both sides known."""
+
+    def ready(fixture: Fixture) -> bool:
+        return (
+            fixture.status == Fixture.Status.SCHEDULED
+            and fixture.sides.filter(participant__isnull=False).count() >= 2
+        )
+
+    upcoming = sorted(
+        (f for f in fixtures if f.scheduled_at and f.scheduled_at > now and ready(f)),
+        key=lambda f: f.scheduled_at,
+    )
+    if upcoming:
+        return upcoming[0]
+    return next((f for f in fixtures if ready(f)), None)
+
+
 def _play_past_fixtures(competition: Competition, fixtures: list[Fixture], actor) -> int:
     category = (
         competition.scoring_categories.filter(affects_score=True).order_by("display_order").first()
@@ -668,16 +688,14 @@ def _play_past_fixtures(competition: Competition, fixtures: list[Fixture], actor
         fixture.save(update_fields=["status", "started_at", "completed_at", "updated_at"])
         fixture.recalculate_scores()
         played += 1
-    upcoming = [
-        fixture
-        for fixture in fixtures
-        if fixture.scheduled_at and fixture.scheduled_at > now and fixture.status == Fixture.Status.SCHEDULED
-    ]
-    if upcoming and category is not None:
-        live = upcoming[0]
+    live = _live_candidate(fixtures, now)
+    if live is not None:
+        # Kicked off a few minutes ago, so the match is in play for the whole hour the demo lives.
+        kickoff = now - timedelta(minutes=LIVE_FOR_MINUTES)
         live.status = Fixture.Status.LIVE
-        live.started_at = now - timedelta(minutes=18)
-        live.save(update_fields=["status", "started_at", "updated_at"])
+        live.scheduled_at = kickoff
+        live.started_at = kickoff
+        live.save(update_fields=["status", "scheduled_at", "started_at", "updated_at"])
         side = live.sides.first()
         if side is not None:
             player = side.participant.roster.filter(is_active=True).order_by("number").first()

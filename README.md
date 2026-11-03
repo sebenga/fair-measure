@@ -123,6 +123,19 @@ instead of opening a socket). `dev-parity.sh` and the compose `web` service
 switch both on too. If you add a worker and gateway on Render later, set both
 to `false` and give the build a `FRONTEND_REALTIME_URL`.
 
+**Releasing sports and features gradually**
+
+The platform admin (any Django staff user, or an email listed in
+`PLATFORM_ADMIN_EMAILS`, comma separated) gets **Profile → Platform releases**
+(`/tabs/platform`). There they switch each sport, each feature (Games,
+Scouting, Fantasy, Discover, Partnerships, Horse register) and each
+competition between live and hidden. Hidden sports drop out of the sport
+pickers and the create API, and their public competitions leave public lists
+and search; members keep access. Hidden means hidden for every account,
+admins included, so the admin sees exactly what the public sees. A sport with no switch yet stays hidden
+unless `RELEASES_SPORTS_LIVE_BY_DEFAULT=true`. Switches are also editable in
+Django admin under *Platform releases*.
+
 **Run the backend tests on Postgres before pushing**
 
 ```bash

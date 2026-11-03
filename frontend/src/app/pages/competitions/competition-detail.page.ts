@@ -30,6 +30,7 @@ import { forkJoin, of } from 'rxjs';
 
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
+import { ReleasesService } from '../../core/releases.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail, TeamPick } from '../../core/models';
 import { isPointsTable, showsFantasy } from '../../core/models';
@@ -492,6 +493,7 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
 export class CompetitionDetailPage implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   readonly auth = inject(AuthService);
+  readonly releases = inject(ReleasesService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly alerts = inject(AlertController);
@@ -571,7 +573,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
         if (isPointsTable(competition) && this.tab() === 'fixtures') {
           this.selectTab('standings');
         }
-        if (!showsFantasy(competition) && this.tab() === 'fantasy') {
+        if (!this.showsFantasyTab() && this.tab() === 'fantasy') {
           this.selectTab('feed');
         }
         this.loading.set(false);
@@ -661,7 +663,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
 
   showsFantasyTab(): boolean {
     const competition = this.competition();
-    return competition ? showsFantasy(competition) : false;
+    return competition ? showsFantasy(competition) && this.releases.isOpen('fantasy') : false;
   }
 
   selectTab(value: string | undefined): void {

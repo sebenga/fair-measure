@@ -28,6 +28,7 @@ api_v1 = [
     path("", include("apps.games.urls")),
     path("", include("apps.fantasy.urls")),
     path("", include("apps.marketing.urls")),
+    path("", include("apps.releases.urls")),
 ]
 
 urlpatterns = [

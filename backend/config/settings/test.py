@@ -29,3 +29,8 @@ REST_FRAMEWORK = {
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 SEARCH_ENABLED = False
+
+# Most tests create leagues in any sport; release tests switch this off themselves.
+RELEASES_SPORTS_LIVE_BY_DEFAULT = True
+RELEASES_CACHE_SECONDS = 0
+PLATFORM_ADMIN_EMAILS: list[str] = []

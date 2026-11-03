@@ -1,10 +1,8 @@
 import { Routes } from '@angular/router';
 
-import { environment } from '../environments/environment';
 import { authGuard, guestGuard, landingGuard } from './core/auth.guard';
 import { competitionIdCanMatch } from './core/competition-id.guard';
-
-const horsesEnabled = () => environment.features.horses;
+import { featureGuard, platformAdminGuard } from './core/releases.service';
 
 export const routes: Routes = [
   {
@@ -100,12 +98,13 @@ export const routes: Routes = [
       },
       {
         path: 'discover',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('discover')],
         loadComponent: () =>
           import('./pages/discover/discover.page').then((m) => m.DiscoverPage),
       },
       {
         path: 'partnerships',
+        canActivate: [featureGuard('partnerships')],
         loadComponent: () =>
           import('./pages/partnerships/partnerships.page').then((m) => m.PartnershipsPage),
       },
@@ -115,8 +114,14 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/profile/profile.page').then((m) => m.ProfilePage),
       },
       {
+        path: 'platform',
+        canActivate: [authGuard, platformAdminGuard],
+        loadComponent: () =>
+          import('./pages/platform/platform-admin.page').then((m) => m.PlatformAdminPage),
+      },
+      {
         path: 'scouting',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () =>
           import('./pages/scouting/scouting-hub.page').then((m) => m.ScoutingHubPage),
       },
@@ -133,25 +138,25 @@ export const routes: Routes = [
       },
       {
         path: 'scouting/players',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () =>
           import('./pages/scouting/players.page').then((m) => m.ScoutingPlayersPage),
       },
       {
         path: 'scouting/players/:id',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () =>
           import('./pages/scouting/player-view.page').then((m) => m.ScoutingPlayerViewPage),
       },
       {
         path: 'scouting/reports/:kind',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () =>
           import('./pages/scouting/talent-report.page').then((m) => m.TalentReportPage),
       },
       {
         path: 'scouting/players/:id/report',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () =>
           import('./pages/scouting/scouting-report.page').then((m) => m.ScoutingReportPage),
       },
@@ -163,105 +168,104 @@ export const routes: Routes = [
       },
       {
         path: 'games',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('games')],
         loadComponent: () => import('./pages/games/games-list.page').then((m) => m.GamesListPage),
       },
       {
         path: 'games/:id',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('games')],
         loadComponent: () => import('./pages/games/games-home.page').then((m) => m.GamesHomePage),
       },
       {
         path: 'games/:id/sports',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('games')],
         loadComponent: () => import('./pages/games/games-sports.page').then((m) => m.GamesSportsPage),
       },
       {
         path: 'games/:id/events/:eventId',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('games')],
         loadComponent: () => import('./pages/games/games-event.page').then((m) => m.GamesEventPage),
       },
       {
         path: 'games/:id/nocs/:nocId',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('games')],
         loadComponent: () => import('./pages/games/games-noc.page').then((m) => m.GamesNocPage),
       },
       {
         path: 'games/:id/athletes/:athleteId',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('games')],
         loadComponent: () => import('./pages/games/games-athlete.page').then((m) => m.GamesAthletePage),
       },
       {
         path: 'games/:id/reports/:kind',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('games')],
         loadComponent: () => import('./pages/games/games-report.page').then((m) => m.GamesReportPage),
       },
       {
         path: 'horses',
-        canMatch: [horsesEnabled],
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('horses')],
         loadComponent: () => import('./pages/horses/horses.page').then((m) => m.HorsesPage),
       },
       {
         path: 'scouting/search',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () => import('./pages/scouting/search.page').then((m) => m.TalentSearchPage),
       },
       {
         path: 'scouting/compare',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () => import('./pages/scouting/compare.page').then((m) => m.ComparePage),
       },
       {
         path: 'scouting/shortlists',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () => import('./pages/scouting/shortlists.page').then((m) => m.ShortlistsPage),
       },
       {
         path: 'scouting/shortlists/:id',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () => import('./pages/scouting/shortlists.page').then((m) => m.ShortlistsPage),
       },
       {
         path: 'scouting/requests',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () => import('./pages/scouting/contact-requests.page').then((m) => m.ContactRequestsPage),
       },
       {
         path: 'scouting/rate',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () => import('./pages/scouting/rate.page').then((m) => m.RatePage),
       },
       {
         path: 'scouting/record-test',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () => import('./pages/scouting/record-test.page').then((m) => m.RecordTestPage),
       },
       {
         path: 'scouting/guide',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () => import('./pages/scouting/rating-guide.page').then((m) => m.RatingGuidePage),
       },
       {
         path: 'scouting/guide/:sport',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () => import('./pages/scouting/rating-guide.page').then((m) => m.RatingGuidePage),
       },
       {
         path: 'scouting/leagues',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () =>
           import('./pages/scouting/leagues.page').then((m) => m.ScoutingLeaguesPage),
       },
       {
         path: 'scouting/leagues/:id',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () =>
           import('./pages/scouting/league-squad.page').then((m) => m.LeagueSquadPage),
       },
       {
         path: 'scouting/organisations/:id',
-        canActivate: [authGuard],
+        canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () =>
           import('./pages/scouting/organisation.page').then((m) => m.ScoutingOrganisationPage),
       },

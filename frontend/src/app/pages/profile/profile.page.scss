@@ -61,3 +61,40 @@
   margin: 4px 20px 48px;
   font-size: 0.76rem;
 }
+
+.platform-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 32px);
+  margin: 14px 16px 4px;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: var(--fm-radius, 18px);
+  background: var(--fm-gradient, var(--ion-color-primary));
+  color: #fff;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+
+  .platform-icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.18);
+    font-size: 20px;
+  }
+
+  .grow {
+    flex: 1;
+    display: grid;
+    gap: 2px;
+  }
+
+  small {
+    opacity: 0.85;
+    font-size: 0.82rem;
+  }
+}

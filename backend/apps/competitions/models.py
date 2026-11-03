@@ -70,6 +70,13 @@ class Competition(BaseModel):
             "for visitors who have not signed in."
         ),
     )
+    platform_hidden = models.BooleanField(
+        default=False,
+        help_text=_(
+            "Set by the platform admin. Hidden competitions disappear from public "
+            "lists, search and the landing page; members still see them."
+        ),
+    )
     open_to_scouts = models.BooleanField(
         default=False,
         help_text=_(

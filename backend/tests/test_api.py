@@ -2095,7 +2095,7 @@ def test_post_comment_and_reaction_flow(api, competition, user):
 
 
 def test_a_sample_league_can_be_generated_updated_and_removed(api):
-    from datetime import timedelta
+    from datetime import datetime, timedelta
 
     from django.utils import timezone
 
@@ -2140,6 +2140,13 @@ def test_a_sample_league_can_be_generated_updated_and_removed(api):
     assert TeamPick.objects.filter(
         participant__competition_id=competition_id, status=TeamPick.Status.ACCEPTED
     ).count() >= 12
+    live = Fixture.objects.filter(competition_id=competition_id, status=Fixture.Status.LIVE)
+    assert live.count() == 1
+    match = live.get()
+    assert match.sides.filter(participant__isnull=False).count() == 2
+    assert timezone.now() - timedelta(hours=1) < match.started_at <= timezone.now()
+    expires = datetime.fromisoformat(generated.data["expires_at"])
+    assert timedelta(minutes=59) < expires - timezone.now() <= timedelta(hours=1)
     ready = Fixture.objects.filter(competition_id=competition_id).exclude(status=Fixture.Status.COMPLETED)
     assert ready.exists()
     assert all(fixture.duration_minutes for fixture in ready)

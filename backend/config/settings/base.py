@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     "apps.games",
     "apps.fantasy",
     "apps.marketing",
+    "apps.releases",
 ]
 
 MIDDLEWARE = [
@@ -85,7 +86,14 @@ MIDDLEWARE = [
     "apps.core.security.SecurityHeadersMiddleware",
     "apps.core.spa.SpaFallbackMiddleware",
     "apps.core.jobs.PeriodicJobsMiddleware",
+    "apps.releases.middleware.FeatureReleaseMiddleware",
 ]
+
+# Accounts that can release sports and features, besides Django staff users.
+PLATFORM_ADMIN_EMAILS = env_list("PLATFORM_ADMIN_EMAILS")
+# A sport with no release switch yet stays hidden, so new sports roll out one at a time.
+RELEASES_SPORTS_LIVE_BY_DEFAULT = env_bool("RELEASES_SPORTS_LIVE_BY_DEFAULT", False)
+RELEASES_CACHE_SECONDS = env_int("RELEASES_CACHE_SECONDS", 15)
 
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"

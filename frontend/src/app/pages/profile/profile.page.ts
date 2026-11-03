@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal, viewChild } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import {
   AlertController,
   IonAvatar,
@@ -21,6 +22,7 @@ import {
 } from '@ionic/angular/standalone';
 
 import { AuthService } from '../../core/auth.service';
+import { ReleasesService } from '../../core/releases.service';
 import { extractErrorMessage } from '../../core/error-message';
 import { PushService } from '../../core/push.service';
 import { RealtimeService } from '../../core/realtime.service';
@@ -31,6 +33,7 @@ import { ProfileTalentComponent } from './profile-talent.component';
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    RouterLink,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -78,6 +81,17 @@ import { ProfileTalentComponent } from './profile-talent.component';
           }
           <p>{{ user.email }}</p>
         </div>
+
+        @if (releases.platformAdmin()) {
+          <button type="button" class="platform-card fm-card" routerLink="/tabs/platform">
+            <span class="platform-icon"><ion-icon name="rocket-outline" aria-hidden="true" /></span>
+            <span class="grow">
+              <strong>Platform releases</strong>
+              <small>Choose which sports, features and competitions the public can see.</small>
+            </span>
+            <ion-icon name="chevron-forward-outline" aria-hidden="true" />
+          </button>
+        }
 
         <fm-profile-talent />
 
@@ -294,6 +308,7 @@ export class ProfilePage implements OnInit {
   private readonly toasts = inject(ToastController);
 
   readonly auth = inject(AuthService);
+  readonly releases = inject(ReleasesService);
   readonly realtime = inject(RealtimeService);
   readonly push = inject(PushService);
 

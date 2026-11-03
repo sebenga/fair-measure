@@ -2,6 +2,10 @@ import { ChangeDetectionStrategy, Component, effect, inject } from '@angular/cor
 import { IonApp, IonRouterOutlet } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import {
+  rocketOutline,
+  layersOutline,
+  briefcaseOutline,
+  pawOutline,
   trendingUpOutline,
   notificationsOffOutline,
   listOutline,
@@ -147,6 +151,10 @@ export class AppComponent {
 
   constructor() {
     addIcons({
+      rocketOutline,
+      layersOutline,
+      briefcaseOutline,
+      pawOutline,
       trendingUpOutline,
       notificationsOffOutline,
       listOutline,

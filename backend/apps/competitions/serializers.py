@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import time
+from datetime import time, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -1062,6 +1063,17 @@ class CompetitionDetailSerializer(CompetitionListSerializer):
         return season_is_finished(obj)
 
 
+MAX_DAYS_AHEAD = 365
+
+
+def released_preset(value: str, request) -> str:
+    from apps.releases.services import sport_is_live
+
+    if value and not sport_is_live(value):
+        raise serializers.ValidationError("This sport is not open yet.")
+    return value
+
+
 class CompetitionWriteSerializer(serializers.ModelSerializer):
     preset = serializers.ChoiceField(
         choices=sorted(PRESETS.keys()),
@@ -1125,6 +1137,39 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         write_only=True,
         help_text="Named cups. Unique names. Send a name or {id, name} to rename. Only one cup runs at a time.",
     )
+
+    def validate_preset(self, value: str) -> str:
+        return released_preset(value, self.context.get("request"))
+
+    def _check_date_window(self, attrs: dict, starts_on) -> None:
+        """New dates run from today to a year ahead; an untouched saved date is left alone."""
+
+        tz_name = attrs.get("timezone") or getattr(self.instance, "timezone", "") or "UTC"
+        try:
+            today = timezone.now().astimezone(ZoneInfo(tz_name)).date()
+        except (ZoneInfoNotFoundError, ValueError):
+            today = timezone.localdate()
+
+        def changed(field: str):
+            value = attrs.get(field)
+            if value and value != getattr(self.instance, field, None):
+                return value
+            return None
+
+        errors = {}
+        if new_start := changed("starts_on"):
+            if new_start < today:
+                errors["starts_on"] = "The start date cannot be in the past."
+            elif new_start > today + timedelta(days=MAX_DAYS_AHEAD):
+                errors["starts_on"] = "The start date must be within a year from today."
+        if new_end := changed("ends_on"):
+            latest = (starts_on or today) + timedelta(days=MAX_DAYS_AHEAD)
+            if new_end < today:
+                errors["ends_on"] = "The end date cannot be in the past."
+            elif new_end > latest:
+                errors["ends_on"] = "A competition can run for at most a year (365 days)."
+        if errors:
+            raise serializers.ValidationError(errors)
 
     def validate_league_points(self, value: dict) -> dict:
         unknown = set(value) - {"win", "draw", "loss"}
@@ -1195,6 +1240,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         ends_on = attrs.get("ends_on", getattr(self.instance, "ends_on", None))
         if starts_on and ends_on and ends_on < starts_on:
             raise serializers.ValidationError({"ends_on": "End date is before the start date."})
+        self._check_date_window(attrs, starts_on)
         is_private = attrs.get("is_private", getattr(self.instance, "is_private", False))
         show_on_landing = attrs.get(
             "show_on_landing", getattr(self.instance, "show_on_landing", False)
@@ -1519,6 +1565,9 @@ class ApplyPresetSerializer(serializers.Serializer):
         default=False,
         help_text="Delete current scoring categories and rules before applying.",
     )
+
+    def validate_preset(self, value: str) -> str:
+        return released_preset(value, self.context.get("request"))
 
 
 class TransferOwnershipSerializer(serializers.Serializer):

@@ -1,6 +1,12 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
-import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+  AbstractControl,
+  FormBuilder,
+  ReactiveFormsModule,
+  ValidationErrors,
+  Validators,
+} from '@angular/forms';
 import {
   IonBackButton,
   IonButton,
@@ -31,7 +37,20 @@ import { ScoutingService, scoutingSportFor } from '../../core/scouting.service';
 import type { CompetitionFormat, Preset, PresetKind } from '../../core/models';
 import { isPointsPreset } from '../../core/models';
 
-type Step = 1 | 2 | 3;
+type StepKey = 'sport' | 'name' | 'format' | 'points' | 'dates' | 'visibility' | 'review';
+
+const STEPS: Array<{ key: StepKey; label: string }> = [
+  { key: 'sport', label: 'Sport' },
+  { key: 'name', label: 'Name' },
+  { key: 'format', label: 'Format' },
+  { key: 'points', label: 'Points' },
+  { key: 'dates', label: 'Dates' },
+  { key: 'visibility', label: 'Visibility' },
+  { key: 'review', label: 'Review' },
+];
+
+/** The furthest a competition can start ahead, and the longest it can run. */
+const MAX_DAYS_AHEAD = 365;
 
 interface FormatOption {
   value: CompetitionFormat;
@@ -90,12 +109,34 @@ const TIMEZONES = [
   'UTC',
 ];
 
-function endAfterStart(group: AbstractControl): { dateOrder: true } | null {
+function isoDay(base: Date, days = 0): string {
+  const day = new Date(base.getFullYear(), base.getMonth(), base.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+}
+
+function addDays(iso: string, days: number): string {
+  const [year, month, date] = iso.split('-').map(Number);
+  return isoDay(new Date(year, month - 1, date), days);
+}
+
+/** No date before today, and no start more than a year away. */
+function withinWindow(latest: string | null) {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const value = control.value as string;
+    if (!value) return null;
+    if (value < isoDay(new Date())) return { pastDate: true };
+    if (latest && value > latest) return { tooFar: true };
+    return null;
+  };
+}
+
+function datesInOrder(group: AbstractControl): ValidationErrors | null {
   const starts = group.get('starts_on')?.value as string;
   const ends = group.get('ends_on')?.value as string;
-  if (starts && ends && ends < starts) {
-    return { dateOrder: true };
-  }
+  if (!ends) return null;
+  if (starts && ends < starts) return { dateOrder: true };
+  if (ends > addDays(starts || isoDay(new Date()), MAX_DAYS_AHEAD)) return { tooLong: true };
   return null;
 }
 
@@ -150,18 +191,19 @@ function presetKind(preset: Preset): PresetKind {
       </ion-toolbar>
       <ion-toolbar>
         <nav class="steps" aria-label="Create competition steps">
-          @for (item of steps; track item.n) {
+          @for (item of visibleSteps(); track item.key; let i = $index, last = $last) {
             <button
               type="button"
               class="step"
-              [class.active]="step() === item.n"
-              [class.done]="step() > item.n"
-              (click)="goTo(item.n)"
+              [class.active]="step() === item.key"
+              [class.done]="stepIndex() > i"
+              [attr.aria-current]="step() === item.key ? 'step' : null"
+              (click)="goTo(item.key)"
             >
-              <span class="num">{{ item.n }}</span>
+              <span class="num">{{ i + 1 }}</span>
               <span class="label">{{ item.label }}</span>
             </button>
-            @if (item.n < 3) {
+            @if (!last) {
               <span class="rail" aria-hidden="true"></span>
             }
           }
@@ -172,7 +214,7 @@ function presetKind(preset: Preset): PresetKind {
     <ion-content>
       <form [formGroup]="form" (ngSubmit)="onFormSubmit()" novalidate>
         @switch (step()) {
-          @case (1) {
+          @case ('sport') {
             <h3 class="fm-section-title">What are you running?</h3>
             <p class="hint">
               Pick an official sport, or Custom if you want to define the scoring yourself. Tap a card to see its scoring.
@@ -406,7 +448,7 @@ function presetKind(preset: Preset): PresetKind {
             </ng-template>
           }
 
-          @case (2) {
+          @case ('name') {
             <h3 class="fm-section-title">The basics</h3>
             <p class="hint">
               @if (isCustom()) {
@@ -443,6 +485,9 @@ function presetKind(preset: Preset): PresetKind {
               </ion-item>
             </ion-list>
 
+          }
+
+          @case ('format') {
             <h3 class="fm-section-title">{{ isCustom() ? 'How points are added' : scoringLocked() ? 'Competition structure' : 'Format' }}</h3>
             <p class="hint">{{ formatHint() }}</p>
 
@@ -520,164 +565,6 @@ function presetKind(preset: Preset): PresetKind {
                     }
                   </button>
                 </div>
-
-                <h3 class="fm-section-title">Table points</h3>
-                <p class="hint">Points each entrant earns on the table for a result.</p>
-                <ion-list inset="true">
-                  <ion-item>
-                    <ion-input
-                      label="Win"
-                      labelPlacement="stacked"
-                      type="number"
-                      inputmode="decimal"
-                      [value]="winPoints()"
-                      (ionInput)="winPoints.set(stringValue($event))"
-                    />
-                  </ion-item>
-                  <ion-item>
-                    <ion-input
-                      label="Draw"
-                      labelPlacement="stacked"
-                      type="number"
-                      inputmode="decimal"
-                      [value]="drawPoints()"
-                      (ionInput)="drawPoints.set(stringValue($event))"
-                    />
-                  </ion-item>
-                  <ion-item>
-                    <ion-input
-                      label="Loss"
-                      labelPlacement="stacked"
-                      type="number"
-                      inputmode="decimal"
-                      [value]="lossPoints()"
-                      (ionInput)="lossPoints.set(stringValue($event))"
-                    />
-                  </ion-item>
-                </ion-list>
-
-                <h3 class="fm-section-title">Bonus points</h3>
-                <p class="hint">
-                  Extra table points from how the match was scored, or from the winning or losing
-                  margin. Switch them off to keep the table as win, draw and loss only.
-                </p>
-                <div class="formats">
-                  <button
-                    type="button"
-                    class="format"
-                    [class.selected]="bonusEnabled()"
-                    (click)="setBonusEnabled(true)"
-                  >
-                    <ion-icon name="sparkles-outline" aria-hidden="true" />
-                    <div>
-                      <strong>Include bonus points</strong>
-                      <p>The table also adds bonus points from scoring and from close or wide results.</p>
-                    </div>
-                    @if (bonusEnabled()) {
-                      <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
-                    }
-                  </button>
-                  <button
-                    type="button"
-                    class="format"
-                    [class.selected]="!bonusEnabled()"
-                    (click)="setBonusEnabled(false)"
-                  >
-                    <ion-icon name="remove-circle-outline" aria-hidden="true" />
-                    <div>
-                      <strong>No bonus points</strong>
-                      <p>The table only uses the win, draw and loss points above.</p>
-                    </div>
-                    @if (!bonusEnabled()) {
-                      <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
-                    }
-                  </button>
-                </div>
-
-                @if (bonusEnabled()) {
-                  <ion-list inset="true">
-                    <ion-item>
-                      <ion-select
-                        label="Scoring bonus counts"
-                        labelPlacement="stacked"
-                        interface="action-sheet"
-                        [value]="scoringBonusCode()"
-                        (ionChange)="scoringBonusCode.set(stringValue($event))"
-                      >
-                        <ion-select-option value="">Match score</ion-select-option>
-                        @for (row of namedDrafts(); track row.key) {
-                          <ion-select-option [value]="row.code || row.name.trim()">
-                            {{ row.name.trim() }}
-                          </ion-select-option>
-                        }
-                      </ion-select>
-                    </ion-item>
-                    <ion-item>
-                      <ion-input
-                        label="Award when they reach"
-                        labelPlacement="stacked"
-                        type="number"
-                        inputmode="numeric"
-                        [value]="scoringBonusThreshold()"
-                        (ionInput)="scoringBonusThreshold.set(stringValue($event))"
-                      />
-                    </ion-item>
-                    <ion-item>
-                      <ion-input
-                        label="Scoring bonus points"
-                        labelPlacement="stacked"
-                        type="number"
-                        inputmode="decimal"
-                        [value]="scoringBonusPoints()"
-                        (ionInput)="scoringBonusPoints.set(stringValue($event))"
-                      />
-                    </ion-item>
-                    <ion-item>
-                      <ion-input
-                        label="Winning-margin bonus at"
-                        labelPlacement="stacked"
-                        type="number"
-                        inputmode="numeric"
-                        [value]="winBonusMargin()"
-                        (ionInput)="winBonusMargin.set(stringValue($event))"
-                      />
-                    </ion-item>
-                    <ion-item>
-                      <ion-input
-                        label="Winning-margin bonus points"
-                        labelPlacement="stacked"
-                        type="number"
-                        inputmode="decimal"
-                        [value]="winBonusPoints()"
-                        (ionInput)="winBonusPoints.set(stringValue($event))"
-                      />
-                    </ion-item>
-                    <ion-item>
-                      <ion-input
-                        label="Losing bonus within"
-                        labelPlacement="stacked"
-                        type="number"
-                        inputmode="numeric"
-                        [value]="lossBonusMargin()"
-                        (ionInput)="lossBonusMargin.set(stringValue($event))"
-                      />
-                    </ion-item>
-                    <ion-item>
-                      <ion-input
-                        label="Losing bonus points"
-                        labelPlacement="stacked"
-                        type="number"
-                        inputmode="decimal"
-                        [value]="lossBonusPoints()"
-                        (ionInput)="lossBonusPoints.set(stringValue($event))"
-                      />
-                    </ion-item>
-                  </ion-list>
-                  <p class="hint">
-                    Leave a threshold blank to skip that bonus. Scoring bonus uses the count of the
-                    chosen criterion, or the match total when “Match score” is selected.
-                  </p>
-                }
 
                 <h3 class="fm-section-title">Format</h3>
                 <p class="hint">Choose league, knockout, or both. You must pick one.</p>
@@ -776,12 +663,169 @@ function presetKind(preset: Preset): PresetKind {
               }
             }
 
-            @if (canOfferSample()) {
-              <ng-container [ngTemplateOutlet]="sampleFields" />
+          }
+
+          @case ('points') {
+            <h3 class="fm-section-title">Table points</h3>
+            <p class="hint">Points each entrant earns on the table for a result.</p>
+            <ion-list inset="true">
+              <ion-item>
+                <ion-input
+                  label="Win"
+                  labelPlacement="stacked"
+                  type="number"
+                  inputmode="decimal"
+                  [value]="winPoints()"
+                  (ionInput)="winPoints.set(stringValue($event))"
+                />
+              </ion-item>
+              <ion-item>
+                <ion-input
+                  label="Draw"
+                  labelPlacement="stacked"
+                  type="number"
+                  inputmode="decimal"
+                  [value]="drawPoints()"
+                  (ionInput)="drawPoints.set(stringValue($event))"
+                />
+              </ion-item>
+              <ion-item>
+                <ion-input
+                  label="Loss"
+                  labelPlacement="stacked"
+                  type="number"
+                  inputmode="decimal"
+                  [value]="lossPoints()"
+                  (ionInput)="lossPoints.set(stringValue($event))"
+                />
+              </ion-item>
+            </ion-list>
+
+            <h3 class="fm-section-title">Bonus points</h3>
+            <p class="hint">
+              Extra table points from how the match was scored, or from the winning or losing
+              margin. Switch them off to keep the table as win, draw and loss only.
+            </p>
+            <div class="formats">
+              <button
+                type="button"
+                class="format"
+                [class.selected]="bonusEnabled()"
+                (click)="setBonusEnabled(true)"
+              >
+                <ion-icon name="sparkles-outline" aria-hidden="true" />
+                <div>
+                  <strong>Include bonus points</strong>
+                  <p>The table also adds bonus points from scoring and from close or wide results.</p>
+                </div>
+                @if (bonusEnabled()) {
+                  <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                }
+              </button>
+              <button
+                type="button"
+                class="format"
+                [class.selected]="!bonusEnabled()"
+                (click)="setBonusEnabled(false)"
+              >
+                <ion-icon name="remove-circle-outline" aria-hidden="true" />
+                <div>
+                  <strong>No bonus points</strong>
+                  <p>The table only uses the win, draw and loss points above.</p>
+                </div>
+                @if (!bonusEnabled()) {
+                  <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                }
+              </button>
+            </div>
+
+            @if (bonusEnabled()) {
+              <ion-list inset="true">
+                <ion-item>
+                  <ion-select
+                    label="Scoring bonus counts"
+                    labelPlacement="stacked"
+                    interface="action-sheet"
+                    [value]="scoringBonusCode()"
+                    (ionChange)="scoringBonusCode.set(stringValue($event))"
+                  >
+                    <ion-select-option value="">Match score</ion-select-option>
+                    @for (row of namedDrafts(); track row.key) {
+                      <ion-select-option [value]="row.code || row.name.trim()">
+                        {{ row.name.trim() }}
+                      </ion-select-option>
+                    }
+                  </ion-select>
+                </ion-item>
+                <ion-item>
+                  <ion-input
+                    label="Award when they reach"
+                    labelPlacement="stacked"
+                    type="number"
+                    inputmode="numeric"
+                    [value]="scoringBonusThreshold()"
+                    (ionInput)="scoringBonusThreshold.set(stringValue($event))"
+                  />
+                </ion-item>
+                <ion-item>
+                  <ion-input
+                    label="Scoring bonus points"
+                    labelPlacement="stacked"
+                    type="number"
+                    inputmode="decimal"
+                    [value]="scoringBonusPoints()"
+                    (ionInput)="scoringBonusPoints.set(stringValue($event))"
+                  />
+                </ion-item>
+                <ion-item>
+                  <ion-input
+                    label="Winning-margin bonus at"
+                    labelPlacement="stacked"
+                    type="number"
+                    inputmode="numeric"
+                    [value]="winBonusMargin()"
+                    (ionInput)="winBonusMargin.set(stringValue($event))"
+                  />
+                </ion-item>
+                <ion-item>
+                  <ion-input
+                    label="Winning-margin bonus points"
+                    labelPlacement="stacked"
+                    type="number"
+                    inputmode="decimal"
+                    [value]="winBonusPoints()"
+                    (ionInput)="winBonusPoints.set(stringValue($event))"
+                  />
+                </ion-item>
+                <ion-item>
+                  <ion-input
+                    label="Losing bonus within"
+                    labelPlacement="stacked"
+                    type="number"
+                    inputmode="numeric"
+                    [value]="lossBonusMargin()"
+                    (ionInput)="lossBonusMargin.set(stringValue($event))"
+                  />
+                </ion-item>
+                <ion-item>
+                  <ion-input
+                    label="Losing bonus points"
+                    labelPlacement="stacked"
+                    type="number"
+                    inputmode="decimal"
+                    [value]="lossBonusPoints()"
+                    (ionInput)="lossBonusPoints.set(stringValue($event))"
+                  />
+                </ion-item>
+              </ion-list>
+              <p class="hint">
+                Leave a threshold blank to skip that bonus. Scoring bonus uses the count of the
+                chosen criterion, or the match total when “Match score” is selected.
+              </p>
             }
           }
 
-          @case (3) {
+          @case ('dates') {
             <h3 class="fm-section-title">When it runs</h3>
             <p class="hint">
               @if (pointsTable()) {
@@ -789,6 +833,7 @@ function presetKind(preset: Preset): PresetKind {
               } @else {
                 Dates and match days are optional. Leave them blank if you are still deciding.
               }
+              Dates start from today, and a competition runs for at most a year.
             </p>
 
             <ion-list inset="true">
@@ -798,16 +843,32 @@ function presetKind(preset: Preset): PresetKind {
                   labelPlacement="stacked"
                   type="date"
                   formControlName="starts_on"
+                  (ionInput)="error.set(null)"
+                  [min]="today"
+                  [max]="latestStart"
                 />
               </ion-item>
+              @if (form.controls.starts_on.hasError('pastDate')) {
+                <p class="fm-form-error" role="alert">The start date cannot be in the past.</p>
+              } @else if (form.controls.starts_on.hasError('tooFar')) {
+                <p class="fm-form-error" role="alert">Start within a year from today ({{ latestStart }} at the latest).</p>
+              }
               <ion-item>
                 <ion-input
                   label="Ends on"
                   labelPlacement="stacked"
                   type="date"
                   formControlName="ends_on"
+                  (ionInput)="error.set(null)"
+                  [min]="form.controls.starts_on.value || today"
+                  [max]="latestEnd()"
                 />
               </ion-item>
+              @if (form.controls.ends_on.hasError('pastDate')) {
+                <p class="fm-form-error" role="alert">The end date cannot be in the past.</p>
+              } @else if (form.hasError('tooLong')) {
+                <p class="fm-form-error" role="alert">A competition can run for at most a year (365 days).</p>
+              }
               <ion-item>
                 <ion-select
                   label="Timezone"
@@ -824,13 +885,6 @@ function presetKind(preset: Preset): PresetKind {
 
             @if (form.hasError('dateOrder')) {
               <p class="fm-form-error" role="alert">The end date is before the start date.</p>
-            }
-
-            @if (!pointsTable() && form.controls.format.value === 'league_knockout') {
-              <ng-container [ngTemplateOutlet]="leagueCupFields" />
-              <p class="hint">
-                After this many league match days there is a competition game. Change this later when you generate the schedule.
-              </p>
             }
 
             @if (!pointsTable()) {
@@ -851,6 +905,9 @@ function presetKind(preset: Preset): PresetKind {
             </div>
             }
 
+          }
+
+          @case ('visibility') {
             <h3 class="fm-section-title">Who can see it</h3>
             <div class="visibility">
               <button
@@ -919,6 +976,11 @@ function presetKind(preset: Preset): PresetKind {
               </div>
             }
 
+          }
+
+          @case ('review') {
+            <h3 class="fm-section-title">Check and create</h3>
+            <p class="hint">Look it over. Tap any step above to change something before you create it.</p>
             <div class="summary fm-card">
               <h4>You are creating</h4>
               <dl>
@@ -971,6 +1033,10 @@ function presetKind(preset: Preset): PresetKind {
                     <dd>{{ bonusSummary() }}</dd>
                   </div>
                 }
+                <div>
+                  <dt>Dates</dt>
+                  <dd>{{ datesLabel() }}</dd>
+                </div>
                 <div>
                   <dt>Visibility</dt>
                   <dd>{{ visibilityLabel() }}</dd>
@@ -1059,13 +1125,14 @@ function presetKind(preset: Preset): PresetKind {
           <p class="fm-form-error" role="alert">{{ error() }}</p>
         }
         <div class="footer-actions">
-          @if (step() > 1) {
+          @if (stepIndex() > 0) {
             <ion-button fill="clear" type="button" (click)="back()">Back</ion-button>
           } @else {
             <span></span>
           }
 
-          @if (step() < 3) {
+          <span class="step-count">Step {{ stepIndex() + 1 }} of {{ visibleSteps().length }}</span>
+          @if (!isLastStep()) {
             <ion-button type="button" (click)="next()">Continue</ion-button>
           } @else {
             <ion-button type="button" (click)="submit()" [disabled]="form.invalid || saving()">
@@ -1092,11 +1159,8 @@ export class CompetitionCreatePage implements OnInit {
   private nextDraftKey = 1;
 
   readonly weekdays = WEEKDAYS;
-  readonly steps = [
-    { n: 1 as const, label: 'Type' },
-    { n: 2 as const, label: 'Details' },
-    { n: 3 as const, label: 'Schedule' },
-  ];
+  readonly today = isoDay(new Date());
+  readonly latestStart = isoDay(new Date(), MAX_DAYS_AHEAD);
 
   readonly formats: FormatOption[] = [
     {
@@ -1159,7 +1223,7 @@ export class CompetitionCreatePage implements OnInit {
   readonly presets = signal<Preset[]>([]);
   readonly selectedPreset = signal<string>('custom');
   readonly scoringDrafts = signal<ScoringDraft[]>([this.blankDraft()]);
-  readonly step = signal<Step>(1);
+  readonly step = signal<StepKey>('sport');
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
 
@@ -1260,15 +1324,15 @@ export class CompetitionCreatePage implements OnInit {
       sport: [''],
       format: ['league' as CompetitionFormat, [Validators.required]],
       cup_every_league_rounds: [3, [Validators.min(1)]],
-      starts_on: [''],
-      ends_on: [''],
+      starts_on: ['', withinWindow(this.latestStart)],
+      ends_on: ['', withinWindow(null)],
       timezone: [localTimezone()],
       is_private: [false],
       show_on_landing: [false],
       open_to_scouts: [false],
       match_weekdays: [[] as number[]],
     },
-    { validators: endAfterStart },
+    { validators: datesInOrder },
   );
 
   addCup(): void {
@@ -1732,25 +1796,77 @@ export class CompetitionCreatePage implements OnInit {
     this.form.controls.match_weekdays.setValue(next);
   }
 
-  next(): void {
-    if (this.step() === 1 && this.isCustom() && this.namedDrafts().length === 0) {
-      this.error.set('Define at least one scoring criterion before continuing.');
-      return;
+  /** Custom VS competitions get their own table-points step; everything else skips it. */
+  readonly visibleSteps = computed(() =>
+    STEPS.filter((item) => item.key !== 'points' || (this.isCustom() && !this.pointsTable())),
+  );
+  readonly stepIndex = computed(() =>
+    Math.max(0, this.visibleSteps().findIndex((item) => item.key === this.step())),
+  );
+  readonly isLastStep = computed(() => this.stepIndex() === this.visibleSteps().length - 1);
+
+  latestEnd(): string {
+    return addDays(this.form.controls.starts_on.value || this.today, MAX_DAYS_AHEAD);
+  }
+
+  datesLabel(): string {
+    const { starts_on, ends_on } = this.form.getRawValue();
+    if (starts_on && ends_on) return `${starts_on} to ${ends_on}`;
+    if (starts_on) return `From ${starts_on}`;
+    if (ends_on) return `Until ${ends_on}`;
+    return 'Not set yet';
+  }
+
+  /** What stops this step from moving on, if anything. */
+  private stepProblem(key: StepKey): string | null {
+    switch (key) {
+      case 'sport':
+        return this.isCustom() && this.namedDrafts().length === 0
+          ? 'Define at least one scoring criterion before continuing.'
+          : null;
+      case 'name':
+        if (this.form.controls.name.invalid) {
+          this.form.controls.name.markAsTouched();
+          return 'Give the competition a name.';
+        }
+        return null;
+      case 'dates': {
+        const { starts_on, ends_on } = this.form.controls;
+        if (starts_on.hasError('pastDate') || ends_on.hasError('pastDate')) {
+          return 'Dates cannot be in the past.';
+        }
+        if (starts_on.hasError('tooFar')) return 'The start date must be within a year from today.';
+        if (this.form.hasError('dateOrder')) return 'The end date is before the start date.';
+        if (this.form.hasError('tooLong')) return 'A competition can run for at most a year (365 days).';
+        return null;
+      }
+      default:
+        return null;
     }
-    if (this.step() === 2 && this.form.controls.name.invalid) {
-      this.form.controls.name.markAsTouched();
-      this.error.set('Give the competition a name.');
+  }
+
+  private show(key: StepKey): void {
+    this.step.set(key);
+    this.scrollToStart();
+  }
+
+  next(): void {
+    const problem = this.stepProblem(this.step());
+    if (problem) {
+      this.error.set(problem);
       this.scrollToStart();
       return;
     }
     this.error.set(null);
-    if (this.step() < 3) {
-      this.step.set((this.step() + 1) as Step);
+    const steps = this.visibleSteps();
+    const index = this.stepIndex();
+    if (index < steps.length - 1) {
+      this.show(steps[index + 1].key);
     }
   }
 
   onFormSubmit(): void {
-    if (this.step() < 3) {
+    if (!this.isLastStep()) {
       this.next();
       return;
     }
@@ -1758,23 +1874,32 @@ export class CompetitionCreatePage implements OnInit {
   }
 
   back(): void {
-    if (this.step() > 1) {
-      this.step.set((this.step() - 1) as Step);
+    const index = this.stepIndex();
+    if (index > 0) {
+      this.error.set(null);
+      this.show(this.visibleSteps()[index - 1].key);
     }
   }
 
-  goTo(target: Step): void {
-    if (target < this.step()) {
-      this.step.set(target);
+  /** Jump back freely; jump ahead only past steps that are complete. */
+  goTo(target: StepKey): void {
+    const steps = this.visibleSteps();
+    const targetIndex = steps.findIndex((item) => item.key === target);
+    if (targetIndex <= this.stepIndex()) {
+      this.error.set(null);
+      this.show(target);
       return;
     }
-    if (target === 2 || (target === 3 && this.form.controls.name.valid)) {
-      this.step.set(target);
-      return;
+    for (const item of steps.slice(this.stepIndex(), targetIndex)) {
+      const problem = this.stepProblem(item.key);
+      if (problem) {
+        this.error.set(problem);
+        this.show(item.key);
+        return;
+      }
     }
-    this.form.controls.name.markAsTouched();
-    this.error.set('Give the competition a name.');
-    this.scrollToStart();
+    this.error.set(null);
+    this.show(target);
   }
 
   setPrivate(isPrivate: boolean): void {
@@ -1798,7 +1923,11 @@ export class CompetitionCreatePage implements OnInit {
   submit(): void {
     if (this.form.invalid || this.saving()) {
       this.form.markAllAsTouched();
-      this.step.set(this.form.controls.name.invalid ? 2 : 3);
+      const blocked = this.visibleSteps().find((item) => this.stepProblem(item.key));
+      if (blocked) {
+        this.error.set(this.stepProblem(blocked.key));
+        this.show(blocked.key);
+      }
       return;
     }
 

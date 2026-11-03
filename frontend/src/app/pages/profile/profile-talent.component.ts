@@ -13,6 +13,7 @@ import type {
   TeamInvite,
   TeamMembership,
 } from '../../core/scouting.models';
+import { ReleasesService } from '../../core/releases.service';
 import { ScoutingService, groupBySport } from '../../core/scouting.service';
 
 const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: string }> = [
@@ -30,42 +31,44 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
   imports: [DatePipe, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <h3 class="fm-section-title">Scouting</h3>
-    @if (loadingTalent()) {
-      <div class="card fm-card"><span class="fm-skeleton" style="width: 55%; height: 18px"></span></div>
-    } @else if (talent(); as t) {
-      <section class="card fm-card fm-enter">
-        <div class="talent-head">
-          <div>
-            <strong>{{ t.first_name }} {{ t.last_name }}</strong>
-            <small>
-              {{ t.age_group?.label ?? 'Add your date of birth above' }}
-              · {{ visibilityLabel(t.effective_visibility) }}
-            </small>
+    @if (releases.isOpen('scouting')) {
+      <h3 class="fm-section-title">Scouting</h3>
+      @if (loadingTalent()) {
+        <div class="card fm-card"><span class="fm-skeleton" style="width: 55%; height: 18px"></span></div>
+      } @else if (talent(); as t) {
+        <section class="card fm-card fm-enter">
+          <div class="talent-head">
+            <div>
+              <strong>{{ t.first_name }} {{ t.last_name }}</strong>
+              <small>
+                {{ t.age_group?.label ?? 'Add your date of birth above' }}
+                · {{ visibilityLabel(t.effective_visibility) }}
+              </small>
+            </div>
+            <span class="badge" [class.ok]="t.effective_visibility !== 'private'">
+              {{ t.effective_visibility === 'private' ? 'Hidden from scouts' : 'Visible to scouts' }}
+            </span>
           </div>
-          <span class="badge" [class.ok]="t.effective_visibility !== 'private'">
-            {{ t.effective_visibility === 'private' ? 'Hidden from scouts' : 'Visible to scouts' }}
-          </span>
-        </div>
-        <p class="muted">Scouts use this profile: name, age and the details you save on this page.</p>
-        @if (t.sports.length) {
-          <div class="chips">
-            @for (sport of t.sports; track sport.id) {
-              <span class="chip-mini">
-                {{ sport.sport_label }}{{ sport.primary_position_label ? ' · ' + sport.primary_position_label : '' }}
-              </span>
-            }
+          <p class="muted">Scouts use this profile: name, age and the details you save on this page.</p>
+          @if (t.sports.length) {
+            <div class="chips">
+              @for (sport of t.sports; track sport.id) {
+                <span class="chip-mini">
+                  {{ sport.sport_label }}{{ sport.primary_position_label ? ' · ' + sport.primary_position_label : '' }}
+                </span>
+              }
+            </div>
+          } @else {
+            <p class="muted">No sport added yet.</p>
+          }
+          <div class="actions">
+            <button type="button" class="btn" (click)="go('/tabs/scouting/profile')">Sports and visibility</button>
+            <button type="button" class="btn ghost" (click)="go('/tabs/scouting/players/' + t.id + '/report')">
+              My scouting report
+            </button>
           </div>
-        } @else {
-          <p class="muted">No sport added yet.</p>
-        }
-        <div class="actions">
-          <button type="button" class="btn" (click)="go('/tabs/scouting/profile')">Sports and visibility</button>
-          <button type="button" class="btn ghost" (click)="go('/tabs/scouting/players/' + t.id + '/report')">
-            My scouting report
-          </button>
-        </div>
-      </section>
+        </section>
+      }
     }
 
     <h3 class="fm-section-title">My teams</h3>
@@ -121,11 +124,13 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
       <p class="hint">You are not on a team yet. Accept a team invite and it appears here.</p>
     }
 
-    <h3 class="fm-section-title">My horses</h3>
-    <section class="card fm-card">
-      <p class="lede">Register the horses you own, train or ride, so they can be entered with their rider.</p>
-      <button type="button" class="btn ghost" (click)="go('/tabs/horses')">Open my horses</button>
-    </section>
+    @if (releases.isOpen('horses')) {
+      <h3 class="fm-section-title">My horses</h3>
+      <section class="card fm-card">
+        <p class="lede">Register the horses you own, train or ride, so they can be entered with their rider.</p>
+        <button type="button" class="btn ghost" (click)="go('/tabs/horses')">Open my horses</button>
+      </section>
+    }
 
     <h3 class="fm-section-title">Identity documents</h3>
     <p class="hint">
@@ -369,6 +374,7 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
 export class ProfileTalentComponent {
   private readonly api = inject(ApiService);
   private readonly scouting = inject(ScoutingService);
+  readonly releases = inject(ReleasesService);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastController);
   private readonly alerts = inject(AlertController);
