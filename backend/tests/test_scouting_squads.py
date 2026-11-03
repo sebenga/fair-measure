@@ -33,6 +33,7 @@ from apps.scouting.models import (
     PlayerSport,
     ReportExport,
 )
+from apps.scouting.sample import fill_sample_profile
 from apps.scouting.services import grant_role
 
 pytestmark = pytest.mark.django_db
@@ -89,6 +90,7 @@ def _player(league, team_index: int, name: str, group: dict, *, age=22, visibili
     PlayerSport.objects.create(
         profile=profile, sport=SPORT, primary_position=group["positions"][0], is_primary=True
     )
+    fill_sample_profile(profile, sport=SPORT)
     member = RosterMember.objects.create(
         participant=league["teams"][team_index], name=name, user=user
     )

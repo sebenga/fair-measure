@@ -83,10 +83,7 @@ def _index_path() -> Path:
     return Path(settings.SPA_DIR) / "index.html"
 
 
-def spa_index(request: HttpRequest) -> HttpResponse:
-    index = _index_path()
-    if not index.is_file():
-        return HttpResponse("Fair Measure API is up. The web app is still building.", status=503)
+def _index_response(index: Path) -> HttpResponse:
     html = index.read_text(encoding="utf-8")
     nonce = secrets.token_urlsafe(16)
     html = html.replace("{{CSP_NONCE}}", nonce)
@@ -94,7 +91,16 @@ def spa_index(request: HttpRequest) -> HttpResponse:
     response["Content-Security-Policy"] = getattr(
         settings, "CONTENT_SECURITY_POLICY", "default-src 'self'"
     ).format(nonce=nonce)
+    # index.html names the hashed bundles; a cached copy keeps loading the old app after a deploy.
+    response["Cache-Control"] = "no-cache"
     return response
+
+
+def spa_index(request: HttpRequest) -> HttpResponse:
+    index = _index_path()
+    if not index.is_file():
+        return HttpResponse("Fair Measure API is up. The web app is still building.", status=503)
+    return _index_response(index)
 
 
 class SpaFallbackMiddleware:
@@ -120,11 +126,4 @@ class SpaFallbackMiddleware:
         index = _index_path()
         if not index.is_file():
             return response
-        html = index.read_text(encoding="utf-8")
-        nonce = secrets.token_urlsafe(16)
-        html = html.replace("{{CSP_NONCE}}", nonce)
-        fallback = HttpResponse(html, content_type="text/html")
-        fallback["Content-Security-Policy"] = getattr(
-            settings, "CONTENT_SECURITY_POLICY", "default-src 'self'"
-        ).format(nonce=nonce)
-        return fallback
+        return _index_response(index)

@@ -58,7 +58,7 @@ def test_login_then_read_me(anon_api, user):
     assert me.data["id_number"] == ""
 
 
-def test_personal_details_are_optional_and_can_be_saved(api):
+def test_personal_details_can_be_saved_and_the_id_number_is_compulsory(api):
     empty = api.patch("/api/v1/auth/me", {}, format="json")
     assert empty.status_code == 200
     assert empty.data["date_of_birth"] is None
@@ -90,13 +90,17 @@ def test_personal_details_are_optional_and_can_be_saved(api):
 
     cleared = api.patch(
         "/api/v1/auth/me",
-        {"given_name": "", "family_name": "", "date_of_birth": "", "id_number": ""},
+        {"given_name": "", "family_name": "", "date_of_birth": ""},
         format="json",
     )
     assert cleared.status_code == 200
     assert cleared.data["given_name"] == ""
     assert cleared.data["date_of_birth"] is None
-    assert cleared.data["id_number"] == ""
+    assert cleared.data["id_number"] == "9403125800084"
+
+    # The ID number is compulsory: it cannot be blanked once given.
+    no_id = api.patch("/api/v1/auth/me", {"id_number": ""}, format="json")
+    assert no_id.status_code == 400
 
     future = api.patch("/api/v1/auth/me", {"date_of_birth": "2999-01-01"}, format="json")
     assert future.status_code == 400
@@ -303,8 +307,9 @@ def test_owner_can_delete_a_league_that_already_has_points(api):
 
 
 def test_a_team_is_named_then_a_player_accepts_the_pick(api, user, other_user):
-    from apps.accounts.models import User
     from rest_framework.test import APIClient
+
+    from apps.accounts.models import User
 
     second = User.objects.create_user(
         email="second@example.com", password="s3cret-password", display_name="Second"
@@ -1379,9 +1384,10 @@ def test_scorers_can_record_but_not_restructure(
 def test_an_admin_can_appoint_another_admin_and_a_referee_scores_one_game(
     api, competition, other_user, rugby_scoring, participants
 ):
+    from rest_framework.test import APIClient
+
     from apps.accounts.models import User
     from apps.fixtures.models import FixtureSide
-    from rest_framework.test import APIClient
 
     appointed = api.post(
         f"/api/v1/competitions/{competition.id}/members",
@@ -1466,7 +1472,6 @@ def test_scoring_names_the_player_and_rates_the_game(
     from apps.accounts.models import User
     from apps.competitions.models import Participant, RosterMember
     from apps.fixtures.models import FixtureSide
-    from rest_framework.test import APIClient
 
     mate = User.objects.create_user(
         email="mate@example.com", password="s3cret-password", display_name="Mate"
@@ -1643,9 +1648,10 @@ def test_an_event_cannot_reference_another_competitions_category(
 
 
 def test_a_game_needs_a_time_limit_and_a_referee_before_kickoff(api, other_user):
+    from rest_framework.test import APIClient
+
     from apps.competitions.models import Participant, RosterMember
     from apps.fixtures.models import FixtureSide
-    from rest_framework.test import APIClient
 
     created = api.post(
         "/api/v1/competitions",

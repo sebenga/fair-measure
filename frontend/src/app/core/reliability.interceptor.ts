@@ -42,8 +42,11 @@ export const reliabilityInterceptor: HttpInterceptorFn = (request, next) => {
       },
     }),
     catchError((error: unknown) => {
+      // Pages show their own "not found" state for a missing record, so a read 404 needs no toast.
+      const missing = error instanceof HttpErrorResponse && error.status === 404 && isRead;
       const shown =
-        (error instanceof HttpErrorResponse && error.status !== 401) || error instanceof TimeoutError;
+        (error instanceof HttpErrorResponse && error.status !== 401 && !missing) ||
+        error instanceof TimeoutError;
       if (isApi && !quiet && shown) {
         void showToast(toasts, extractErrorMessage(error));
       }

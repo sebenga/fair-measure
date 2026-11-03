@@ -23,6 +23,27 @@ VISIBILITY_RANK = {
 
 SCOUT_ROLES = {ScoutingRole.Role.SCOUT, ScoutingRole.Role.SCOUT_ADMIN}
 
+# Every field on the profile pages must be filled in before scouts can see a profile.
+# (key, label, where it is edited: "account" is the main profile, "scouting" the scouting profile)
+ACCOUNT_FIELDS: list[tuple[str, str]] = [
+    ("display_name", "Display name"),
+    ("bio", "Bio"),
+    ("avatar_url", "Photo (avatar)"),
+    ("given_name", "Name"),
+    ("family_name", "Surname"),
+    ("date_of_birth", "Date of birth"),
+    ("id_number", "ID number"),
+    ("phone", "Phone"),
+    ("city", "City"),
+    ("country", "Country"),
+]
+SCOUTING_FIELDS: list[tuple[str, str]] = [
+    ("gender_category", "Category"),
+    ("region", "Province / region"),
+    ("school_or_club", "School or club"),
+    ("sport", "A sport with a main position"),
+]
+
 
 # --- Age ---------------------------------------------------------------------
 
@@ -196,11 +217,53 @@ def active_consent(profile: PlayerProfile) -> ConsentRecord | None:
     return latest
 
 
+def _has_value(value) -> bool:
+    return bool(str(value).strip()) if value is not None else False
+
+
+def scout_readiness(profile: PlayerProfile) -> dict:
+    """Which profile fields are still empty. Scouts only see complete profiles."""
+
+    user = profile.user
+    values = {key: getattr(user, key, None) for key, _label in ACCOUNT_FIELDS}
+    values["date_of_birth"] = date_of_birth_of(profile)
+    values["avatar_url"] = user.avatar_url or profile.photo_url or profile.photo_id
+    missing: list[dict] = []
+    for key, label in ACCOUNT_FIELDS:
+        if not _has_value(values[key]):
+            missing.append({"key": key, "label": label, "section": "account"})
+    sports = list(profile.sports.all())
+    checks = {
+        "gender_category": _has_value(profile.gender_category),
+        "region": _has_value(profile.region),
+        "school_or_club": _has_value(profile.school_or_club)
+        or bool(profile.teams.all())
+        or bool(roster_team_ids(profile.user_id)),
+        "sport": any(_has_value(sport.primary_position) for sport in sports),
+    }
+    for key, label in SCOUTING_FIELDS:
+        if not checks[key]:
+            missing.append({"key": key, "label": label, "section": "scouting"})
+    total = len(ACCOUNT_FIELDS) + len(SCOUTING_FIELDS)
+    return {
+        "eligible": not missing,
+        "complete": total - len(missing),
+        "total": total,
+        "missing": missing,
+    }
+
+
+def is_scout_ready(profile: PlayerProfile) -> bool:
+    return scout_readiness(profile)["eligible"]
+
+
 def effective_visibility(profile: PlayerProfile, on: date | None = None) -> str:
-    """What scouts and the public actually get, after the age and consent rules."""
+    """What scouts and the public actually get, after the completeness, age and consent rules."""
 
     chosen = profile.visibility
-    if date_of_birth_of(profile) is None:
+    if chosen == PlayerProfile.Visibility.PRIVATE:
+        return chosen
+    if date_of_birth_of(profile) is None or not is_scout_ready(profile):
         return PlayerProfile.Visibility.PRIVATE
     if not is_minor(profile, on):
         return chosen

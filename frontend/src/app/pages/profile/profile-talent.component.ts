@@ -15,6 +15,7 @@ import type {
 } from '../../core/scouting.models';
 import { ReleasesService } from '../../core/releases.service';
 import { ScoutingService, groupBySport } from '../../core/scouting.service';
+import { ScoutEligibilityComponent } from '../../shared/scout-eligibility.component';
 
 const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: string }> = [
   { kind: 'passport', label: 'Passport', icon: 'globe-outline' },
@@ -28,7 +29,7 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
 @Component({
   selector: 'fm-profile-talent',
   standalone: true,
-  imports: [DatePipe, IonIcon, IonSpinner],
+  imports: [DatePipe, IonIcon, IonSpinner, ScoutEligibilityComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (releases.isOpen('scouting')) {
@@ -49,6 +50,11 @@ const DOCUMENT_KINDS: Array<{ kind: IdentityDocumentKind; label: string; icon: s
               {{ t.effective_visibility === 'private' ? 'Hidden from scouts' : 'Visible to scouts' }}
             </span>
           </div>
+          <fm-scout-eligibility
+            [readiness]="t.scout_readiness"
+            (openAccount)="openAccountDetails()"
+            (openScouting)="go('/tabs/scouting/profile')"
+          />
           <p class="muted">Scouts use this profile: name, age and the details you save on this page.</p>
           @if (t.sports.length) {
             <div class="chips">
@@ -392,6 +398,10 @@ export class ProfileTalentComponent {
   readonly teamGroups = computed(() =>
     groupBySport(this.teams(), (team) => ({ key: team.sport_key, label: team.sport_label }), this.catalog()),
   );
+
+  openAccountDetails(): void {
+    document.getElementById('account-details')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   /** Called by the profile page every time it is shown, so accepted invites appear straight away. */
   refresh(): void {

@@ -26,6 +26,7 @@ from apps.core.permissions import Role
 from apps.fixtures.models import Fixture, FixtureSide, PlayerAppearance, ScoreEvent
 from apps.scouting import stats
 from apps.scouting.models import PhysicalTestResult, PlayerProfile, PlayerSport
+from apps.scouting.sample import fill_sample_profile
 from apps.scouting.services import grant_role
 
 User = get_user_model()
@@ -111,6 +112,7 @@ class Command(BaseCommand):
                 PlayerSport.objects.create(
                     profile=profile, sport="soccer", primary_position="striker", is_primary=True
                 )
+                fill_sample_profile(profile, position="striker", club=team.name)
                 grant_role(user, "player")
                 members[team.id].append(
                     (

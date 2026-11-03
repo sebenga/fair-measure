@@ -12,6 +12,7 @@ from rest_framework.test import APIClient
 from apps.competitions.models import Competition, Participant, RosterMember
 from apps.scouting import catalog
 from apps.scouting.models import ConsentRecord, PlayerProfile, ScoutingRole
+from apps.scouting.sample import fill_sample_profile
 from apps.scouting.services import age_group, age_on, effective_visibility
 
 pytestmark = pytest.mark.django_db
@@ -30,11 +31,21 @@ def _years_ago(years: int) -> str:
     return date(today.year - years, today.month, min(today.day, 28)).isoformat()
 
 
-def _make_profile(client, **fields) -> dict:
+def _make_profile(client, *, complete: bool = True, **fields) -> dict:
+    """A profile, filled in so it is scout-eligible unless `complete=False`."""
+
     payload = {"first_name": "Thandi", "last_name": "Nkosi", "region": "gauteng", **fields}
     created = client.post("/api/v1/scouting/profile", payload, format="json")
     assert created.status_code == 201, created.data
-    return created.data
+    if not complete:
+        return created.data
+    fill_sample_profile(
+        PlayerProfile.objects.get(pk=created.data["id"]),
+        sport="athletics",
+        position="sprints",
+        region=payload["region"],
+    )
+    return client.get("/api/v1/scouting/profile").data
 
 
 def _scout() -> APIClient:
@@ -256,7 +267,7 @@ def test_consent_records_cannot_be_edited():
 
 def test_positions_must_come_from_the_sports_catalogue():
     player, _ = _client("adult6@player.test")
-    _make_profile(player, date_of_birth=_years_ago(19))
+    _make_profile(player, complete=False, date_of_birth=_years_ago(19))
     bad = player.post(
         "/api/v1/scouting/profile/sports",
         {"sport": "soccer", "primary_position": "fly-half"},

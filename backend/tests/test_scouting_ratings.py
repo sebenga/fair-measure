@@ -13,6 +13,7 @@ from rest_framework.test import APIClient
 from apps.competitions.models import Competition, Participant, RosterMember
 from apps.fixtures.models import Fixture, FixtureSide
 from apps.scouting.models import Organisation, PlayerProfile, PlayerSport, ScoutRating
+from apps.scouting.sample import fill_sample_profile
 from apps.scouting.services import grant_role
 
 pytestmark = pytest.mark.django_db
@@ -50,6 +51,7 @@ def world(db):
     PlayerSport.objects.create(
         profile=profile, sport="soccer", primary_position="striker", is_primary=True
     )
+    fill_sample_profile(profile)
     return {
         "lions": lions,
         "rivals": rivals,

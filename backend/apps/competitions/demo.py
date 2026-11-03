@@ -935,6 +935,7 @@ def _record_player_stats(competition: Competition, fixtures: list[Fixture], acto
 def _ensure_player_profiles(competition: Competition) -> int:
     from apps.scouting.catalog import sport_for_competition
     from apps.scouting.models import PlayerProfile, PlayerSport
+    from apps.scouting.sample import fill_sample_profile
     from apps.scouting.services import ensure_player_profile
 
     sport_key = sport_for_competition(competition.sport) or "soccer"
@@ -965,6 +966,7 @@ def _ensure_player_profiles(competition: Competition) -> int:
                 sport=sport_key,
                 defaults={"primary_position": member.position, "is_primary": True},
             )
+        fill_sample_profile(profile, sport=sport_key, club=member.participant.name)
     return created
 
 

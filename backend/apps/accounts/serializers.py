@@ -56,6 +56,11 @@ class UserSerializer(serializers.ModelSerializer):
             if name != "date_of_birth"
         }
 
+    def validate_id_number(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("Your ID number is required.")
+        return value.strip()
+
     def validate_date_of_birth(self, value):
         if value and value > timezone.localdate():
             raise serializers.ValidationError("Date of birth is in the future.")

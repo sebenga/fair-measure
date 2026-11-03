@@ -7,9 +7,8 @@ from decimal import Decimal
 import pytest
 
 from apps.competitions.models import Participant, RosterMember
-from apps.fantasy.models import FantasyTeam
+from apps.fantasy.models import FantasySlot, FantasyTeam
 from apps.fantasy.scoring import classify_slot, player_match_points
-from apps.fantasy.models import FantasySlot
 from apps.fixtures.models import (
     Fixture,
     FixtureLineup,

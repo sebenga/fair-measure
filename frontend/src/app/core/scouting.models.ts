@@ -203,6 +203,14 @@ export interface ConsentStatus {
 }
 
 /** The owner's and guardian's full view. */
+/** Scouts only see profiles with every field filled in. */
+export interface ScoutReadiness {
+  eligible: boolean;
+  complete: number;
+  total: number;
+  missing: Array<{ key: string; label: string; section: 'account' | 'scouting' }>;
+}
+
 export interface PlayerProfile {
   id: string;
   first_name: string;
@@ -222,6 +230,7 @@ export interface PlayerProfile {
   availability_note: string;
   visibility: Visibility;
   effective_visibility: Visibility;
+  scout_readiness?: ScoutReadiness;
   consent_status: ConsentStatus;
   sports: PlayerSport[];
   measurements: Measurement[];

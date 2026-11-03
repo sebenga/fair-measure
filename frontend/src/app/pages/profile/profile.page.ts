@@ -95,7 +95,8 @@ import { ProfileTalentComponent } from './profile-talent.component';
 
         <fm-profile-talent />
 
-        <h3 class="fm-section-title">Account</h3>
+        <h3 class="fm-section-title" id="account-details">Account</h3>
+        <p class="hint">Scouts only see profiles with every field below filled in.</p>
 
         <form [formGroup]="form" (ngSubmit)="save()">
           <ion-list inset="true">
@@ -130,7 +131,7 @@ import { ProfileTalentComponent } from './profile-talent.component';
           </ion-list>
 
           <h3 class="fm-section-title">Personal details</h3>
-          <p class="hint">None of these are compulsory.</p>
+          <p class="hint">Needed to be eligible for scouts. Your ID number and phone are never shown to anyone.</p>
           <ion-list inset="true">
             <ion-item>
               <ion-input label="Name" labelPlacement="stacked" formControlName="given_name" maxlength="80" />
@@ -153,11 +154,12 @@ import { ProfileTalentComponent } from './profile-talent.component';
             </ion-item>
             <ion-item>
               <ion-input
-                label="ID number"
+                label="ID number (required)"
                 labelPlacement="stacked"
                 formControlName="id_number"
                 maxlength="40"
                 autocomplete="off"
+                errorText="Your ID number is required."
               />
             </ion-item>
             <ion-item>
@@ -182,66 +184,9 @@ import { ProfileTalentComponent } from './profile-talent.component';
             </ion-item>
           </ion-list>
 
-          <h3 class="fm-section-title">Experience</h3>
-          <p class="hint">None of these are compulsory.</p>
-          <ion-list inset="true">
-            <ion-item>
-              <ion-input
-                label="Headline"
-                labelPlacement="stacked"
-                formControlName="headline"
-                maxlength="160"
-                placeholder="Role or one-line title"
-              />
-            </ion-item>
-            <ion-item>
-              <ion-input
-                label="Website"
-                labelPlacement="stacked"
-                formControlName="website"
-                inputmode="url"
-                placeholder="https://…"
-              />
-            </ion-item>
-            <ion-item>
-              <ion-textarea
-                label="Experience"
-                labelPlacement="stacked"
-                formControlName="experience"
-                autoGrow="true"
-                rows="3"
-                placeholder="Roles, clubs, or work"
-              />
-            </ion-item>
-            <ion-item>
-              <ion-textarea
-                label="Education"
-                labelPlacement="stacked"
-                formControlName="education"
-                autoGrow="true"
-                rows="2"
-              />
-            </ion-item>
-            <ion-item>
-              <ion-textarea
-                label="Skills"
-                labelPlacement="stacked"
-                formControlName="skills"
-                autoGrow="true"
-                rows="2"
-              />
-            </ion-item>
-            <ion-item>
-              <ion-textarea
-                label="Languages"
-                labelPlacement="stacked"
-                formControlName="languages"
-                autoGrow="true"
-                rows="2"
-              />
-            </ion-item>
-          </ion-list>
-
+          @if (form.controls.id_number.invalid) {
+            <p class="hint">Add your ID number to save your profile.</p>
+          }
           @if (error()) {
             <p class="fm-form-error" role="alert">{{ error() }}</p>
           }
@@ -324,16 +269,10 @@ export class ProfilePage implements OnInit {
     given_name: [''],
     family_name: [''],
     date_of_birth: [''],
-    id_number: [''],
+    id_number: ['', [Validators.required, Validators.maxLength(40)]],
     phone: [''],
     city: [''],
     country: [''],
-    headline: [''],
-    website: [''],
-    experience: [''],
-    education: [''],
-    skills: [''],
-    languages: [''],
   });
 
   ngOnInit(): void {
@@ -363,6 +302,7 @@ export class ProfilePage implements OnInit {
       next: async () => {
         this.saving.set(false);
         this.form.markAsPristine();
+        this.talent()?.refresh();
         await this.toast('Profile saved.', 'success');
       },
       error: (err: unknown) => {
@@ -433,12 +373,6 @@ export class ProfilePage implements OnInit {
     phone?: string;
     city?: string;
     country?: string;
-    headline?: string;
-    website?: string;
-    experience?: string;
-    education?: string;
-    skills?: string;
-    languages?: string;
   }) {
     return {
       display_name: user.display_name,
@@ -451,12 +385,6 @@ export class ProfilePage implements OnInit {
       phone: user.phone ?? '',
       city: user.city ?? '',
       country: user.country ?? '',
-      headline: user.headline ?? '',
-      website: user.website ?? '',
-      experience: user.experience ?? '',
-      education: user.education ?? '',
-      skills: user.skills ?? '',
-      languages: user.languages ?? '',
     };
   }
 

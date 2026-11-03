@@ -25,6 +25,7 @@ from apps.scouting.models import (
     ScoutRating,
     ShortlistLog,
 )
+from apps.scouting.sample import fill_sample_profile
 from apps.scouting.services import grant_role
 
 pytestmark = pytest.mark.django_db
@@ -61,6 +62,7 @@ def _player(
     PlayerSport.objects.create(
         profile=profile, sport="soccer", primary_position=position, is_primary=True
     )
+    fill_sample_profile(profile, gender=gender, region=region)
     return profile
 
 

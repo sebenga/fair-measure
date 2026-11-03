@@ -26,6 +26,7 @@ import type {
 } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
 import { UploadService } from '../../core/upload.service';
+import { ScoutEligibilityComponent } from '../../shared/scout-eligibility.component';
 
 type Identity = Pick<
   PlayerProfile,
@@ -57,7 +58,18 @@ const EMPTY_IDENTITY: Identity = {
 @Component({
   selector: 'fm-talent-profile',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
+  imports: [
+    DatePipe,
+    IonHeader,
+    IonToolbar,
+    IonTitle,
+    IonButtons,
+    IonBackButton,
+    IonContent,
+    IonIcon,
+    IonSpinner,
+    ScoutEligibilityComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
@@ -127,7 +139,15 @@ const EMPTY_IDENTITY: Identity = {
           </p>
         }
 
-        <form class="fm-card section" (submit)="saveIdentity($event)">
+        @if (profile(); as p) {
+          <fm-scout-eligibility
+            [readiness]="p.scout_readiness"
+            (openAccount)="goAccount()"
+            (openScouting)="scrollToDetails()"
+          />
+        }
+
+        <form id="scouting-details" class="fm-card section" (submit)="saveIdentity($event)">
           <h3>About you</h3>
           <p class="hint">
             Name, age, photo and country come from
@@ -626,6 +646,10 @@ const EMPTY_IDENTITY: Identity = {
   ],
 })
 export class TalentProfilePage {
+  scrollToDetails(): void {
+    document.getElementById('scouting-details')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   private readonly scouting = inject(ScoutingService);
   private readonly uploads = inject(UploadService);
   private readonly router = inject(Router);

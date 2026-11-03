@@ -15,6 +15,7 @@ from apps.competitions.presets import apply_preset
 from apps.fixtures.models import Fixture, FixtureSide, PlayerAppearance, ScoreEvent
 from apps.scouting import stats
 from apps.scouting.models import PhysicalTestResult, PlayerProfile, PlayerSport, PlayerStatLine
+from apps.scouting.sample import fill_sample_profile
 
 pytestmark = pytest.mark.django_db
 User = get_user_model()
@@ -45,6 +46,7 @@ def _profile(email: str, *, position="striker", age=24, gender="men", visibility
     PlayerSport.objects.create(
         profile=profile, sport="soccer", primary_position=position, is_primary=True
     )
+    fill_sample_profile(profile, gender=gender)
     return profile
 
 

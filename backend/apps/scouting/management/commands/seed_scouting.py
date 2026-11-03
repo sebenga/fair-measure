@@ -30,6 +30,7 @@ from apps.scouting.models import (
     PlayerProfile,
     PlayerSport,
 )
+from apps.scouting.sample import fill_sample_profile
 from apps.scouting.services import grant_role, record_consent
 
 User = get_user_model()
@@ -229,6 +230,11 @@ class Command(BaseCommand):
             GuardianLink.objects.create(
                 profile=profile, invited_email=guardian.email, relationship="Aunt"
             )
+
+        # Scouts only see complete profiles.
+        people = [row[0] for row in PEOPLE.values()]
+        for profile in PlayerProfile.objects.filter(user__email__in=people).select_related("user"):
+            fill_sample_profile(profile)
 
         self.stdout.write(
             self.style.SUCCESS(

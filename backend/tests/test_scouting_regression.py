@@ -31,6 +31,7 @@ from apps.scouting.models import (
     ScoutRating,
     ShortlistLog,
 )
+from apps.scouting.sample import fill_sample_profile
 from apps.scouting.services import grant_role
 
 pytestmark = pytest.mark.django_db
@@ -62,6 +63,7 @@ def _adult(name, sprint):
         visibility="scouts",
     )
     PlayerSport.objects.create(profile=profile, sport="soccer", primary_position="striker", is_primary=True)
+    fill_sample_profile(profile)
     PhysicalTestResult.objects.create(
         profile=profile, sport="soccer", test_key="sprint_40m", value=sprint, unit="s", tested_on=date.today()
     )
@@ -131,6 +133,12 @@ def test_the_whole_scouting_journey_and_its_privacy(settings):
         format="json",
     )
     assert consent.status_code == 201, consent.data
+    # Consent alone is not enough: every profile field has to be filled in first.
+    readiness = player.get("/api/v1/scouting/profile").data["scout_readiness"]
+    assert readiness["eligible"] is False and readiness["missing"]
+    assert scout.get(f"/api/v1/scouting/profiles/{profile_id}").status_code == 404
+    fill_sample_profile(PlayerProfile.objects.get(pk=profile_id))
+    assert player.get("/api/v1/scouting/profile").data["scout_readiness"]["eligible"] is True
     seen = scout.get(f"/api/v1/scouting/profiles/{profile_id}")
     assert seen.status_code == 200 and seen.data["access"] == "scout"
 

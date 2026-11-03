@@ -14,6 +14,7 @@ from apps.core.permissions import Role
 from apps.fixtures.models import Fixture, FixtureSide, PlayerMatchRating
 from apps.scouting import catalog
 from apps.scouting.models import LeagueScout, Organisation, PlayerProfile
+from apps.scouting.sample import fill_sample_profile
 from apps.scouting.services import grant_role
 
 pytestmark = pytest.mark.django_db
@@ -190,6 +191,7 @@ def test_reports_only_use_leagues_open_to_scouts(owner):
         date_of_birth=date(date.today().year - 22, 1, 1),
         visibility="scouts",
     )
+    fill_sample_profile(profile)
     scout = _scout("reader@open.test")
 
     for opened in (True, False):

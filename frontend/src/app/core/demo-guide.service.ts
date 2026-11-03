@@ -1,5 +1,9 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
+import { ToastController } from '@ionic/angular/standalone';
+
+import { ApiService } from './api.service';
 
 import { DemoVoiceService } from './demo-voice.service';
 import type { CompetitionDetail } from './models';
@@ -13,6 +17,8 @@ export interface GuideContext {
   liveFixture: string | null;
   liveCupFixture: string | null;
   penaltyFixture: string | null;
+  /** When the demo deletes itself; the tour ends with it. */
+  expiresAt?: string | null;
 }
 
 /** One click (or typed text) the coach performs on the real page while the user watches. */
@@ -316,6 +322,8 @@ interface SavedState {
 export class DemoGuideService {
   private readonly router = inject(Router);
   private readonly releases = inject(ReleasesService);
+  private readonly api = inject(ApiService);
+  private readonly toasts = inject(ToastController);
   readonly voice = inject(DemoVoiceService);
 
   readonly context = signal<GuideContext | null>(null);
@@ -353,7 +361,13 @@ export class DemoGuideService {
   /** The tour runs on demo competitions only. */
   contextFor(competition: CompetitionDetail): GuideContext | null {
     const demo = competition.settings_json?.['demo_league'] as
-      | { active?: boolean; live_fixture?: string; live_cup_fixture?: string; penalty_fixture?: string }
+      | {
+          active?: boolean;
+          expires_at?: string;
+          live_fixture?: string;
+          live_cup_fixture?: string;
+          penalty_fixture?: string;
+        }
       | undefined;
     if (!demo?.active) return null;
     return {
@@ -362,6 +376,7 @@ export class DemoGuideService {
       liveFixture: demo.live_fixture ?? null,
       liveCupFixture: demo.live_cup_fixture ?? null,
       penaltyFixture: demo.penalty_fixture ?? null,
+      expiresAt: demo.expires_at ?? null,
     };
   }
 
@@ -536,6 +551,10 @@ export class DemoGuideService {
     const ctx = this.context();
     const step = this.step();
     if (!ctx || !step) return;
+    if (ctx.expiresAt && Date.parse(ctx.expiresAt) <= Date.now()) {
+      void this.endExpired();
+      return;
+    }
     const { path, query } = step.route(ctx);
     this.halt();
     this.clearSpot();
@@ -576,6 +595,31 @@ export class DemoGuideService {
     document.querySelectorAll(`.${SPOT}`).forEach((node) => node.classList.remove(SPOT));
   }
 
+  /** A tour saved in this tab can outlive its demo, which deletes itself after an hour. */
+  private checkStillThere(ctx: GuideContext): void {
+    this.api.getCompetition(ctx.competitionId).subscribe({
+      next: (competition) => {
+        if (!this.contextFor(competition)) void this.endExpired();
+      },
+      error: (err: unknown) => {
+        if (err instanceof HttpErrorResponse && err.status === 404) void this.endExpired();
+      },
+    });
+  }
+
+  private async endExpired(): Promise<void> {
+    if (!this.open()) return;
+    this.close();
+    sessionStorage.removeItem(STATE_KEY);
+    const toast = await this.toasts.create({
+      message: 'That demo has ended and was deleted. Start a new demo from Setup to take the tour again.',
+      duration: 4000,
+      color: 'medium',
+      position: 'bottom',
+    });
+    await toast.present();
+  }
+
   private save(): void {
     const ctx = this.context();
     if (!ctx) return;
@@ -592,7 +636,10 @@ export class DemoGuideService {
       this.context.set(state.context);
       this.index.set(state.index || 0);
       this.open.set(state.open === true);
-      if (state.open) this.spotlight();
+      if (state.open) {
+        this.spotlight();
+        this.checkStillThere(state.context);
+      }
     } catch {
       sessionStorage.removeItem(STATE_KEY);
     }

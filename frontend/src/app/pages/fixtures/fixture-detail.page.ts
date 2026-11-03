@@ -11,6 +11,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
@@ -155,9 +156,15 @@ interface Celebration {
       } @else if (error()) {
         <div class="fm-empty">
           <ion-icon name="alert-circle-outline" aria-hidden="true" />
-          <h3>Could not load this fixture</h3>
-          <p>{{ error() }}</p>
-          <ion-button fill="clear" (click)="load()">Try again</ion-button>
+          @if (gone()) {
+            <h3>This fixture no longer exists</h3>
+            <p>It was deleted, or the demo competition it belonged to has ended. Demo competitions delete themselves after an hour.</p>
+            <ion-button fill="clear" (click)="leave()">Back to my leagues</ion-button>
+          } @else {
+            <h3>Could not load this fixture</h3>
+            <p>{{ error() }}</p>
+            <ion-button fill="clear" (click)="load()">Try again</ion-button>
+          }
         </div>
       } @else if (fixture(); as fx) {
         <section class="scoreboard fm-enter" [class.live]="fx.status === 'live'">
@@ -635,6 +642,8 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   readonly loading = signal(true);
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
+  /** The fixture was deleted, e.g. with an expired demo competition. */
+  readonly gone = signal(false);
   /** Ticks so the clock appears at kickoff and the readout advances. */
   readonly now = signal(Date.now());
   readonly clock = signal<MatchClock>(emptyClock());
@@ -1130,9 +1139,14 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     this.unitIndex.set(Math.min(this.phaseUnit(), slots.length - 1));
   }
 
+  leave(): void {
+    void this.router.navigateByUrl('/tabs/competitions');
+  }
+
   load(): void {
     this.loading.set(true);
     this.error.set(null);
+    this.gone.set(false);
 
     this.api.getCompetition(this.competitionId).subscribe({
       next: (competition) => {
@@ -1154,6 +1168,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
         this.loading.set(false);
       },
       error: (err: unknown) => {
+        this.gone.set(err instanceof HttpErrorResponse && err.status === 404);
         this.error.set(extractErrorMessage(err));
         this.loading.set(false);
       },

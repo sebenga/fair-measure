@@ -26,6 +26,7 @@ from .services import (
     is_minor,
     roster_team_ids,
     school_or_club_label,
+    scout_readiness,
     shared_sections,
     today,
 )
@@ -344,6 +345,7 @@ class PlayerProfileSerializer(serializers.ModelSerializer):
     age_group = serializers.SerializerMethodField()
     is_minor = serializers.SerializerMethodField()
     effective_visibility = serializers.SerializerMethodField()
+    scout_readiness = serializers.SerializerMethodField()
     consent_status = serializers.SerializerMethodField()
     sports = PlayerSportSerializer(many=True, read_only=True)
     teams = serializers.SerializerMethodField()
@@ -385,6 +387,7 @@ class PlayerProfileSerializer(serializers.ModelSerializer):
             "availability_note",
             "visibility",
             "effective_visibility",
+            "scout_readiness",
             "consent_status",
             "sports",
             "measurements",
@@ -554,6 +557,9 @@ class PlayerProfileSerializer(serializers.ModelSerializer):
 
     def get_effective_visibility(self, obj: PlayerProfile) -> str:
         return effective_visibility(obj)
+
+    def get_scout_readiness(self, obj: PlayerProfile) -> dict:
+        return scout_readiness(obj)
 
     def get_consent_status(self, obj: PlayerProfile) -> dict:
         born = date_of_birth_of(obj)
