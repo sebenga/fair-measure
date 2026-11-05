@@ -75,6 +75,58 @@ class _Totals:
             self.handicap = other.handicap
 
 
+class _Shared:
+    """Fixture data several players read: each league table, each fixture's sides,
+    events and result, loaded once per job rather than once per player.
+
+    A competition-wide rebuild covers hundreds of players over the same fixtures;
+    without this every player recomputed the table and re-read every match.
+    """
+
+    def __init__(self) -> None:
+        self.positions: dict = {}
+        self.sides: dict = defaultdict(list)  # fixture id -> [(side id, participant id)]
+        self.events: dict = defaultdict(list)  # fixture id -> [(side, player, code, qty, pts)]
+        self.results: dict = {}  # side id -> EntryResult
+        self.loaded: set = set()
+        self.competitions: dict = {}
+
+    def competition(self, competition_id):
+        # Settings are large JSON; reading them once per fixture row was most of the CPU.
+        if competition_id not in self.competitions:
+            from apps.competitions.models import Competition
+
+            self.competitions[competition_id] = Competition.objects.get(pk=competition_id)
+        return self.competitions[competition_id]
+
+    def load(self, fixture_ids) -> None:
+        from apps.fixtures.models import FixtureSide, ScoreEvent
+        from apps.results.models import EntryResult
+
+        wanted = set(fixture_ids) - self.loaded
+        if not wanted:
+            return
+        self.loaded |= wanted
+        for fixture_id, side_id, participant_id in FixtureSide.objects.filter(
+            fixture_id__in=wanted
+        ).values_list("fixture_id", "id", "participant_id"):
+            self.sides[fixture_id].append((side_id, participant_id))
+        for row in ScoreEvent.objects.filter(fixture_id__in=wanted).values_list(
+            "fixture_id",
+            "side_id",
+            "player_id",
+            "scoring_category__code",
+            "quantity",
+            "scoring_category__points",
+            "scoring_category__affects_score",
+        ):
+            fixture_id, side_id, player_id, code, quantity, points, counts = row
+            scored = quantity * points if counts else Decimal("0")
+            self.events[fixture_id].append((side_id, player_id, code, quantity, scored))
+        for result in EntryResult.objects.filter(side__fixture_id__in=wanted):
+            self.results[result.side_id] = result
+
+
 def _standings_positions(competition, cache: dict) -> dict:
     if competition.id not in cache:
         from apps.standings.services import compute_standings
@@ -89,20 +141,18 @@ def _standings_positions(competition, cache: dict) -> dict:
     return cache[competition.id]
 
 
-def _collect(user) -> dict[tuple[str, int, object], _Totals]:
+def _collect(user, shared: _Shared | None = None) -> dict[tuple[str, int, object], _Totals]:
     """Totals keyed by (sport, season, competition id) from every counted fixture."""
 
     from apps.competitions.models import Participant, RosterMember
     from apps.fixtures.models import FixtureSide, PlayerAppearance, PlayerMatchRating, ScoreEvent
-    from apps.results.models import EntryResult
 
+    shared = shared or _Shared()
     totals: dict[tuple, _Totals] = defaultdict(_Totals)
-    positions_cache: dict = {}
-    members = list(
-        RosterMember.objects.filter(user=user).select_related("participant__competition")
-    )
+    positions_cache = shared.positions
+    members = list(RosterMember.objects.filter(user=user).only("id", "participant_id"))
     member_ids = [member.id for member in members]
-    individual = list(Participant.objects.filter(managed_by=user).select_related("competition"))
+    individual = list(Participant.objects.filter(managed_by=user).only("id"))
     try:
         from apps.games.models import Athlete
 
@@ -118,14 +168,16 @@ def _collect(user) -> dict[tuple[str, int, object], _Totals]:
     team_ids = {member.participant_id for member in members}
     own_ids = {participant.id for participant in individual}
 
-    sides = (
+    sides = list(
         FixtureSide.objects.filter(
             Q(participant_id__in=team_ids) | Q(participant_id__in=own_ids),
             fixture__status__in=COUNTED,
         )
-        .select_related("fixture__competition", "participant")
+        .select_related("fixture", "participant")
         .distinct()
     )
+    shared.load(side.fixture_id for side in sides)
+    member_set = set(member_ids)
     tagged = set(
         ScoreEvent.objects.filter(player_id__in=member_ids).values_list("fixture_id", flat=True)
     ) | set(
@@ -141,7 +193,7 @@ def _collect(user) -> dict[tuple[str, int, object], _Totals]:
 
     for side in sides:
         fixture = side.fixture
-        competition = fixture.competition
+        competition = fixture.competition = shared.competition(fixture.competition_id)
         sport = catalog.sport_for_competition(competition.sport)
         if sport is None:
             continue
@@ -162,8 +214,10 @@ def _collect(user) -> dict[tuple[str, int, object], _Totals]:
             row.outcomes["played"] += 1
             positions = _standings_positions(competition, positions_cache)
             own = positions.get(str(side.participant_id))
-            for other in fixture.sides.exclude(pk=side.pk):
-                theirs = positions.get(str(other.participant_id))
+            for other_id, other_participant in shared.sides.get(fixture.id, []):
+                if other_id == side.id:
+                    continue
+                theirs = positions.get(str(other_participant))
                 if theirs is None:
                     continue
                 row.opponent_ranks.append(theirs)
@@ -175,16 +229,13 @@ def _collect(user) -> dict[tuple[str, int, object], _Totals]:
         if handicap is not None:
             row.handicap = Decimal(str(handicap))
 
-        events = ScoreEvent.objects.filter(fixture=fixture).select_related("scoring_category")
-        if side.participant_id in own_ids:
-            events = events.filter(side=side)
-        else:
-            events = events.filter(player_id__in=member_ids)
-        for event in events:
-            row.counts[event.scoring_category.code] += event.quantity
-            row.points += event.points
+        own_side = side.participant_id in own_ids
+        for side_id, player_id, code, quantity, scored in shared.events.get(fixture.id, []):
+            if (side_id == side.id) if own_side else (player_id in member_set):
+                row.counts[code] += quantity
+                row.points += scored
 
-        result = EntryResult.objects.filter(side=side).first()
+        result = shared.results.get(side.id)
         if result is not None and result.primary is not None and not result.effective_status:
             result_type = (competition.settings_json or {}).get("result_type") or ""
             wind = (result.data or {}).get("wind")
@@ -239,9 +290,12 @@ def _values(sport: str, row: _Totals, previous: _Totals | None, profile) -> dict
             else None
         ),
         "participant.handicap": row.handicap,
-        "profile.weight": _measurement(profile, "weight"),
-        "profile.reach": _measurement(profile, "reach"),
     }
+    # Measurements cost a query each; only sports that show them read them.
+    sources = {definition.get("source") for definition in definitions}
+    for kind in ("weight", "reach"):
+        if f"profile.{kind}" in sources:
+            engine[f"profile.{kind}"] = _measurement(profile, kind)
     values: dict[str, dict] = {}
     known = {"matches": row.matches, "minutes": row.minutes, "rounds": row.matches}
     for definition in definitions:
@@ -274,47 +328,50 @@ def _measurement(profile, kind: str):
     return row.value if row else None
 
 
-def recompute_user(user) -> int:
+def recompute_user(user, shared: _Shared | None = None) -> int:
     """Rebuild every cached stat line for one player. Returns the number of rows."""
 
     profile = PlayerProfile.objects.filter(user=user).first()
-    totals = _collect(user)
+    totals = _collect(user, shared)
     seasons: dict[tuple[str, int], _Totals] = defaultdict(_Totals)
     for (sport, season, _competition), row in totals.items():
         seasons[(sport, season)].add(row)
     now = timezone.now()
-    keep = []
-    for (sport, season, competition_id), row in totals.items():
-        previous = seasons.get((sport, season - 1))
-        line, _ = PlayerStatLine.objects.update_or_create(
-            user=user,
-            sport=sport,
-            season=season,
-            competition_id=competition_id,
-            defaults={
-                "matches": row.matches,
-                "minutes": row.minutes,
-                "values": _values(sport, row, previous, profile),
-                "computed_at": now,
-            },
-        )
-        keep.append(line.id)
+    wanted = {
+        (sport, season, competition_id): (row, seasons.get((sport, season - 1)))
+        for (sport, season, competition_id), row in totals.items()
+    }
     for (sport, season), row in seasons.items():
-        line, _ = PlayerStatLine.objects.update_or_create(
-            user=user,
-            sport=sport,
-            season=season,
-            competition=None,
-            defaults={
-                "matches": row.matches,
-                "minutes": row.minutes,
-                "values": _values(sport, row, seasons.get((sport, season - 1)), profile),
-                "computed_at": now,
-            },
+        wanted[(sport, season, None)] = (row, seasons.get((sport, season - 1)))
+    existing = {
+        (line.sport, line.season, line.competition_id): line
+        for line in PlayerStatLine.objects.filter(user=user)
+    }
+    changed, fresh = [], []
+    for key, (row, previous) in wanted.items():
+        sport, season, competition_id = key
+        line = existing.pop(key, None)
+        if line is None:
+            line = PlayerStatLine(
+                user=user, sport=sport, season=season, competition_id=competition_id
+            )
+            fresh.append(line)
+        else:
+            changed.append(line)
+        line.matches = row.matches
+        line.minutes = row.minutes
+        line.values = _values(sport, row, previous, profile)
+        line.computed_at = now
+        line.updated_at = now
+    if changed:
+        PlayerStatLine.objects.bulk_update(
+            changed, ["matches", "minutes", "values", "computed_at", "updated_at"]
         )
-        keep.append(line.id)
-    PlayerStatLine.objects.filter(user=user).exclude(id__in=keep).delete()
-    return len(keep)
+    if fresh:
+        PlayerStatLine.objects.bulk_create(fresh)
+    if existing:
+        PlayerStatLine.objects.filter(id__in=[line.id for line in existing.values()]).delete()
+    return len(wanted)
 
 
 def players_in_competition(competition) -> list:
@@ -338,9 +395,17 @@ def players_in_competition(competition) -> list:
 def recompute_competition(competition) -> int:
     """The stats job: rebuild the players of one competition."""
 
+    from apps.fixtures.models import Fixture
+
     if catalog.sport_for_competition(competition.sport) is None:
         return 0
-    return sum(recompute_user(user) for user in players_in_competition(competition))
+    shared = _Shared()
+    shared.load(
+        Fixture.objects.filter(competition=competition, status__in=COUNTED).values_list(
+            "id", flat=True
+        )
+    )
+    return sum(recompute_user(user, shared) for user in players_in_competition(competition))
 
 
 # --- Percentiles ---------------------------------------------------------------------

@@ -22,6 +22,10 @@ export function extractErrorMessage(error: unknown, fallback = 'Something went w
     return 'Could not reach the server. Check your connection and try again.';
   }
 
+  if (isServerRestarting(error)) {
+    return 'The server is restarting. Give it a few seconds and try again.';
+  }
+
   if (typeof error.error === 'string' && error.error.includes('<html')) {
     return 'The server sent a page instead of data. Retry in a moment.';
   }
@@ -38,6 +42,16 @@ export function extractErrorMessage(error: unknown, fallback = 'Something went w
   }
 
   return envelope.message || fallback;
+}
+
+/**
+ * The host answered for the app: a gateway error, or its own HTML holding page,
+ * which is what Render sends while it restarts or wakes the server.
+ */
+export function isServerRestarting(error: unknown): boolean {
+  if (!(error instanceof HttpErrorResponse)) return false;
+  if (error.status === 502 || error.status === 503 || error.status === 504) return true;
+  return error.status >= 500 && typeof error.error === 'string' && error.error.includes('<html');
 }
 
 function firstFieldMessage(detail: unknown): string | null {

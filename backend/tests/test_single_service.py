@@ -48,6 +48,33 @@ def test_a_failing_inline_job_never_breaks_the_request(single_service):
     bus.enqueue_job(bus.Queues.STANDINGS, "recompute", {"competition_id": "nope"}, immediate=True)
 
 
+def test_a_burst_of_the_same_rebuild_runs_once(single_service, monkeypatch):
+    single_service.JOBS_INLINE_SYNC = False
+    submitted = []
+
+    class Pool:
+        def submit(self, *args):
+            submitted.append(args)
+
+    monkeypatch.setattr(bus, "_job_pool", Pool)
+    monkeypatch.setattr(bus, "_waiting", set())
+    ran = []
+    monkeypatch.setattr("apps.core.jobs.run_job", lambda *args: ran.append(args))
+    data = {"competition_id": "c1"}
+
+    for _ in range(5):
+        bus.enqueue_job(bus.Queues.STATS, "recompute", data, immediate=True)
+    bus.enqueue_job(bus.Queues.NOTIFICATIONS, "send", data, immediate=True)
+    bus.enqueue_job(bus.Queues.NOTIFICATIONS, "send", data, immediate=True)
+    assert len(submitted) == 3
+
+    _, _, task, *args = submitted[0]
+    task(*args)
+    assert ran == [(bus.Queues.STATS, "recompute", data)]
+    bus.enqueue_job(bus.Queues.STATS, "recompute", data, immediate=True)
+    assert len(submitted) == 4
+
+
 def test_polling_returns_new_events_for_rooms_the_viewer_may_follow(
     single_service, competition, user
 ):

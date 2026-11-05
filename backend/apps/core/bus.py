@@ -195,6 +195,11 @@ def enqueue_job(
 
 _executor = None
 _executor_lock = threading.Lock()
+# Rebuild jobs waiting to start. A burst of goals or kicks queues the same rebuild
+# many times; one run after the burst gives the same result, so repeats are dropped
+# instead of piling up on a small server.
+_waiting: set[str] = set()
+COALESCED_QUEUES = {"standings", "stats"}
 _recent_events: deque[str] = deque(maxlen=500)
 _last_periodic = 0.0
 PERIODIC_EVERY_SECONDS = 10 * 60
@@ -235,8 +240,23 @@ def _run_inline(queue: str, name: str, data: dict[str, Any]) -> None:
     label = f"{queue}/{name}"
     if settings.JOBS_INLINE_SYNC:
         _guarded(label, run_job, queue, name, data)
-    else:
+        return
+    if queue not in COALESCED_QUEUES:
         _job_pool().submit(_in_pool, label, run_job, queue, name, data)
+        return
+    key = json.dumps([queue, name, data], sort_keys=True, default=str)
+    with _executor_lock:
+        if key in _waiting:
+            return
+        _waiting.add(key)
+
+    def started(*args) -> None:
+        # Changes made after this point need a fresh run, so the key is freed first.
+        with _executor_lock:
+            _waiting.discard(key)
+        run_job(*args)
+
+    _job_pool().submit(_in_pool, label, started, queue, name, data)
 
 
 def maybe_run_periodic() -> None:

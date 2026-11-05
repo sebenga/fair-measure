@@ -5,7 +5,7 @@ import { TimeoutError, timeout, retry, timer, catchError, throwError } from 'rxj
 
 import { isApiUrl } from './api-url';
 import { ClientErrorsService } from './client-errors.service';
-import { extractErrorMessage } from './error-message';
+import { extractErrorMessage, isServerRestarting } from './error-message';
 
 const TIMEOUT_MS = 15_000;
 // A sleeping free Render instance can take close to a minute to answer the first write.
@@ -20,6 +20,10 @@ const QUIET = [
   '/realtime/events',
 ];
 const AUTH = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/google'];
+// Ordinary failures get two quick retries. While the host restarts the server (about
+// half a minute, answering with its own HTML page) reads keep trying for that long.
+const QUICK_RETRIES = 2;
+const RESTART_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
 
 export const reliabilityInterceptor: HttpInterceptorFn = (request, next) => {
   const toasts = inject(ToastController);
@@ -28,7 +32,7 @@ export const reliabilityInterceptor: HttpInterceptorFn = (request, next) => {
   const quiet = QUIET.some((path) => request.url.includes(path));
   const authCall = AUTH.some((path) => request.url.includes(path));
   const isRead = request.method === 'GET' || request.method === 'HEAD';
-  const retried = isRead && isApi && !quiet ? 2 : 0;
+  const retried = isRead && isApi && !quiet ? RESTART_DELAYS_MS.length : 0;
   const limit = authCall ? AUTH_TIMEOUT_MS : isRead ? TIMEOUT_MS : WRITE_TIMEOUT_MS;
 
   return next(request).pipe(
@@ -38,6 +42,12 @@ export const reliabilityInterceptor: HttpInterceptorFn = (request, next) => {
       delay: (error, retryCount) => {
         // 4xx answers (expired sign-in, not found, validation) will not change on a second try.
         if (error instanceof HttpErrorResponse && error.status >= 400 && error.status < 500) {
+          return throwError(() => error);
+        }
+        if (isServerRestarting(error)) {
+          return timer(RESTART_DELAYS_MS[retryCount - 1]);
+        }
+        if (retryCount > QUICK_RETRIES) {
           return throwError(() => error);
         }
         return timer(400 * 2 ** (retryCount - 1));
