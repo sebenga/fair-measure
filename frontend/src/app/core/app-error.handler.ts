@@ -3,6 +3,7 @@ import { ErrorHandler, Injectable, inject } from '@angular/core';
 import { TimeoutError } from 'rxjs';
 
 import { ClientErrorsService } from './client-errors.service';
+import { isStaleBuildError, reloadForNewBuild } from './stale-build';
 
 /** Failed requests are already reported by the reliability interceptor's toast; they are not screen crashes. */
 function isRequestFailure(error: unknown): boolean {
@@ -17,6 +18,7 @@ export class FairMeasureErrorHandler implements ErrorHandler {
   handleError(error: unknown): void {
     console.error(error);
     if (isRequestFailure(error)) return;
+    if (isStaleBuildError(error) && reloadForNewBuild()) return;
     this.reports.crash(error);
     if (document.documentElement.classList.contains('fm-booted')) {
       const banner = document.getElementById('fm-runtime-error');

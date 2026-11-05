@@ -61,6 +61,9 @@ CORS_ALLOW_ALL_ORIGINS = False
 
 if Path(SPA_DIR).is_dir():
     WHITENOISE_ROOT = Path(SPA_DIR)
+    # Angular names built files by content hash (main-3DSOUR4X.js), so a name never
+    # changes content: phones can cache them for a year instead of re-checking every minute.
+    WHITENOISE_IMMUTABLE_FILE_TEST = r"-[A-Z0-9]{8}\.(?:js|css)$"
 
 # Django's Redis cache backend is not required for request handling. Keep
 # cache in-process so a Key Value blip cannot 500 the API. The realtime bus

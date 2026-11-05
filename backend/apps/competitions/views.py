@@ -4,7 +4,8 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from decimal import Decimal
 
-from django.db.models import Count, Prefetch, Q, QuerySet
+from django.db.models import Count, OuterRef, Prefetch, Q, QuerySet, Subquery
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -82,15 +83,25 @@ def released_competitions() -> Q:
     return released
 
 
+def member_of(user) -> Q:
+    """Competitions the user owns or is a member of.
+
+    A subquery rather than a join: joining memberships multiplies rows (a demo
+    league has hundreds of members), and de-duplicating those wide rows filled
+    the Postgres disk with temporary sort files.
+    """
+
+    joined = Membership.objects.filter(user=user).values("competition_id")
+    return Q(owner=user) | Q(pk__in=joined)
+
+
 def visible_competitions(user) -> QuerySet[Competition]:
     """Released public competitions, plus any the user belongs to."""
 
     queryset = Competition.objects.select_related("owner")
     if not user or not user.is_authenticated:
         return queryset.filter(released_competitions())
-    return queryset.filter(
-        released_competitions() | Q(owner=user) | Q(memberships__user=user)
-    ).distinct()
+    return queryset.filter(released_competitions() | member_of(user))
 
 
 @extend_schema_view(
@@ -131,13 +142,18 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         from .demo import purge_expired_demos
 
         purge_expired_demos()
+        entrants = (
+            Participant.objects.filter(competition=OuterRef("pk"))
+            .order_by()
+            .values("competition")
+            .annotate(total=Count("pk"))
+            .values("total")
+        )
         queryset = visible_competitions(self.request.user).annotate(
-            participant_count=Count("participants", distinct=True)
+            participant_count=Coalesce(Subquery(entrants), 0)
         )
         if self.request.query_params.get("mine") in {"1", "true", "yes"}:
-            queryset = queryset.filter(
-                Q(owner=self.request.user) | Q(memberships__user=self.request.user)
-            ).distinct()
+            queryset = queryset.filter(member_of(self.request.user))
         if self.action == "retrieve":
             queryset = queryset.prefetch_related(
                 "scoring_categories",
