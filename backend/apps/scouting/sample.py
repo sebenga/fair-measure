@@ -10,6 +10,50 @@ from __future__ import annotations
 
 from .models import PlayerProfile, PlayerSport
 
+# The account fields `scout_readiness` checks, in the order sample values fill them.
+SAMPLE_ACCOUNT_FIELDS = (
+    "display_name",
+    "given_name",
+    "family_name",
+    "bio",
+    "avatar_url",
+    "id_number",
+    "phone",
+    "city",
+    "country",
+)
+
+
+def sample_account_details(
+    user, *, sport: str = "soccer", given: str = "", family: str = ""
+) -> list[str]:
+    """Set sample values on the account fields that are still empty. Nothing is saved;
+    the caller writes the returned fields (singly or in bulk)."""
+
+    given = given or user.given_name or (user.display_name or "").split(" ")[0]
+    family = family or user.family_name
+    name = " ".join(part for part in (given, family) if part) or "Player"
+    account = {
+        "display_name": name,
+        "given_name": given or name.split()[0],
+        "family_name": family or "Player",
+        "bio": f"{name} plays {sport} on Fair Measure.",
+        "avatar_url": (
+            f"https://ui-avatars.com/api/?name={name.replace(' ', '+')}"
+            "&background=0f766e&color=fff"
+        ),
+        "id_number": f"SAMPLE-{str(user.pk)[:8].upper()}",
+        "phone": "+27 10 000 0000",
+        "city": "Johannesburg",
+        "country": "South Africa",
+    }
+    changed = [
+        field for field in SAMPLE_ACCOUNT_FIELDS if not str(getattr(user, field) or "").strip()
+    ]
+    for field in changed:
+        setattr(user, field, account[field])
+    return changed
+
 
 def fill_sample_profile(
     profile: PlayerProfile,
@@ -21,24 +65,9 @@ def fill_sample_profile(
     club: str = "Sample FC",
 ) -> PlayerProfile:
     user = profile.user
-    name = " ".join(part for part in (profile.first_name, profile.last_name) if part) or "Player"
-    account = {
-        "display_name": name,
-        "given_name": profile.first_name or name.split()[0],
-        "family_name": profile.last_name or "Player",
-        "bio": f"{name} plays {sport} on Fair Measure.",
-        "avatar_url": (
-            f"https://ui-avatars.com/api/?name={name.replace(' ', '+')}"
-            "&background=0f766e&color=fff"
-        ),
-        "id_number": f"SAMPLE-{str(user.pk)[:8].upper()}",
-        "phone": "+27 10 000 0000",
-        "city": "Johannesburg",
-        "country": "South Africa",
-    }
-    changed = [field for field in account if not str(getattr(user, field) or "").strip()]
-    for field in changed:
-        setattr(user, field, account[field])
+    changed = sample_account_details(
+        user, sport=sport, given=profile.first_name, family=profile.last_name
+    )
     if changed:
         user.save(update_fields=[*changed, "updated_at"])
 

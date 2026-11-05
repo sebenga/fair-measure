@@ -546,6 +546,12 @@
   }
 }
 
+.progress {
+  margin: 6px 16px 0;
+  font-size: 0.85rem;
+  color: var(--ion-color-medium);
+}
+
 .footer-actions {
   display: flex;
   justify-content: space-between;

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Iterable
+from typing import Iterable, NamedTuple
 
 from apps.competitions.models import RosterMember
 from apps.fixtures.models import Fixture, PlayerAppearance, PlayerMatchRating, ScoreEvent
@@ -91,13 +91,24 @@ def slots_from_positions(positions: list[str], fallback: str = "") -> list[str]:
     return slots
 
 
-def _qty(event: ScoreEvent) -> Decimal:
+class _Category(NamedTuple):
+    code: str
+
+
+class _Event(NamedTuple):
+    """The two things scoring needs from a `ScoreEvent`, without loading the whole row."""
+
+    scoring_category: _Category
+    quantity: Decimal
+
+
+def _qty(event: ScoreEvent | _Event) -> Decimal:
     return Decimal(event.quantity)
 
 
-def _minutes_for(appearance: PlayerAppearance | None, fixture: Fixture, played: bool) -> int:
-    if appearance is not None and appearance.minutes is not None:
-        return int(appearance.minutes)
+def _minutes_for(minutes: int | None, fixture: Fixture, played: bool) -> int:
+    if minutes is not None:
+        return int(minutes)
     if played:
         return int(fixture.duration_minutes or 90)
     return 0
@@ -242,23 +253,32 @@ def _match_rows(competition, members: list[RosterMember]) -> tuple[dict, list[Fi
             others = [other.score for other in sides if other.id != side.id]
             conceded[(fixture.id, side.participant_id)] = max(others) if others else Decimal("0")
 
-    events_by_player: dict[tuple[object, object], list[ScoreEvent]] = defaultdict(list)
+    # A season has thousands of events; plain tuples keep this quick on a small server.
+    categories: dict[str, _Category] = {}
+    events_by_player: dict[tuple[object, object], list[_Event]] = defaultdict(list)
     appeared: set[tuple[object, object]] = set()
-    for event in ScoreEvent.objects.filter(
+    for fixture_id, player_id, code, quantity in ScoreEvent.objects.filter(
         fixture_id__in=fixture_ids, player_id__in=by_id
-    ).select_related("scoring_category"):
-        events_by_player[(event.fixture_id, event.player_id)].append(event)
-        appeared.add((event.fixture_id, event.player_id))
+    ).values_list("fixture_id", "player_id", "scoring_category__code", "quantity"):
+        category = categories.get(code)
+        if category is None:
+            category = categories[code] = _Category(code or "")
+        events_by_player[(fixture_id, player_id)].append(_Event(category, quantity))
+        appeared.add((fixture_id, player_id))
 
     ratings: dict[tuple[object, object], Decimal] = {}
-    for rating in PlayerMatchRating.objects.filter(fixture_id__in=fixture_ids, player_id__in=by_id):
-        appeared.add((rating.fixture_id, rating.player_id))
-        ratings[(rating.fixture_id, rating.player_id)] = Decimal(rating.rating)
+    for fixture_id, player_id, rating in PlayerMatchRating.objects.filter(
+        fixture_id__in=fixture_ids, player_id__in=by_id
+    ).values_list("fixture_id", "player_id", "rating"):
+        appeared.add((fixture_id, player_id))
+        ratings[(fixture_id, player_id)] = Decimal(rating)
 
-    appearances: dict[tuple[object, object], PlayerAppearance] = {}
-    for row in PlayerAppearance.objects.filter(fixture_id__in=fixture_ids, player_id__in=by_id):
-        appearances[(row.fixture_id, row.player_id)] = row
-        appeared.add((row.fixture_id, row.player_id))
+    appearances: dict[tuple[object, object], int | None] = {}
+    for fixture_id, player_id, minutes in PlayerAppearance.objects.filter(
+        fixture_id__in=fixture_ids, player_id__in=by_id
+    ).values_list("fixture_id", "player_id", "minutes"):
+        appearances[(fixture_id, player_id)] = minutes
+        appeared.add((fixture_id, player_id))
 
     rows: dict[object, list[dict]] = {}
     for member in members:

@@ -46,9 +46,16 @@ def pool_members(competition):
     )
 
 
-def market(competition, *, query: str = "", slot: str = "", club: str = "") -> list[dict]:
+def market(
+    competition,
+    *,
+    query: str = "",
+    slot: str = "",
+    club: str = "",
+    totals: dict | None = None,
+) -> list[dict]:
     members = list(pool_members(competition))
-    totals = season_totals(competition)
+    totals = totals if totals is not None else season_totals(competition)
     rows = []
     needle = query.strip().lower()
     for member in members:
@@ -92,12 +99,13 @@ def _player_payload(
     }
 
 
-def parse_picks(competition, raw_picks) -> list[dict]:
+def parse_picks(competition, raw_picks, totals: dict | None = None) -> list[dict]:
     if not isinstance(raw_picks, list):
         raise ValidationError({"picks": "Send the squad as a list of picks."})
 
     members = {str(member.id): member for member in pool_members(competition)}
-    totals = season_totals(competition)
+    # Season totals are costly to work out; callers saving several squads pass them in.
+    totals = totals if totals is not None else season_totals(competition)
     parsed = []
     for index, item in enumerate(raw_picks):
         if not isinstance(item, dict):
@@ -144,8 +152,10 @@ def is_complete(picks: list[dict]) -> bool:
 
 
 @transaction.atomic
-def save_team(competition, user, *, name: str, raw_picks) -> FantasyTeam:
-    picks = parse_picks(competition, raw_picks)
+def save_team(
+    competition, user, *, name: str, raw_picks, totals: dict | None = None
+) -> FantasyTeam:
+    picks = parse_picks(competition, raw_picks, totals)
     # Players already in the squad keep the value they were bought at.
     bought = dict(
         FantasyPick.objects.filter(team__competition=competition, team__user=user).values_list(
@@ -299,10 +309,10 @@ def standings(competition) -> list[dict]:
     return ranked
 
 
-def auto_pick(competition) -> list[dict]:
+def auto_pick(competition, totals: dict | None = None) -> list[dict]:
     """Cheapest legal complete squad, preferring fit players who have scored."""
 
-    available = market(competition)
+    available = market(competition, totals=totals)
     if len(available) < SQUAD_SIZE:
         raise ValidationError(
             {"detail": f"Need at least {SQUAD_SIZE} rostered players before auto-pick can fill a squad."}

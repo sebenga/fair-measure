@@ -190,7 +190,9 @@ def candidates(competition) -> tuple[list[Candidate], dict]:
     user_ids = {member.user_id for member in roster}
     profiles = {
         profile.user_id: profile
-        for profile in PlayerProfile.objects.filter(user_id__in=user_ids).prefetch_related("sports")
+        for profile in PlayerProfile.objects.filter(user_id__in=user_ids)
+        .select_related("user")
+        .prefetch_related("sports", "teams")
     }
 
     finished = [Fixture.Status.COMPLETED, Fixture.Status.FORFEIT]

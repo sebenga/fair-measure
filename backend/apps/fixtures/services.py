@@ -121,6 +121,28 @@ def _slot_datetimes(options: ScheduleOptions, count: int) -> list[datetime]:
     return slots
 
 
+def _write_fixtures(
+    competition: Competition, fixtures: list[Fixture], sides: list[FixtureSide]
+) -> None:
+    """Insert a batch of fixtures and their sides in two statements instead of one per row.
+
+    Applies what `Fixture.save` would have (the preset's game time) first.
+    """
+
+    if not fixtures:
+        return
+    from apps.competitions.presets import default_game_time
+
+    limit, overtime = default_game_time(competition.settings_json)
+    for fixture in fixtures:
+        if fixture.duration_minutes is None:
+            fixture.duration_minutes = limit
+        if fixture.overtime_minutes is None:
+            fixture.overtime_minutes = overtime
+    Fixture.objects.bulk_create(fixtures, batch_size=200)
+    FixtureSide.objects.bulk_create(sides, batch_size=400)
+
+
 @transaction.atomic
 def generate_round_robin(
     competition: Competition, participants: list[Participant], options: ScheduleOptions
@@ -134,6 +156,7 @@ def generate_round_robin(
 
     slots = _slot_datetimes(options, len(rounds))
     created: list[Fixture] = []
+    sides: list[FixtureSide] = []
 
     for round_index, pairs in enumerate(rounds):
         round_start = slots[round_index] if round_index < len(slots) else None
@@ -144,7 +167,7 @@ def generate_round_robin(
                     minutes=options.minutes_between_fixtures * pair_index
                 )
 
-            fixture = Fixture.objects.create(
+            fixture = Fixture(
                 competition=competition,
                 stage=options.stage,
                 round_number=round_index + 1,
@@ -152,14 +175,11 @@ def generate_round_robin(
                 scheduled_at=kickoff,
                 location=options.location,
             )
-            FixtureSide.objects.bulk_create(
-                [
-                    FixtureSide(fixture=fixture, participant=home, position=0, is_home=True),
-                    FixtureSide(fixture=fixture, participant=away, position=1, is_home=False),
-                ]
-            )
+            sides.append(FixtureSide(fixture=fixture, participant=home, position=0, is_home=True))
+            sides.append(FixtureSide(fixture=fixture, participant=away, position=1, is_home=False))
             created.append(fixture)
 
+    _write_fixtures(competition, created, sides)
     return created
 
 
@@ -214,10 +234,11 @@ def _write_pair_round(
     options: ScheduleOptions,
 ) -> list[Fixture]:
     created: list[Fixture] = []
+    sides: list[FixtureSide] = []
     played = 0
     for index, (home, away) in enumerate(pairs):
         if away is None:
-            bye = Fixture.objects.create(
+            bye = Fixture(
                 competition=competition,
                 stage=stage,
                 round_number=round_number,
@@ -225,18 +246,22 @@ def _write_pair_round(
                 status=Fixture.Status.COMPLETED,
                 completed_at=timezone.now(),
             )
-            side = FixtureSide.objects.create(
-                fixture=bye, participant=home, position=0, is_home=True
+            sides.append(
+                FixtureSide(
+                    fixture=bye,
+                    participant=home,
+                    position=0,
+                    is_home=True,
+                    outcome=FixtureSide.Outcome.WIN,
+                )
             )
-            side.outcome = FixtureSide.Outcome.WIN
-            side.save(update_fields=["outcome", "updated_at"])
             created.append(bye)
             continue
         when = None
         if kickoff is not None:
             when = kickoff + timedelta(minutes=options.minutes_between_fixtures * played)
         played += 1
-        fixture = Fixture.objects.create(
+        fixture = Fixture(
             competition=competition,
             stage=stage,
             round_number=round_number,
@@ -244,13 +269,10 @@ def _write_pair_round(
             scheduled_at=when,
             location=options.location,
         )
-        FixtureSide.objects.bulk_create(
-            [
-                FixtureSide(fixture=fixture, participant=home, position=0, is_home=True),
-                FixtureSide(fixture=fixture, participant=away, position=1, is_home=False),
-            ]
-        )
+        sides.append(FixtureSide(fixture=fixture, participant=home, position=0, is_home=True))
+        sides.append(FixtureSide(fixture=fixture, participant=away, position=1, is_home=False))
         created.append(fixture)
+    _write_fixtures(competition, created, sides)
     return created
 
 
@@ -331,13 +353,14 @@ def generate_knockout(
     pairs = knockout_slots(participants)
     slots = _slot_datetimes(options, max(len(pairs), 1))
     created: list[Fixture] = []
+    sides: list[FixtureSide] = []
     played = 0
 
     for index, (home, away) in enumerate(pairs):
         if away is None:
             # A bye: the top seed goes straight through, recorded so the bracket
             # keeps its position and "advance" carries them into round 2.
-            bye = Fixture.objects.create(
+            bye = Fixture(
                 competition=competition,
                 stage=options.stage,
                 round_number=1,
@@ -345,11 +368,15 @@ def generate_knockout(
                 status=Fixture.Status.COMPLETED,
                 completed_at=timezone.now(),
             )
-            side = FixtureSide.objects.create(
-                fixture=bye, participant=home, position=0, is_home=True
+            sides.append(
+                FixtureSide(
+                    fixture=bye,
+                    participant=home,
+                    position=0,
+                    is_home=True,
+                    outcome=FixtureSide.Outcome.WIN,
+                )
             )
-            side.outcome = FixtureSide.Outcome.WIN
-            side.save(update_fields=["outcome", "updated_at"])
             created.append(bye)
             continue
 
@@ -358,7 +385,7 @@ def generate_knockout(
             kickoff = slots[0] + timedelta(minutes=options.minutes_between_fixtures * played)
         played += 1
 
-        fixture = Fixture.objects.create(
+        fixture = Fixture(
             competition=competition,
             stage=options.stage,
             round_number=1,
@@ -366,14 +393,11 @@ def generate_knockout(
             scheduled_at=kickoff,
             location=options.location,
         )
-        FixtureSide.objects.bulk_create(
-            [
-                FixtureSide(fixture=fixture, participant=home, position=0, is_home=True),
-                FixtureSide(fixture=fixture, participant=away, position=1, is_home=False),
-            ]
-        )
+        sides.append(FixtureSide(fixture=fixture, participant=home, position=0, is_home=True))
+        sides.append(FixtureSide(fixture=fixture, participant=away, position=1, is_home=False))
         created.append(fixture)
 
+    _write_fixtures(competition, created, sides)
     return created
 
 

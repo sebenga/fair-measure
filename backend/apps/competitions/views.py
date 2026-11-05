@@ -155,12 +155,15 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         if self.request.query_params.get("mine") in {"1", "true", "yes"}:
             queryset = queryset.filter(member_of(self.request.user))
         if self.action == "retrieve":
+            # Each roster row names its account and each entrant lists its stages: fetch
+            # those alongside, or a 16-team league costs one query per player.
             queryset = queryset.prefetch_related(
                 "scoring_categories",
                 "rules",
                 "stages",
-                "participants__roster",
-                "participants__picks",
+                Prefetch("participants__roster", RosterMember.objects.select_related("user")),
+                Prefetch("participants__picks", TeamPick.objects.select_related("user")),
+                "participants__stages",
             ).select_related("points_policy")
         return queryset
 
@@ -404,7 +407,10 @@ class CompetitionViewSet(viewsets.ModelViewSet):
             payload = clear_demo_league(competition)
             return Response(payload, status=status.HTTP_200_OK)
         payload = generate_demo_league(competition, request.user)
-        competition.refresh_from_db()
+        # Re-read through the detail queryset so the response is built from prefetched
+        # rosters rather than one query per player.
+        self.action = "retrieve"
+        competition = self.get_queryset().get(pk=competition.pk)
         publish_event(
             "fixtures.generated",
             {"competition_id": str(competition.id), "count": payload["fixtures"]},

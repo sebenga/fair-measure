@@ -15,7 +15,7 @@ from rest_framework.exceptions import ValidationError
 
 from apps.competitions.models import Competition, Membership, Participant, RosterMember, TeamPick
 from apps.competitions.presets import default_game_time
-from apps.competitions.serializers import confirm_team_pick, squad_size_for, team_entry_mode
+from apps.competitions.serializers import squad_size_for, team_entry_mode
 from apps.core.bus import Queues, enqueue_job
 from apps.core.permissions import Role
 from apps.fixtures.matchday import team_sheet_config, team_sheet_minimum
@@ -231,19 +231,22 @@ def generate_demo_league(competition: Competition, actor) -> dict:
         fixtures = _schedule(competition, entrants)
         if cup_stage is not False:
             fixtures = _drop_generated_cup(competition, fixtures, cup_stage)
-        _staff_fixtures(competition, fixtures, officials, actor)
+        # Every team's players, read once and shared by the steps below.
+        rosters = _rosters(competition)
+        _staff_fixtures(competition, fixtures, officials, actor, rosters)
         _ensure_stat_categories(competition)
-        played, live = _play_past_fixtures(competition, fixtures, actor)
+        played, live = _play_past_fixtures(competition, fixtures, actor, rosters)
         cup = (
-            _build_cup(competition, entrants, cup_stage, officials, actor)
+            _build_cup(competition, entrants, cup_stage, officials, actor, rosters)
             if cup_stage is not False
             else {}
         )
         fixtures = fixtures + cup.get("fixtures", [])
         played += cup.get("played", 0)
         played += _award_sample_points(competition, entrants, actor)
-        ratings = _rate_players(fixtures)
-        stats = _record_player_stats(competition, fixtures, actor)
+        starters = _starters(fixtures, rosters)
+        ratings = _rate_players(fixtures, starters)
+        stats = _record_player_stats(competition, fixtures, actor, starters)
         _ensure_player_profiles(competition)
         squad_picks = _pick_league_squad(competition, actor)
         _mark_unavailable(competition)
@@ -365,10 +368,8 @@ def _clear_demo(competition: Competition) -> dict:
     fixtures = Fixture.objects.filter(competition=competition)
     fixture_count = fixtures.count()
     fixtures.delete()
-    teams = list(demo_participants(competition))
-    team_count = len(teams)
-    for team in teams:
-        team.delete()
+    _, removed = demo_participants(competition).delete()
+    team_count = removed.get(Participant._meta.label, 0)
     CompetitionOfficial.objects.filter(competition=competition).delete()
     from apps.fantasy.models import FantasyTeam
     from apps.scouting.models import LeagueSquad
@@ -387,12 +388,15 @@ def _delete_orphan_demo_users(user_ids, competition: Competition | None = None) 
     if not user_ids:
         return
     leftovers = User.objects.filter(id__in=user_ids, email__iendswith=f"@{DEMO_EMAIL_DOMAIN}")
-    for user in leftovers:
-        if competition is not None:
-            user.memberships.filter(competition=competition).delete()
-        if user.memberships.exists() or user.officiating.exists():
-            continue
-        user.delete()
+    if competition is not None:
+        Membership.objects.filter(user__in=leftovers, competition=competition).delete()
+    # Accounts still used elsewhere stay. The rest go in one sweep: deleting them one
+    # by one walks every related table per account, hundreds of times over.
+    busy = set(Membership.objects.filter(user__in=leftovers).values_list("user_id", flat=True))
+    busy |= set(
+        CompetitionOfficial.objects.filter(user__in=leftovers).values_list("user_id", flat=True)
+    )
+    leftovers.exclude(pk__in=busy).delete()
 
 
 def _participant_type(competition: Competition) -> str:
@@ -416,26 +420,103 @@ def _name_at(index: int) -> tuple[str, str]:
     return given, family
 
 
-def _demo_user(competition: Competition, given: str, family: str, suffix: str, users: list):
+def _demo_users(competition: Competition, wanted: list[tuple[str, str, str]], users: list) -> list:
+    """Demo accounts for every (given, family, suffix), made in one round trip each way.
+
+    The demo is generated while the person waits, so every row is created in bulk
+    rather than one query at a time: on the live server each round trip to the
+    database costs far more than the work itself.
+    """
+
     short = str(competition.id).replace("-", "")[:12]
-    email = f"demo.{short}.{suffix}@{DEMO_EMAIL_DOMAIN}"
-    display = f"{given} {family}"
-    user, created = User.objects.get_or_create(
-        email=email,
-        defaults={
-            "display_name": display,
-            "given_name": given,
-            "family_name": family,
-            "headline": "Demo profile",
-        },
+    emails = [f"demo.{short}.{suffix}@{DEMO_EMAIL_DOMAIN}" for _, _, suffix in wanted]
+    existing = {user.email: user for user in User.objects.filter(email__in=emails)}
+    fresh, renamed = [], []
+    for (given, family, _), email in zip(wanted, emails, strict=True):
+        display = f"{given} {family}"
+        user = existing.get(email)
+        if user is None:
+            fresh.append(
+                User(
+                    email=email,
+                    display_name=display,
+                    given_name=given,
+                    family_name=family,
+                    headline="Demo profile",
+                )
+            )
+        elif (user.display_name, user.given_name, user.family_name) != (display, given, family):
+            user.display_name = display
+            user.given_name = given
+            user.family_name = family
+            renamed.append(user)
+    if fresh:
+        User.objects.bulk_create(fresh, batch_size=200)
+        existing.update({user.email: user for user in fresh})
+    if renamed:
+        for user in renamed:
+            user.updated_at = timezone.now()
+        User.objects.bulk_update(
+            renamed, ["display_name", "given_name", "family_name", "updated_at"], batch_size=200
+        )
+    made = [existing[email] for email in emails]
+    users.extend(made)
+    return made
+
+
+def _demo_user(competition: Competition, given: str, family: str, suffix: str, users: list):
+    return _demo_users(competition, [(given, family, suffix)], users)[0]
+
+
+def _join_all(competition: Competition, people: list) -> None:
+    """Make every one of these people a member of the competition (one query each way)."""
+
+    if not people:
+        return
+    already = set(
+        Membership.objects.filter(
+            competition=competition, user__in=[user.pk for user in people]
+        ).values_list("user_id", flat=True)
     )
-    if not created:
-        user.display_name = display
-        user.given_name = given
-        user.family_name = family
-        user.save(update_fields=["display_name", "given_name", "family_name", "updated_at"])
-    users.append(user)
-    return user
+    rows = [
+        Membership(competition=competition, user=user, role=Role.MEMBER)
+        for user in people
+        if user.pk not in already
+    ]
+    if rows:
+        Membership.objects.bulk_create(rows, batch_size=200, ignore_conflicts=True)
+
+
+def _rosters(competition: Competition) -> dict:
+    """Every team's active players, in shirt order, keyed by participant id."""
+
+    rosters: dict = {}
+    members = (
+        RosterMember.objects.filter(participant__competition=competition, is_active=True)
+        .select_related("user")
+        .order_by("number", "created_at")
+    )
+    for member in members:
+        rosters.setdefault(member.participant_id, []).append(member)
+    return rosters
+
+
+def _sides_by_fixture(fixtures: list[Fixture]) -> dict:
+    """Each fixture's sides (with participants) from a single query."""
+
+    from apps.fixtures.models import FixtureSide
+
+    by_fixture: dict = {fixture.id: [] for fixture in fixtures}
+    if not fixtures:
+        return by_fixture
+    sides = (
+        FixtureSide.objects.filter(fixture_id__in=list(by_fixture))
+        .select_related("participant")
+        .order_by("position", "created_at")
+    )
+    for side in sides:
+        by_fixture[side.fixture_id].append(side)
+    return by_fixture
 
 
 def _create_entrants(competition: Competition, users: list) -> list[Participant]:
@@ -452,30 +533,28 @@ def _create_entrants(competition: Competition, users: list) -> list[Participant]
     else:
         names = DEMO_TEAMS
         kind = Participant.Kind.TEAM
-    created: list[Participant] = []
-    for index, (name, short) in enumerate(names):
-        person = None
-        if kind == Participant.Kind.INDIVIDUAL:
-            given, family = _name_at(index)
-            person = _demo_user(competition, given, family, f"player.{index}", users)
-        created.append(
-            Participant.objects.create(
-                competition=competition,
-                name=name,
-                short_name=short,
-                kind=kind,
-                seed=index + 1,
-                description=DEMO_BLURB,
-                managed_by=person,
-                metadata={"demo": True},
-            )
+    people: list = []
+    if kind == Participant.Kind.INDIVIDUAL:
+        people = _demo_users(
+            competition,
+            [(*_name_at(index), f"player.{index}") for index in range(len(names))],
+            users,
         )
-        if person is not None:
-            Membership.objects.get_or_create(
-                competition=competition,
-                user=person,
-                defaults={"role": Role.MEMBER},
-            )
+        _join_all(competition, people)
+    created = [
+        Participant(
+            competition=competition,
+            name=name,
+            short_name=short,
+            kind=kind,
+            seed=index + 1,
+            description=DEMO_BLURB,
+            managed_by=people[index] if people else None,
+            metadata={"demo": True},
+        )
+        for index, (name, short) in enumerate(names)
+    ]
+    Participant.objects.bulk_create(created)
     return created
 
 
@@ -496,27 +575,42 @@ def _pick_squads(competition: Competition, teams: list[Participant], actor, user
     needed = _squad_needed(competition)
     if needed == 0:
         return 0
-    picks = 0
-    next_index = DEMO_SIZE
-    for team in teams:
+    # Same outcome as a pick that was sent and accepted (see `confirm_team_pick`), but
+    # for every player at once: one batch of accounts, memberships, picks and roster rows.
+    wanted = [
+        (*_name_at(DEMO_SIZE + index), f"squad.{DEMO_SIZE + index}")
+        for index in range(len(teams) * needed)
+    ]
+    people = _demo_users(competition, wanted, users)
+    _join_all(competition, people)
+    now = timezone.now()
+    invited_by = actor if getattr(actor, "is_authenticated", False) else None
+    picks, members = [], []
+    for team_index, team in enumerate(teams):
         for offset in range(needed):
-            given, family = _name_at(next_index)
-            user = _demo_user(competition, given, family, f"squad.{next_index}", users)
-            next_index += 1
-            pick = TeamPick.objects.create(
-                participant=team,
-                user=user,
-                invited_by=actor if getattr(actor, "is_authenticated", False) else None,
+            user = people[team_index * needed + offset]
+            number, position = DEMO_SHIRTS[offset % len(DEMO_SHIRTS)]
+            picks.append(
+                TeamPick(
+                    participant=team,
+                    user=user,
+                    invited_by=invited_by,
+                    status=TeamPick.Status.ACCEPTED,
+                    responded_at=now,
+                )
             )
-            confirm_team_pick(pick, actor=None)
-            member = team.roster.filter(user=user).first()
-            if member is not None:
-                number, position = DEMO_SHIRTS[offset % len(DEMO_SHIRTS)]
-                member.number = number
-                member.position = position
-                member.save(update_fields=["number", "position", "updated_at"])
-            picks += 1
-    return picks
+            members.append(
+                RosterMember(
+                    participant=team,
+                    user=user,
+                    name=user.get_full_name(),
+                    number=number,
+                    position=position,
+                )
+            )
+    TeamPick.objects.bulk_create(picks, batch_size=200)
+    RosterMember.objects.bulk_create(members, batch_size=200)
+    return len(picks)
 
 
 def _open_team_entry(competition: Competition) -> None:
@@ -532,13 +626,16 @@ def _open_team_entry(competition: Competition) -> None:
 
 def _appoint_officials(competition: Competition, actor, users: list) -> list:
     appointed = []
-    for index, (given, family, title) in enumerate(OFFICIALS):
-        user = _demo_user(competition, given, family, f"official.{index}", users)
-        Membership.objects.get_or_create(
-            competition=competition,
-            user=user,
-            defaults={"role": Role.MEMBER},
-        )
+    people = _demo_users(
+        competition,
+        [
+            (given, family, f"official.{index}")
+            for index, (given, family, _) in enumerate(OFFICIALS)
+        ],
+        users,
+    )
+    _join_all(competition, people)
+    for user, (_, _, title) in zip(people, OFFICIALS, strict=True):
         official, _ = CompetitionOfficial.objects.get_or_create(
             competition=competition,
             user=user,
@@ -571,9 +668,18 @@ def _schedule(competition: Competition, teams: list[Participant]) -> list[Fixtur
     return generate_round_robin(competition, teams, options)
 
 
-def _staff_fixtures(competition: Competition, fixtures: list[Fixture], officials: list, actor) -> None:
+def _staff_fixtures(
+    competition: Competition,
+    fixtures: list[Fixture],
+    officials: list,
+    actor,
+    rosters: dict | None = None,
+) -> None:
     if not fixtures:
         return
+    if rosters is None:
+        rosters = _rosters(competition)
+    assigned_by = actor if getattr(actor, "is_authenticated", False) else None
     duration, overtime = default_game_time(competition.settings_json)
     referee = next(
         (row.user for row in officials if row.title == CompetitionOfficial.Title.REFEREE),
@@ -591,27 +697,45 @@ def _staff_fixtures(competition: Competition, fixtures: list[Fixture], officials
     # Team sheets for what has been played and the next week and a half; later rounds
     # are picked nearer the day, as a real league would.
     sheets_until = timezone.now() + timedelta(days=10)
+    timed = []
     for fixture in fixtures:
-        updates = []
+        changed = False
         if duration and not fixture.duration_minutes:
             fixture.duration_minutes = duration
-            updates.append("duration_minutes")
+            changed = True
         if overtime and fixture.overtime_minutes is None:
             fixture.overtime_minutes = overtime
-            updates.append("overtime_minutes")
-        if updates:
-            updates.append("updated_at")
-            fixture.save(update_fields=updates)
-        if referee is not None:
-            FixtureReferee.objects.get_or_create(fixture=fixture, user=referee)
-        for rater in raters:
-            FixtureRater.objects.get_or_create(
-                fixture=fixture,
-                user=rater,
-                defaults={"assigned_by": actor if getattr(actor, "is_authenticated", False) else None},
-            )
-        if starters_needed and (fixture.scheduled_at is None or fixture.scheduled_at <= sheets_until):
-            _submit_team_sheets(fixture, starters_needed, actor, sheet)
+            changed = True
+        if changed:
+            fixture.updated_at = timezone.now()
+            timed.append(fixture)
+    if timed:
+        Fixture.objects.bulk_update(
+            timed, ["duration_minutes", "overtime_minutes", "updated_at"], batch_size=200
+        )
+    if referee is not None:
+        FixtureReferee.objects.bulk_create(
+            [FixtureReferee(fixture=fixture, user=referee) for fixture in fixtures],
+            batch_size=200,
+            ignore_conflicts=True,
+        )
+    if raters:
+        FixtureRater.objects.bulk_create(
+            [
+                FixtureRater(fixture=fixture, user=rater, assigned_by=assigned_by)
+                for fixture in fixtures
+                for rater in raters
+            ],
+            batch_size=200,
+            ignore_conflicts=True,
+        )
+    if starters_needed:
+        soon = [
+            fixture
+            for fixture in fixtures
+            if fixture.scheduled_at is None or fixture.scheduled_at <= sheets_until
+        ]
+        _submit_team_sheets(soon, starters_needed, actor, sheet, rosters)
 
 
 def _demo_formation(starters_needed: int, sheet: dict | None, fixture: Fixture) -> str:
@@ -625,48 +749,73 @@ def _demo_formation(starters_needed: int, sheet: dict | None, fixture: Fixture) 
     return formations[hash(str(fixture.id)) % len(formations)]
 
 
-def _submit_team_sheets(fixture: Fixture, starters_needed: int, actor, sheet: dict | None = None) -> None:
+def _submit_team_sheets(
+    fixtures: list[Fixture],
+    starters_needed: int,
+    actor,
+    sheet: dict | None,
+    rosters: dict,
+) -> None:
+    """Name every side's team for these fixtures: a handful of queries, not one per side."""
+
     from apps.fixtures.matchday import formation_slots
 
-    formation = _demo_formation(starters_needed, sheet, fixture)
-    slots = []
-    if formation:
-        try:
-            slots = formation_slots(formation, {**(sheet or {}), "starters": None})
-        except ValidationError:
-            slots = []
-    for side in fixture.sides.all():
-        members = list(side.participant.roster.filter(is_active=True).order_by("number", "created_at"))
-        if len(members) < starters_needed:
-            continue
-        lineup, _ = FixtureLineup.objects.update_or_create(
-            fixture=fixture,
-            side=side,
-            defaults={
-                "formation": formation,
-                "captain": members[0],
-                "submitted_by": actor if getattr(actor, "is_authenticated", False) else None,
-            },
-        )
-        lineup.entries.all().delete()
-        rows = []
-        for index, member in enumerate(members):
-            starter = index < starters_needed
-            shirt = ""
-            if starter and slots and index < len(slots):
-                shirt = slots[index].get("label") or ""
-            rows.append(
-                LineupEntry(
-                    lineup=lineup,
-                    player=member,
-                    role=LineupEntry.Role.STARTER if starter else LineupEntry.Role.BENCH,
-                    slot=index if starter else None,
-                    position=(shirt or member.position or "")[:20],
-                    number=member.number or (index + 1),
-                    order=index,
+    if not fixtures:
+        return
+    submitted_by = actor if getattr(actor, "is_authenticated", False) else None
+    sides = _sides_by_fixture(fixtures)
+    slot_cache: dict[str, list] = {}
+
+    def slots_for(formation: str) -> list:
+        if formation not in slot_cache:
+            try:
+                slot_cache[formation] = (
+                    formation_slots(formation, {**(sheet or {}), "starters": None})
+                    if formation
+                    else []
                 )
+            except ValidationError:
+                slot_cache[formation] = []
+        return slot_cache[formation]
+
+    lineups, entries = [], []
+    for fixture in fixtures:
+        formation = _demo_formation(starters_needed, sheet, fixture)
+        slots = slots_for(formation)
+        for side in sides.get(fixture.id, []):
+            members = rosters.get(side.participant_id, [])
+            if len(members) < starters_needed:
+                continue
+            lineup = FixtureLineup(
+                fixture=fixture,
+                side=side,
+                formation=formation,
+                captain=members[0],
+                submitted_by=submitted_by,
             )
-        LineupEntry.objects.bulk_create(rows)
+            lineups.append(lineup)
+            for index, member in enumerate(members):
+                starter = index < starters_needed
+                shirt = ""
+                if starter and slots and index < len(slots):
+                    shirt = slots[index].get("label") or ""
+                entries.append(
+                    LineupEntry(
+                        lineup=lineup,
+                        player=member,
+                        role=LineupEntry.Role.STARTER if starter else LineupEntry.Role.BENCH,
+                        slot=index if starter else None,
+                        position=(shirt or member.position or "")[:20],
+                        number=member.number or (index + 1),
+                        order=index,
+                    )
+                )
+    if not lineups:
+        return
+    # The demo writes each sheet once; anything older for these sides goes first.
+    FixtureLineup.objects.filter(side_id__in=[lineup.side_id for lineup in lineups]).delete()
+    FixtureLineup.objects.bulk_create(lineups, batch_size=200)
+    LineupEntry.objects.bulk_create(entries, batch_size=500)
 
 
 def _award_sample_points(competition: Competition, entrants: list[Participant], actor) -> int:
@@ -693,13 +842,13 @@ def _award_sample_points(competition: Competition, entrants: list[Participant], 
     return awarded
 
 
-def _live_candidate(fixtures: list[Fixture], now) -> Fixture | None:
+def _live_candidate(fixtures: list[Fixture], now, sides: dict) -> Fixture | None:
     """The one demo match shown live: the next fixture with both sides known."""
 
     def ready(fixture: Fixture) -> bool:
         return (
             fixture.status == Fixture.Status.SCHEDULED
-            and fixture.sides.filter(participant__isnull=False).count() >= 2
+            and sum(1 for side in sides.get(fixture.id, []) if side.participant_id) >= 2
         )
 
     upcoming = sorted(
@@ -712,42 +861,54 @@ def _live_candidate(fixtures: list[Fixture], now) -> Fixture | None:
     return next((f for f in reversed(fixtures) if ready(f)), None)
 
 
-def _play_past_fixtures(competition: Competition, fixtures: list[Fixture], actor) -> int:
+def _play_past_fixtures(
+    competition: Competition, fixtures: list[Fixture], actor, rosters: dict
+) -> tuple[int, Fixture | None]:
     category = (
         competition.scoring_categories.filter(affects_score=True).order_by("display_order").first()
         or competition.scoring_categories.order_by("display_order").first()
     )
     if category is None:
-        return 0
+        return 0, None
     now = timezone.now()
     rng = random.Random(str(competition.id))
-    played = 0
-    live = _live_candidate(fixtures, now)
+    sides = _sides_by_fixture(fixtures)
+    live = _live_candidate(fixtures, now, sides)
+    finished, goals = [], []
     for fixture in fixtures:
         if fixture.status == Fixture.Status.COMPLETED or fixture is live:
             continue
         if fixture.scheduled_at is None or fixture.scheduled_at > now:
             continue
-        for side in fixture.sides.all():
-            squad = list(side.participant.roster.filter(is_active=True).order_by("number", "created_at"))
+        for side in sides.get(fixture.id, []):
+            squad = rosters.get(side.participant_id, [])
             for _ in range(rng.randint(0, 3)):
                 player = squad[rng.randrange(len(squad))] if squad else None
-                ScoreEvent.objects.create(
-                    fixture=fixture,
-                    side=side,
-                    scoring_category=category,
-                    player=player,
-                    player_name=player.name if player is not None else "",
-                    quantity=Decimal("1"),
-                    minute=rng.randint(1, 90),
-                    recorded_by=actor,
+                goals.append(
+                    ScoreEvent(
+                        fixture=fixture,
+                        side=side,
+                        scoring_category=category,
+                        player=player,
+                        player_name=player.name if player is not None else "",
+                        quantity=Decimal("1"),
+                        minute=rng.randint(1, 90),
+                        recorded_by=actor,
+                    )
                 )
         fixture.status = Fixture.Status.COMPLETED
         fixture.started_at = fixture.scheduled_at
         fixture.completed_at = fixture.scheduled_at + timedelta(minutes=95)
-        fixture.save(update_fields=["status", "started_at", "completed_at", "updated_at"])
-        fixture.recalculate_scores()
-        played += 1
+        fixture.updated_at = now
+        finished.append(fixture)
+    ScoreEvent.objects.bulk_create(goals, batch_size=500)
+    if finished:
+        Fixture.objects.bulk_update(
+            finished, ["status", "started_at", "completed_at", "updated_at"], batch_size=200
+        )
+        for fixture in finished:
+            fixture.recalculate_scores()
+    played = len(finished)
     if live is not None:
         # Kicked off a few minutes ago, so the match is in play for the whole hour the demo lives.
         kickoff = now - timedelta(minutes=LIVE_FOR_MINUTES)
@@ -756,9 +917,10 @@ def _play_past_fixtures(competition: Competition, fixtures: list[Fixture], actor
         live.scheduled_at = kickoff
         live.started_at = kickoff
         live.save(update_fields=["status", "phase", "scheduled_at", "started_at", "updated_at"])
-        side = live.sides.first()
+        side = next(iter(sides.get(live.id, [])), None)
         if side is not None:
-            player = side.participant.roster.filter(is_active=True).order_by("number").first()
+            squad = rosters.get(side.participant_id, [])
+            player = squad[0] if squad else None
             ScoreEvent.objects.create(
                 fixture=live,
                 side=side,
@@ -773,51 +935,99 @@ def _play_past_fixtures(competition: Competition, fixtures: list[Fixture], actor
     return played, live
 
 
-def _rate_players(fixtures: list[Fixture]) -> int:
-    from apps.fixtures.raters import RATEABLE, recompute
+def _starters(fixtures: list[Fixture], rosters: dict) -> dict:
+    """Who started for each side of each rateable fixture: {fixture_id: [(side, players)]}.
 
-    rated = 0
+    Named team sheets win; a side without one fields its first eleven. Three
+    queries for the whole demo instead of three per side.
+    """
+
+    from apps.fixtures.raters import RATEABLE
+
+    rateable = [fixture for fixture in fixtures if fixture.status in RATEABLE]
+    sides = _sides_by_fixture(rateable)
+    side_ids = [side.id for rows in sides.values() for side in rows]
+    named: dict = {}
+    if side_ids:
+        entries = (
+            LineupEntry.objects.filter(lineup__side_id__in=side_ids, role=LineupEntry.Role.STARTER)
+            .select_related("player", "lineup")
+            .order_by("order", "created_at")
+        )
+        for entry in entries:
+            named.setdefault(entry.lineup.side_id, []).append(entry.player)
+    out: dict = {}
+    for fixture in rateable:
+        rows = []
+        for side in sides.get(fixture.id, []):
+            if side.id in named:
+                players = named[side.id]
+            else:
+                players = rosters.get(side.participant_id, [])[:11]
+            rows.append((side, players))
+        out[fixture.id] = rows
+    return out
+
+
+def _rate_players(fixtures: list[Fixture], starters: dict) -> int:
+    from decimal import ROUND_HALF_UP
+
+    from django.db.models import Avg, Count
+
+    from apps.fixtures.models import PlayerMatchRating
+    from apps.fixtures.raters import MIN_RATERS
+
+    raters_by_fixture: dict = {}
+    for rater in FixtureRater.objects.filter(fixture_id__in=list(starters)):
+        raters_by_fixture.setdefault(rater.fixture_id, []).append(rater)
+    appearances, scores, rated_fixtures = [], [], []
     for fixture in fixtures:
-        if fixture.status not in RATEABLE:
+        if fixture.id not in starters:
             continue
-        raters = list(fixture.raters.all())
+        raters = raters_by_fixture.get(fixture.id, [])
         if len(raters) < 2:
             continue
-        players = []
-        for side in fixture.sides.all():
-            lineup = FixtureLineup.objects.filter(side=side).prefetch_related("entries__player").first()
-            if lineup is not None:
-                members = [
-                    entry.player
-                    for entry in lineup.entries.all()
-                    if entry.role == LineupEntry.Role.STARTER
-                ]
-            else:
-                members = list(side.participant.roster.filter(is_active=True).order_by("number")[:11])
-            players.extend(members)
+        players = [player for _, side_players in starters[fixture.id] for player in side_players]
         if not players:
             continue
-        PlayerAppearance.objects.bulk_create(
-            [PlayerAppearance(fixture=fixture, player=member, minutes=90) for member in players],
-            ignore_conflicts=True,
+        rated_fixtures.append(fixture)
+        appearances.extend(
+            PlayerAppearance(fixture=fixture, player=member, minutes=90) for member in players
         )
         rng = random.Random(str(fixture.id))
-        RaterScore.objects.bulk_create(
-            [
-                RaterScore(
-                    fixture=fixture,
-                    rater=rater,
-                    player=player,
-                    rating=Decimal(str(rng.randint(55, 90) / 10)),
-                )
-                for rater in raters
-                for player in players
-            ],
-            ignore_conflicts=True,
+        scores.extend(
+            RaterScore(
+                fixture=fixture,
+                rater=rater,
+                player=player,
+                rating=Decimal(str(rng.randint(55, 90) / 10)),
+            )
+            for rater in raters
+            for player in players
         )
-        recompute(fixture)
-        rated += fixture.ratings.count()
-    return rated
+    if not rated_fixtures:
+        return 0
+    PlayerAppearance.objects.bulk_create(appearances, batch_size=500, ignore_conflicts=True)
+    RaterScore.objects.bulk_create(scores, batch_size=500, ignore_conflicts=True)
+    # Publish each player's average, as `raters.recompute` does, for all fixtures at once.
+    ids = [fixture.id for fixture in rated_fixtures]
+    rows = (
+        RaterScore.objects.filter(fixture_id__in=ids)
+        .values("fixture_id", "player_id")
+        .annotate(average=Avg("rating"), raters=Count("rater", distinct=True))
+    )
+    ratings = [
+        PlayerMatchRating(
+            fixture_id=row["fixture_id"],
+            player_id=row["player_id"],
+            rating=Decimal(row["average"]).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP),
+        )
+        for row in rows
+        if row["raters"] >= MIN_RATERS
+    ]
+    PlayerMatchRating.objects.filter(fixture_id__in=ids).delete()
+    PlayerMatchRating.objects.bulk_create(ratings, batch_size=500)
+    return len(ratings)
 
 
 def _is_keeper(player) -> bool:
@@ -862,10 +1072,10 @@ def _ensure_stat_categories(competition: Competition) -> None:
         competition.save(update_fields=["settings_json", "updated_at"])
 
 
-def _record_player_stats(competition: Competition, fixtures: list[Fixture], actor) -> int:
+def _record_player_stats(
+    competition: Competition, fixtures: list[Fixture], actor, starters: dict
+) -> int:
     """Give every starter assists, tackles, saves and the other match stats."""
-
-    from apps.fixtures.raters import RATEABLE
 
     _ensure_stat_categories(competition)
     categories = list(competition.scoring_categories.order_by("display_order"))
@@ -877,84 +1087,140 @@ def _record_player_stats(competition: Competition, fixtures: list[Fixture], acto
     cards = [category for category in categories if "card" in (category.code or "")]
     if not stats and not cards:
         return 0
-    recorded = 0
+    keeper_pool = [category for category in stats if "save" in (category.code or "")] or stats
+    outfield_pool = [category for category in stats if "save" not in (category.code or "")] or stats
+    events = []
     for fixture in fixtures:
-        if fixture.status not in RATEABLE:
+        if fixture.id not in starters:
             continue
         rng = random.Random(f"{fixture.id}-stats")
-        for side in fixture.sides.all():
-            lineup = FixtureLineup.objects.filter(side=side).prefetch_related("entries__player").first()
-            if lineup is not None:
-                starters = [
-                    entry.player
-                    for entry in lineup.entries.all()
-                    if entry.role == LineupEntry.Role.STARTER
-                ]
-            else:
-                starters = list(side.participant.roster.filter(is_active=True).order_by("number")[:11])
-            if not starters:
+        for side, players in starters[fixture.id]:
+            if not players:
                 continue
-            keepers = [player for player in starters if _is_keeper(player)]
-            for player in starters:
-                if _is_keeper(player):
-                    pool = [category for category in stats if "save" in (category.code or "")] or stats
-                else:
-                    pool = [category for category in stats if "save" not in (category.code or "")] or stats
+            keepers = [player for player in players if _is_keeper(player)]
+            for player in players:
+                pool = keeper_pool if _is_keeper(player) else outfield_pool
                 chosen = rng.sample(pool, k=min(len(pool), max(2, min(4, len(pool)))))
                 for category in chosen:
                     quantity = Decimal(
                         str(rng.randint(2, 5 if category.code in {"shot", "tackle", "save"} else 3))
                     )
-                    ScoreEvent.objects.create(
+                    events.append(
+                        ScoreEvent(
+                            fixture=fixture,
+                            side=side,
+                            scoring_category=category,
+                            player=player,
+                            player_name=player.name,
+                            quantity=quantity,
+                            minute=rng.randint(1, 90),
+                            recorded_by=actor,
+                        )
+                    )
+            if cards and rng.random() < 0.45:
+                outfield = [player for player in players if player not in keepers]
+                booked = rng.choice(outfield or players)
+                events.append(
+                    ScoreEvent(
                         fixture=fixture,
                         side=side,
-                        scoring_category=category,
-                        player=player,
-                        player_name=player.name,
-                        quantity=quantity,
-                        minute=rng.randint(1, 90),
+                        scoring_category=cards[0],
+                        player=booked,
+                        player_name=booked.name,
+                        quantity=Decimal("1"),
+                        minute=rng.randint(20, 85),
                         recorded_by=actor,
                     )
-                    recorded += 1
-            if cards and starters and rng.random() < 0.45:
-                booked = rng.choice([player for player in starters if player not in keepers] or starters)
-                ScoreEvent.objects.create(
-                    fixture=fixture,
-                    side=side,
-                    scoring_category=cards[0],
-                    player=booked,
-                    player_name=booked.name,
-                    quantity=Decimal("1"),
-                    minute=rng.randint(20, 85),
-                    recorded_by=actor,
                 )
-                recorded += 1
-    return recorded
+    ScoreEvent.objects.bulk_create(events, batch_size=500)
+    return len(events)
 
 
 def _ensure_player_profiles(competition: Competition) -> int:
     from apps.scouting.catalog import sport_for_competition
     from apps.scouting.models import PlayerProfile, PlayerSport
-    from apps.scouting.sample import fill_sample_profile
+    from apps.scouting.sample import (
+        SAMPLE_ACCOUNT_FIELDS,
+        fill_sample_profile,
+        sample_account_details,
+    )
     from apps.scouting.services import ensure_player_profile
 
     sport_key = sport_for_competition(competition.sport) or "soccer"
-    created = 0
-    members = RosterMember.objects.filter(
-        participant__competition=competition,
-        is_active=True,
-        user__isnull=False,
-    ).select_related("user", "participant")
+    members = list(
+        RosterMember.objects.filter(
+            participant__competition=competition,
+            is_active=True,
+            user__isnull=False,
+        )
+        .select_related("user", "participant")
+        .order_by("participant__seed", "number", "created_at")
+    )
+    if not members:
+        return 0
+    have = {
+        profile.user_id: profile
+        for profile in PlayerProfile.objects.filter(user_id__in=[m.user_id for m in members])
+    }
+    now = timezone.now()
+    users, fresh, teams, sports = [], [], [], []
     for index, member in enumerate(members):
         user = member.user
-        born = date(2001, 1 + index % 12, 1 + index % 27)
-        if user.date_of_birth != born:
-            user.date_of_birth = born
-            user.save(update_fields=["date_of_birth", "updated_at"])
-        existed = PlayerProfile.objects.filter(user=user).exists()
+        user.date_of_birth = date(2001, 1 + index % 12, 1 + index % 27)
+        if user.pk in have:
+            continue
+        # A complete, public, scout-ready profile in one row (what `ensure_player_profile`
+        # followed by `fill_sample_profile` would arrive at, without the round trips).
+        sample_account_details(user, sport=sport_key)
+        user.updated_at = now
+        users.append(user)
+        profile = PlayerProfile(
+            user=user,
+            first_name=user.given_name or (user.email or "Player").split("@")[0][:80],
+            last_name=user.family_name,
+            date_of_birth=user.date_of_birth,
+            photo_url=user.avatar_url,
+            bio=user.bio,
+            nationality=user.country,
+            gender_category="men",
+            region="gauteng",
+            school_or_club=member.participant.name[:160],
+            visibility=PlayerProfile.Visibility.PUBLIC,
+            availability=PlayerProfile.Availability.AVAILABLE,
+        )
+        fresh.append(profile)
+        teams.append(
+            PlayerProfile.teams.through(playerprofile=profile, participant=member.participant)
+        )
+        sports.append(
+            PlayerSport(
+                profile=profile,
+                sport=sport_key,
+                primary_position=member.position or "central-midfield",
+                is_primary=True,
+            )
+        )
+    if users:
+        User.objects.bulk_update(
+            users,
+            ["date_of_birth", *SAMPLE_ACCOUNT_FIELDS, "updated_at"],
+            batch_size=100,
+        )
+    if fresh:
+        PlayerProfile.objects.bulk_create(fresh, batch_size=200)
+        PlayerProfile.teams.through.objects.bulk_create(
+            teams, batch_size=200, ignore_conflicts=True
+        )
+        PlayerSport.objects.bulk_create(sports, batch_size=200)
+    # Players who already had a profile (a demo re-run, or a real account) keep theirs
+    # and are only topped up, the slow way, one by one.
+    for member in members:
+        profile = have.get(member.user_id)
+        if profile is None:
+            continue
+        user = member.user
+        user.save(update_fields=["date_of_birth", "updated_at"])
         profile = ensure_player_profile(user)
-        if not existed:
-            created += 1
         if profile.visibility != PlayerProfile.Visibility.PUBLIC:
             profile.visibility = PlayerProfile.Visibility.PUBLIC
             profile.availability = PlayerProfile.Availability.AVAILABLE
@@ -967,7 +1233,7 @@ def _ensure_player_profiles(competition: Competition) -> int:
                 defaults={"primary_position": member.position, "is_primary": True},
             )
         fill_sample_profile(profile, sport=sport_key, club=member.participant.name)
-    return created
+    return len(fresh)
 
 
 def _pick_league_squad(competition: Competition, actor) -> int:
@@ -1031,6 +1297,7 @@ def _fill_fantasy(competition: Competition, actor) -> int:
     from rest_framework.exceptions import ValidationError as ApiValidationError
 
     from apps.fantasy.models import FantasyTeam
+    from apps.fantasy.scoring import season_totals
     from apps.fantasy.services import auto_pick, save_team
 
     managers = []
@@ -1048,15 +1315,17 @@ def _fill_fantasy(competition: Competition, actor) -> int:
             break
     if not managers:
         return 0
+    # Worked out once for the auto-pick and every squad saved from it.
+    totals = season_totals(competition)
     try:
-        picks = auto_pick(competition)
+        picks = auto_pick(competition, totals)
     except ApiValidationError:
         return 0
     made = 0
     for index, user in enumerate(managers):
         name = "Demo XI" if index == 0 else f"{user.get_short_name()}'s XI"
         try:
-            save_team(competition, user, name=name, raw_picks=picks)
+            save_team(competition, user, name=name, raw_picks=picks, totals=totals)
         except ApiValidationError:
             continue
         made += 1
@@ -1132,21 +1401,26 @@ def _goal_category(competition: Competition):
     )
 
 
-def _score_goals(fixture: Fixture, side, goals: int, rng, actor, category, minutes=(1, 90)) -> None:
-    squad = list(side.participant.roster.filter(is_active=True).order_by("number", "created_at"))
+def _score_goals(
+    fixture: Fixture, side, goals: int, rng, actor, category, rosters: dict, minutes=(1, 90)
+) -> None:
+    squad = rosters.get(side.participant_id, [])
     outfield = [p for p in squad if not _is_keeper(p)] or squad
-    for _ in range(goals):
-        player = rng.choice(outfield) if outfield else None
-        ScoreEvent.objects.create(
-            fixture=fixture,
-            side=side,
-            scoring_category=category,
-            player=player,
-            player_name=player.name if player is not None else "",
-            quantity=Decimal("1"),
-            minute=rng.randint(*minutes),
-            recorded_by=actor,
-        )
+    ScoreEvent.objects.bulk_create(
+        [
+            ScoreEvent(
+                fixture=fixture,
+                side=side,
+                scoring_category=category,
+                player=player,
+                player_name=player.name if player is not None else "",
+                quantity=Decimal("1"),
+                minute=rng.randint(*minutes),
+                recorded_by=actor,
+            )
+            for player in (rng.choice(outfield) if outfield else None for _ in range(goals))
+        ]
+    )
 
 
 def _shootout_kicks(fixture: Fixture, rng, pattern: list[tuple[bool, bool]]) -> list[dict]:
@@ -1181,10 +1455,12 @@ def _finish(fixture: Fixture, kickoff) -> None:
     fixture.recalculate_scores()
 
 
-def _play_to(fixture: Fixture, home_goals: int, away_goals: int, rng, actor, category) -> None:
+def _play_to(
+    fixture: Fixture, home_goals: int, away_goals: int, rng, actor, category, rosters: dict
+) -> None:
     home, away = list(fixture.sides.order_by("position"))
-    _score_goals(fixture, home, home_goals, rng, actor, category)
-    _score_goals(fixture, away, away_goals, rng, actor, category)
+    _score_goals(fixture, home, home_goals, rng, actor, category, rosters)
+    _score_goals(fixture, away, away_goals, rng, actor, category, rosters)
 
 
 def _winner(fixture: Fixture):
@@ -1193,7 +1469,9 @@ def _winner(fixture: Fixture):
     return side.participant if side is not None else None
 
 
-def _build_cup(competition: Competition, teams: list[Participant], stage, officials, actor) -> dict:
+def _build_cup(
+    competition: Competition, teams: list[Participant], stage, officials, actor, rosters: dict
+) -> dict:
     from apps.fixtures.services import knockout_slots
 
     category = _goal_category(competition)
@@ -1211,17 +1489,18 @@ def _build_cup(competition: Competition, teams: list[Participant], stage, offici
         _cup_fixture(competition, stage, 1, index, round_one_at + timedelta(minutes=30 * (index % 2)), pair)
         for index, pair in enumerate(pairs[:8])
     ]
-    _staff_fixtures(competition, round_one, officials, actor)
+    _staff_fixtures(competition, round_one, officials, actor, rosters)
     staffed += round_one
     for index, fixture in enumerate(round_one):
         if index == 2:
-            _play_to(fixture, 1, 1, rng, actor, category)
+            _play_to(fixture, 1, 1, rng, actor, category, rosters)
             fixture.shootout = _shootout_kicks(
                 fixture, rng, [(True, True), (True, False), (True, True), (True, True), (True, True)]
             )
         else:
             home_goals = rng.randint(1, 4)
-            _play_to(fixture, home_goals, rng.randint(0, home_goals - 1), rng, actor, category)
+            away_goals = rng.randint(0, home_goals - 1)
+            _play_to(fixture, home_goals, away_goals, rng, actor, category, rosters)
         _finish(fixture, fixture.scheduled_at)
     winners = [_winner(fixture) for fixture in round_one]
 
@@ -1237,16 +1516,16 @@ def _build_cup(competition: Competition, teams: list[Participant], stage, offici
         _cup_fixture(competition, stage, 2, index, kickoffs[index], pair)
         for index, pair in enumerate(quarter_pairs)
     ]
-    _staff_fixtures(competition, quarters, officials, actor)
+    _staff_fixtures(competition, quarters, officials, actor, rosters)
     staffed += quarters
     played = 8
     for fixture in quarters[:2]:
-        _play_to(fixture, 2, 1, rng, actor, category)
+        _play_to(fixture, 2, 1, rng, actor, category, rosters)
         _finish(fixture, fixture.scheduled_at)
         played += 1
 
     live_cup = quarters[2]
-    _play_to(live_cup, 1, 0, rng, actor, category)
+    _play_to(live_cup, 1, 0, rng, actor, category, rosters)
     live_cup.status = Fixture.Status.LIVE
     live_cup.phase = "second_half"
     live_cup.started_at = live_cup.scheduled_at
@@ -1254,7 +1533,7 @@ def _build_cup(competition: Competition, teams: list[Participant], stage, offici
     live_cup.recalculate_scores()
 
     penalties = quarters[3]
-    _play_to(penalties, 2, 2, rng, actor, category)
+    _play_to(penalties, 2, 2, rng, actor, category, rosters)
     penalties.shootout = _shootout_kicks(
         penalties, rng, [(True, True), (False, True), (True, False)]
     )
@@ -1275,9 +1554,7 @@ def _build_cup(competition: Competition, teams: list[Participant], stage, offici
     )
     semi_two = _cup_fixture(competition, stage, 3, 1, today_three + timedelta(days=7, hours=2))
     final = _cup_fixture(competition, stage, 4, 0, today_three + timedelta(days=14))
-    _staff_fixtures(competition, [semi_one], officials, actor)
-    for fixture in (semi_two, final):
-        _staff_fixtures(competition, [fixture], officials, actor)
+    _staff_fixtures(competition, [semi_one, semi_two, final], officials, actor, rosters)
 
     return {
         "fixtures": [*round_one, *quarters, semi_one, semi_two, final],

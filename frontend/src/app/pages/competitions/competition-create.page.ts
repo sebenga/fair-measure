@@ -1123,6 +1123,8 @@ function presetKind(preset: Preset): PresetKind {
       <ion-toolbar>
         @if (error()) {
           <p class="fm-form-error" role="alert">{{ error() }}</p>
+        } @else if (saving() && progress()) {
+          <p class="progress" role="status" aria-live="polite">{{ progress() }}</p>
         }
         <div class="footer-actions">
           @if (stepIndex() > 0) {
@@ -1225,6 +1227,8 @@ export class CompetitionCreatePage implements OnInit {
   readonly scoringDrafts = signal<ScoringDraft[]>([this.blankDraft()]);
   readonly step = signal<StepKey>('sport');
   readonly saving = signal(false);
+  /** What the Create button is busy with, so a longer wait (the demo) is explained. */
+  readonly progress = signal('');
   readonly error = signal<string | null>(null);
 
   readonly everydayPresets = computed(() =>
@@ -1932,6 +1936,7 @@ export class CompetitionCreatePage implements OnInit {
     }
 
     this.saving.set(true);
+    this.progress.set(this.fillSample() ? `Creating your ${this.sampleNoun()}…` : '');
     this.error.set(null);
 
     const raw = this.form.getRawValue();
@@ -1986,6 +1991,7 @@ export class CompetitionCreatePage implements OnInit {
         next: (competition) => {
           const goSetup = () => {
             this.saving.set(false);
+            this.progress.set('');
             void this.navCtrl.navigateForward(`/tabs/competitions/${competition.id}/setup`, {
               replaceUrl: true,
             });
@@ -1994,6 +2000,10 @@ export class CompetitionCreatePage implements OnInit {
             goSetup();
             return;
           }
+          this.progress.set(
+            `Building the demo: ${this.samplePeople()}, fixtures, results and ratings. ` +
+              'A few seconds…',
+          );
           this.api.generateDemoLeague(competition.id).subscribe({
             next: () => goSetup(),
             error: () => goSetup(),
@@ -2001,6 +2011,7 @@ export class CompetitionCreatePage implements OnInit {
         },
         error: (err: unknown) => {
           this.saving.set(false);
+          this.progress.set('');
           this.error.set(extractErrorMessage(err, 'Could not create that competition.'));
         },
       });
