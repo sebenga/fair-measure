@@ -215,6 +215,32 @@ function presetKind(preset: Preset): PresetKind {
       <form [formGroup]="form" (ngSubmit)="onFormSubmit()" novalidate>
         @switch (step()) {
           @case ('sport') {
+            @if (demoPreset(); as demo) {
+              <div class="demo-start fm-card">
+                <ion-icon name="play-circle-outline" aria-hidden="true" />
+                <div class="demo-copy">
+                  <strong>Just exploring? Start with a demo</strong>
+                  <p>
+                    One tap builds a {{ demo.family_label || demo.label }} league with 16 teams and
+                    a season scheduled automatically: results already in, a match live right now,
+                    a cup, fantasy and scouting. It deletes itself after an hour.
+                  </p>
+                </div>
+                <ion-button
+                  type="button"
+                  expand="block"
+                  [disabled]="saving()"
+                  (click)="createDemo()"
+                >
+                  @if (saving() && fillSample()) {
+                    <ion-spinner name="crescent" />
+                  } @else {
+                    Create a {{ demo.family_label || demo.label }} demo
+                  }
+                </ion-button>
+              </div>
+              <p class="hint or">Or set up your own competition:</p>
+            }
             <h3 class="fm-section-title">What are you running?</h3>
             <p class="hint">
               Pick an official sport, or Custom if you want to define the scoring yourself. Tap a card to see its scoring.
@@ -1049,10 +1075,6 @@ function presetKind(preset: Preset): PresetKind {
                 }
               </dl>
             </div>
-
-            @if (canOfferSample()) {
-              <ng-container [ngTemplateOutlet]="sampleFields" />
-            }
           }
         }
 
@@ -1092,31 +1114,6 @@ function presetKind(preset: Preset): PresetKind {
         </ng-template>
       </form>
 
-      <ng-template #sampleFields>
-        <h3 class="fm-section-title">Try it first</h3>
-        <ion-list inset="true">
-          <ion-item>
-            <ion-checkbox
-              labelPlacement="end"
-              justify="start"
-              [checked]="fillSample()"
-              (ionChange)="fillSample.set($any($event).detail.checked === true)"
-            >
-              Generate a one-hour demo {{ sampleNoun() }} after create
-            </ion-checkbox>
-          </ion-item>
-        </ion-list>
-        <p class="hint">
-          Fills {{ samplePeople() }}, officials
-          @if (!pointsTable() && versusEntrants() === 'team') {
-            , picks, fixtures, player ratings, player stats, the league squad and a fantasy league
-          } @else if (!pointsTable()) {
-            , picks and fixtures
-          }
-          so you can see the product without the full setup. This is a demo
-          {{ sampleNoun() }} and it deletes itself after one hour.
-        </p>
-      </ng-template>
     </ion-content>
 
     <ion-footer>
@@ -1135,7 +1132,7 @@ function presetKind(preset: Preset): PresetKind {
 
           <span class="step-count">Step {{ stepIndex() + 1 }} of {{ visibleSteps().length }}</span>
           @if (!isLastStep()) {
-            <ion-button type="button" (click)="next()">Continue</ion-button>
+            <ion-button type="button" [disabled]="saving()" (click)="next()">Continue</ion-button>
           } @else {
             <ion-button type="button" (click)="submit()" [disabled]="form.invalid || saving()">
               @if (saving()) {
@@ -1287,9 +1284,39 @@ export class CompetitionCreatePage implements OnInit {
   readonly pointsTable = computed(() => this.scoringBasis() === 'criteria');
   readonly fillSample = signal(false);
 
-  canOfferSample(): boolean {
-    if (this.pointsTable()) return true;
-    return !!this.form.controls.format.value;
+  /**
+   * The sport the one-tap demo uses: the one picked if it is played as matches (so
+   * there is a schedule and a live game), otherwise football.
+   */
+  readonly demoPreset = computed(() => {
+    const playable = (preset: Preset | null | undefined): preset is Preset =>
+      !!preset &&
+      presetKind(preset) === 'sport' &&
+      !isPointsPreset(preset) &&
+      !preset.result_type &&
+      !!preset.format &&
+      preset.format !== 'freeform';
+    const chosen = this.activePreset();
+    if (playable(chosen)) return chosen;
+    const sports = this.sportPresets();
+    return sports.find((preset) => preset.key === 'soccer' && playable(preset)) ?? sports.find(playable) ?? null;
+  });
+
+  /** Create a demo straight from the first step: sensible defaults, then the demo fills it. */
+  createDemo(): void {
+    const demo = this.demoPreset();
+    if (!demo || this.saving()) return;
+    if (demo.key !== this.selectedPreset()) this.selectPreset(demo.key);
+    const allowed = demo.formats_allowed ?? [];
+    this.form.patchValue({
+      name: this.form.controls.name.value.trim() || `${demo.family_label || demo.label} demo`,
+      format: allowed.includes('league_knockout') ? 'league_knockout' : demo.format,
+      starts_on: '',
+      ends_on: '',
+    });
+    this.fillSample.set(true);
+    this.submit();
+    if (!this.saving()) this.fillSample.set(false);
   }
 
   sampleNoun(): string {

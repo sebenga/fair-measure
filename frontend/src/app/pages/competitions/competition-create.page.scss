@@ -546,6 +546,37 @@
   }
 }
 
+.demo-start {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 12px;
+  align-items: start;
+  margin: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(var(--ion-color-primary-rgb), 0.35);
+  background: rgba(var(--ion-color-primary-rgb), 0.07);
+
+  > ion-icon {
+    font-size: 1.8rem;
+    color: var(--ion-color-primary);
+  }
+
+  .demo-copy p {
+    margin: 4px 0 0;
+    font-size: 0.9rem;
+    color: var(--ion-color-medium-shade);
+  }
+
+  ion-button {
+    grid-column: 1 / -1;
+    margin: 4px 0 0;
+  }
+}
+
+.hint.or {
+  margin-top: 4px;
+}
+
 .progress {
   margin: 6px 16px 0;
   font-size: 0.85rem;

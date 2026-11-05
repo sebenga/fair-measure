@@ -272,6 +272,14 @@ class FixtureViewSet(viewsets.ModelViewSet):
     def generate(self, request: Request, competition_pk: str | None = None) -> Response:
         self._assert_is_admin()
         competition = self.get_competition()
+        from apps.competitions.demo import demo_is_active
+
+        if demo_is_active(competition):
+            # The demo schedules itself; a second run would lay another season on top.
+            raise ValidationError(
+                "This demo already has its whole schedule. Create your own competition to "
+                "generate one."
+            )
 
         serializer = GenerateFixturesSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

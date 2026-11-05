@@ -267,8 +267,9 @@ def generate_demo_league(competition: Competition, actor) -> dict:
             "stats": stats,
             "squad": squad_picks,
             "fantasy": fantasy_teams,
-            # The guided tour opens these matches.
-            "live_fixture": str(live.id) if live is not None else None,
+            # The guided tour opens these matches. A cup-only demo has no league match,
+            # so its cup tie in play is the live one.
+            "live_fixture": str(live.id) if live is not None else cup.get("live"),
             "live_cup_fixture": cup.get("live"),
             "penalty_fixture": cup.get("penalties"),
             "cup_stage": cup.get("stage"),

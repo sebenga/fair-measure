@@ -736,7 +736,17 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
           }
 
           @case ('schedule') {
-            @if (!pointsTable()) {
+            @if (demoActive() && !pointsTable()) {
+              <h3 class="fm-section-title">Fixtures</h3>
+              <p class="hint">
+                The demo scheduled its whole season automatically: league rounds on match days, a
+                cup in between, finished results, matches live now and fixtures still to come. In
+                your own competition, this is where you generate the schedule.
+              </p>
+              <ion-button expand="block" class="submit" (click)="openFixtures()">
+                See the fixtures
+              </ion-button>
+            } @else if (!pointsTable()) {
               <h3 class="fm-section-title">Generate fixtures</h3>
               <p class="hint">
                 @if (competition()?.season_finished) {
@@ -2354,6 +2364,12 @@ export class CompetitionSetupPage implements OnInit {
         ? current.filter((candidate) => candidate !== day)
         : [...current, day].sort((a, b) => a - b),
     );
+  }
+
+  openFixtures(): void {
+    void this.router.navigate(['/tabs/competitions', this.competitionId], {
+      queryParams: { tab: 'fixtures' },
+    });
   }
 
   generateFixtures(): void {
