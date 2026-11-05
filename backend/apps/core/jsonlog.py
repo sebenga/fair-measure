@@ -17,4 +17,7 @@ class JsonFormatter(logging.Formatter):
         }
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
+        client = getattr(record, "client", None)
+        if client:
+            payload["client"] = client
         return json.dumps(payload, default=str)

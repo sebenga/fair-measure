@@ -1,6 +1,8 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ErrorHandler, Injectable } from '@angular/core';
+import { ErrorHandler, Injectable, inject } from '@angular/core';
 import { TimeoutError } from 'rxjs';
+
+import { ClientErrorsService } from './client-errors.service';
 
 /** Failed requests are already reported by the reliability interceptor's toast; they are not screen crashes. */
 function isRequestFailure(error: unknown): boolean {
@@ -10,9 +12,12 @@ function isRequestFailure(error: unknown): boolean {
 
 @Injectable()
 export class FairMeasureErrorHandler implements ErrorHandler {
+  private readonly reports = inject(ClientErrorsService);
+
   handleError(error: unknown): void {
     console.error(error);
     if (isRequestFailure(error)) return;
+    this.reports.crash(error);
     if (document.documentElement.classList.contains('fm-booted')) {
       const banner = document.getElementById('fm-runtime-error');
       const detail = document.getElementById('fm-runtime-error-detail');

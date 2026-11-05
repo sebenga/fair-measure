@@ -189,7 +189,12 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "apps.core.pagination.DefaultPagination",
     "PAGE_SIZE": 25,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-    "DEFAULT_THROTTLE_RATES": {"anon": "60/min", "user": "1000/hour", "auth": "5/min"},
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "60/min",
+        "user": "1000/hour",
+        "auth": "5/min",
+        "client_errors": "30/min",
+    },
     "EXCEPTION_HANDLER": "apps.core.exceptions.api_exception_handler",
 }
 

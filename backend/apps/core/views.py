@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
 from pathlib import Path
@@ -15,6 +16,22 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from .bus import get_redis, redis_configured, reset_redis
+from .throttles import ClientErrorThrottle
+
+client_log = logging.getLogger("fm.client")
+
+CLIENT_ERROR_FIELDS = {
+    "kind": 40,
+    "message": 500,
+    "stack": 2000,
+    "page": 300,
+    "method": 10,
+    "endpoint": 300,
+    "status": 10,
+    "detail": 500,
+    "user_agent": 300,
+    "build": 40,
+}
 
 
 def _authorized_health(request: Request) -> bool:
@@ -127,3 +144,25 @@ def version(request: Request) -> Response:
             "built_at": built_at,
         }
     )
+
+
+@extend_schema(exclude=True)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@throttle_classes([ClientErrorThrottle])
+def client_error(request: Request) -> Response:
+    """Errors from browsers and phones, so device-only failures show up in the server log."""
+
+    data = request.data if isinstance(request.data, dict) else {}
+    report = {
+        key: str(data.get(key) or "")[:limit] for key, limit in CLIENT_ERROR_FIELDS.items()
+    }
+    if not report["user_agent"]:
+        report["user_agent"] = request.headers.get("User-Agent", "")[:300]
+    user = request.user if request.user.is_authenticated else None
+    report["user"] = str(user.pk) if user else ""
+    client_log.warning(
+        "Client %s: %s", report["kind"] or "error", report["message"] or report["detail"],
+        extra={"client": report},
+    )
+    return Response(status=status.HTTP_204_NO_CONTENT)

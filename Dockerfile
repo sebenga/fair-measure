@@ -10,7 +10,7 @@ ENV FRONTEND_API_BASE_URL=/api/v1
 ENV FRONTEND_REALTIME_URL=
 RUN node scripts/write-render-env.mjs && npm run build:prod
 
-FROM python:3.11-slim-bookworm
+FROM python:3.13-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DJANGO_SETTINGS_MODULE=config.settings.prod \

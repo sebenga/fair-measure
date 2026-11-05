@@ -4,6 +4,7 @@ import { ToastController } from '@ionic/angular/standalone';
 import { TimeoutError, timeout, retry, timer, catchError, throwError } from 'rxjs';
 
 import { isApiUrl } from './api-url';
+import { ClientErrorsService } from './client-errors.service';
 import { extractErrorMessage } from './error-message';
 
 const TIMEOUT_MS = 15_000;
@@ -22,6 +23,7 @@ const AUTH = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/google'];
 
 export const reliabilityInterceptor: HttpInterceptorFn = (request, next) => {
   const toasts = inject(ToastController);
+  const reports = inject(ClientErrorsService);
   const isApi = isApiUrl(request.url);
   const quiet = QUIET.some((path) => request.url.includes(path));
   const authCall = AUTH.some((path) => request.url.includes(path));
@@ -42,6 +44,7 @@ export const reliabilityInterceptor: HttpInterceptorFn = (request, next) => {
       },
     }),
     catchError((error: unknown) => {
+      if (isApi) reports.request(request.method, request.url, error);
       // Pages show their own "not found" state for a missing record, so a read 404 needs no toast.
       const missing = error instanceof HttpErrorResponse && error.status === 404 && isRead;
       const shown =
