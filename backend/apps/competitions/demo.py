@@ -404,7 +404,7 @@ def _participant_type(competition: Competition) -> str:
     settings = competition.settings_json or {}
     if settings.get("scoring_basis") == "criteria" or settings.get("table_mode") == "points":
         raw = settings.get("participant_type")
-        if raw in {"individual", "pair", "combination"}:
+        if raw in {"team", "individual", "pair", "combination"}:
             return str(raw)
         return "individual"
     return str(settings.get("participant_type") or "team")

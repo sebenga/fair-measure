@@ -810,7 +810,7 @@ export interface Preset {
   formats_allowed?: string[];
   contest_type?: 'head_to_head' | 'accumulation';
   accumulation_ranking?: 'highest_first' | 'lowest_first' | null;
-  participant_type?: 'team' | 'individual' | 'pair';
+  participant_type?: 'team' | 'individual' | 'pair' | 'combination';
   table_mode?: TableMode;
   scoring_locked?: boolean;
   locked?: boolean;

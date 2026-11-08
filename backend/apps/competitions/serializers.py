@@ -1126,10 +1126,13 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
     )
 
     participant_type = serializers.ChoiceField(
-        choices=["team", "individual"],
+        choices=["team", "individual", "pair", "combination"],
         required=False,
         write_only=True,
-        help_text="Custom VS competitions only: whether teams or individuals play each other.",
+        help_text=(
+            "Custom competitions only: who takes part. Teams, individuals, pairs, or "
+            "horse and rider combinations."
+        ),
     )
     unit_count = serializers.IntegerField(
         required=False,
@@ -1505,13 +1508,16 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
             settings = dict(competition.settings_json or {})
             settings["scoring_basis"] = scoring_basis
             settings["table_mode"] = "points" if scoring_basis == "criteria" else "head_to_head"
+            if preset_key == "custom":
+                # Requests from before the choice existed: VS meant teams, points meant people.
+                entrants = participant_type or ("team" if versus else "individual")
+                settings["participant_type"] = entrants
+                settings["participant_types"] = [entrants]
+                if entrants == "individual":
+                    settings["profile_entrants"] = True
             if versus:
                 points = {"win": 3, "draw": 1, "loss": 0, **(league_points or {})}
                 settings["contest_type"] = "head_to_head"
-                settings["participant_type"] = participant_type or "team"
-                settings["participant_types"] = [settings["participant_type"]]
-                if settings["participant_type"] == "individual":
-                    settings["profile_entrants"] = True
                 settings["league_points"] = {key: float(value) for key, value in points.items()}
                 settings["formats_allowed"] = [
                     "league",

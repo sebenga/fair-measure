@@ -49,6 +49,52 @@ const STEPS: Array<{ key: StepKey; label: string }> = [
   { key: 'review', label: 'Review' },
 ];
 
+type EntrantType = 'team' | 'individual' | 'pair' | 'combination';
+
+const ENTRANT_OPTIONS: Array<{
+  value: EntrantType;
+  label: string;
+  icon: string;
+  versus: string;
+  points: string;
+}> = [
+  {
+    value: 'team',
+    label: 'Teams',
+    icon: 'people-outline',
+    versus: 'Teams play each other. Players join a team, and each event names the player.',
+    points: 'Teams collect points. Players join a team, and points can name the player.',
+  },
+  {
+    value: 'individual',
+    label: 'Individuals',
+    icon: 'person-outline',
+    versus: 'One person plays another. Each entrant is a single player with their own profile.',
+    points: 'Each person collects their own points on their own profile.',
+  },
+  {
+    value: 'pair',
+    label: 'Pairs',
+    icon: 'people-circle-outline',
+    versus: 'Two people play as one side, as in doubles. Each pair is a named entrant.',
+    points: 'Two people collect points together as one named entrant.',
+  },
+  {
+    value: 'combination',
+    label: 'Horse and rider',
+    icon: 'paw-outline',
+    versus: 'A rider and a horse enter together as one combination.',
+    points: 'A rider and a horse collect points together as one combination.',
+  },
+];
+
+const ENTRANT_LABELS: Record<EntrantType, string> = {
+  team: 'Teams',
+  individual: 'Individuals',
+  pair: 'Pairs',
+  combination: 'Horse and rider combinations',
+};
+
 /** The furthest a competition can start ahead, and the longest it can run. */
 const MAX_DAYS_AHEAD = 365;
 
@@ -557,41 +603,29 @@ function presetKind(preset: Preset): PresetKind {
                 </button>
               </div>
 
-              @if (!pointsTable()) {
-                <h3 class="fm-section-title">Who plays</h3>
-                <div class="formats">
+              <h3 class="fm-section-title">{{ pointsTable() ? 'Who takes part' : 'Who plays' }}</h3>
+              <div class="formats">
+                @for (option of entrantOptions; track option.value) {
                   <button
                     type="button"
                     class="format"
-                    [class.selected]="versusEntrants() === 'team'"
-                    (click)="versusEntrants.set('team')"
+                    [class.selected]="versusEntrants() === option.value"
+                    [attr.aria-pressed]="versusEntrants() === option.value"
+                    (click)="versusEntrants.set(option.value)"
                   >
-                    <ion-icon name="people-outline" aria-hidden="true" />
+                    <ion-icon [name]="option.icon" aria-hidden="true" />
                     <div>
-                      <strong>Teams</strong>
-                      <p>Teams play each other. Players join a team, and each event names the player.</p>
+                      <strong>{{ option.label }}</strong>
+                      <p>{{ pointsTable() ? option.points : option.versus }}</p>
                     </div>
-                    @if (versusEntrants() === 'team') {
+                    @if (versusEntrants() === option.value) {
                       <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
                     }
                   </button>
-                  <button
-                    type="button"
-                    class="format"
-                    [class.selected]="versusEntrants() === 'individual'"
-                    (click)="versusEntrants.set('individual')"
-                  >
-                    <ion-icon name="person-circle-outline" aria-hidden="true" />
-                    <div>
-                      <strong>Individuals</strong>
-                      <p>One person plays another. Each entrant is a single player.</p>
-                    </div>
-                    @if (versusEntrants() === 'individual') {
-                      <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
-                    }
-                  </button>
-                </div>
+                }
+              </div>
 
+              @if (!pointsTable()) {
                 <h3 class="fm-section-title">Format</h3>
                 <p class="hint">Choose league, knockout, or both. You must pick one.</p>
                 <div class="formats">
@@ -1043,11 +1077,13 @@ function presetKind(preset: Preset): PresetKind {
                     }
                   </dd>
                 </div>
-                @if (isCustom() && !pointsTable()) {
+                @if (isCustom()) {
                   <div>
-                    <dt>Who plays</dt>
-                    <dd>{{ versusEntrants() === 'team' ? 'Teams' : 'Individuals' }}</dd>
+                    <dt>{{ pointsTable() ? 'Who takes part' : 'Who plays' }}</dt>
+                    <dd>{{ entrantLabel() }}</dd>
                   </div>
+                }
+                @if (isCustom() && !pointsTable()) {
                   <div>
                     <dt>Table points</dt>
                     <dd>
@@ -1209,7 +1245,9 @@ export class CompetitionCreatePage implements OnInit {
   readonly winPoints = signal('3');
   readonly drawPoints = signal('1');
   readonly lossPoints = signal('0');
-  readonly versusEntrants = signal<'team' | 'individual'>('team');
+  /** Who takes part in a custom competition, in points or VS mode. */
+  readonly versusEntrants = signal<EntrantType>('team');
+  readonly entrantOptions = ENTRANT_OPTIONS;
   readonly bonusEnabled = signal(false);
   readonly scoringBonusCode = signal('');
   readonly scoringBonusThreshold = signal('4');
@@ -1325,8 +1363,19 @@ export class CompetitionCreatePage implements OnInit {
     return 'league';
   }
 
+  entrantLabel(): string {
+    return ENTRANT_LABELS[this.versusEntrants()];
+  }
+
   samplePeople(): string {
-    if (this.pointsTable() || this.versusEntrants() === 'individual') return 'players';
+    if (this.isCustom()) {
+      const entrants = this.versusEntrants();
+      if (entrants === 'pair') return 'pairs';
+      if (entrants === 'combination') return 'horse and rider combinations';
+      if (entrants === 'individual') return 'players';
+      return 'teams';
+    }
+    if (this.pointsTable()) return 'players';
     return 'teams';
   }
 
@@ -1994,9 +2043,9 @@ export class CompetitionCreatePage implements OnInit {
           : {}),
         ...(locked ? {} : { scoring_basis: this.scoringBasis(), scoring_categories }),
         ...(this.unitCountOptions() && this.unitCount() ? { unit_count: this.unitCount() } : {}),
+        ...(this.isCustom() ? { participant_type: this.versusEntrants() } : {}),
         ...(this.isCustom() && !this.pointsTable()
           ? {
-              participant_type: this.versusEntrants(),
               league_points: {
                 win: Number(this.winPoints() || 0),
                 draw: Number(this.drawPoints() || 0),
