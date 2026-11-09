@@ -29,6 +29,7 @@ import type {
   Watched,
 } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 const SCALE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const LONG_PRESS_MS = 450;
@@ -41,13 +42,13 @@ interface BarcodeDetectorLike {
 @Component({
   selector: 'fm-rate',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonFooter, IonIcon, IonSpinner],
+  imports: [HomeButtonComponent, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonFooter, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /><fm-home-button /></ion-buttons>
         <ion-title>Rate a player</ion-title>
         <ion-buttons slot="end">
           <button type="button" class="sync" [class]="'sync ' + queue.state()" (click)="queue.sync()" [attr.aria-label]="syncLabel()">

@@ -15,6 +15,7 @@ import {
 import { extractErrorMessage } from '../../core/error-message';
 import type { CompareResponse } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 const COLOURS = ['#0f766e', '#c2410c', '#4338ca', '#b91c1c'];
 const SIZE = 260;
@@ -25,13 +26,13 @@ const RADIUS = 96;
 @Component({
   selector: 'fm-compare',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
+  imports: [HomeButtonComponent, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting/search" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting/search" /><fm-home-button /></ion-buttons>
         <ion-title>Compare</ion-title>
         <ion-buttons slot="end">
           @if (data()) {

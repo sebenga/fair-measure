@@ -30,7 +30,7 @@ import { ResultsService } from '../../../core/results.service';
 import { cupNameOf, isCupFixture } from './cup';
 import { KnockoutTreeComponent } from './knockout-tree.component';
 
-type Filter = 'upcoming' | 'results' | 'all';
+type Filter = 'live' | 'upcoming' | 'results' | 'all';
 
 const MAX_MOMENTS = 8;
 
@@ -66,13 +66,20 @@ interface FixtureGroup {
     }
     <div class="filter">
       <ion-segment [value]="filter()" (ionChange)="setFilter($any($event).detail.value)">
+        <ion-segment-button value="live" [class.has-live]="liveCount() > 0">
+          <ion-label>
+            <span class="live-dot" aria-hidden="true"></span>Live@if (liveCount()) {
+              <span class="live-count">{{ liveCount() }}</span>
+            }
+          </ion-label>
+        </ion-segment-button>
         <ion-segment-button value="upcoming"><ion-label>Upcoming</ion-label></ion-segment-button>
         <ion-segment-button value="results"><ion-label>Results</ion-label></ion-segment-button>
         <ion-segment-button value="all"><ion-label>All</ion-label></ion-segment-button>
       </ion-segment>
     </div>
 
-    @if (structureLayout(); as layout) {
+    @if (filter() !== 'live' ? structureLayout() : null; as layout) {
       @if (layout === 'both') {
         @if (leagueFixtures().length) {
           <h3 class="fm-section-title">League</h3>
@@ -109,12 +116,17 @@ interface FixtureGroup {
         <p>{{ error() }}</p>
         <ion-button fill="clear" (click)="load()">Try again</ion-button>
       </div>
-    } @else if (groups().length === 0 && !(structureLayout() && visibleFixtures().length)) {
+    } @else if (
+      groups().length === 0 &&
+      !(filter() !== 'live' && structureLayout() && visibleFixtures().length)
+    ) {
       <div class="fm-empty">
         <ion-icon name="calendar-outline" aria-hidden="true" />
         <h3>{{ emptyTitle() }}</h3>
         <p>
-          @if (track() === 'cup') {
+          @if (filter() === 'live') {
+            Games appear here the moment they kick off.
+          } @else if (track() === 'cup') {
             Cup ties appear after the schedule is generated.
           } @else if (canManage()) {
             Add participants, then generate a schedule from the setup screen.
@@ -122,7 +134,9 @@ interface FixtureGroup {
             Nothing scheduled here yet.
           }
         </p>
-        @if (canManage()) {
+        @if (filter() === 'live') {
+          <ion-button fill="clear" (click)="setFilter(restingFilter())">See the fixtures</ion-button>
+        } @else if (canManage()) {
           <ion-button (click)="openSetup()">Open setup</ion-button>
         }
       </div>
@@ -258,6 +272,37 @@ interface FixtureGroup {
 
       .filter {
         padding: 12px 16px 4px;
+      }
+
+      .live-dot {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        margin-right: 5px;
+        border-radius: 50%;
+        background: var(--ion-color-medium);
+        vertical-align: middle;
+      }
+
+      .has-live .live-dot {
+        background: var(--ion-color-danger);
+        animation: fm-pulse 1.6s ease-in-out infinite;
+      }
+
+      .live-count {
+        margin-left: 4px;
+        padding: 0 6px;
+        border-radius: 999px;
+        background: var(--ion-color-danger);
+        color: #fff;
+        font-size: 0.72rem;
+        font-weight: 700;
+      }
+
+      @keyframes fm-pulse {
+        50% {
+          opacity: 0.35;
+        }
       }
 
       .cup-hint {
@@ -505,6 +550,8 @@ export class CompetitionFixturesComponent implements OnInit {
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly filter = signal<Filter>('upcoming');
+  /** Once someone picks a filter, live games coming and going no longer move them. */
+  private chosenFilter = false;
   readonly skeletons = [0, 1, 2];
   /** Sides whose score just changed, so the number can pop. */
   readonly bumped = signal<Set<string>>(new Set());
@@ -548,6 +595,10 @@ export class CompetitionFixturesComponent implements OnInit {
     if (track === 'cup') return this.cupFixtures();
     return this.fixtures();
   });
+
+  readonly liveCount = computed(
+    () => this.visibleFixtures().filter((fixture) => fixture.status === 'live').length,
+  );
 
   structureLayout(): 'bracket' | 'rounds' | 'both' | null {
     if (this.resultType()) return null;
@@ -595,9 +646,7 @@ export class CompetitionFixturesComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    if (this.isKnockout() || this.track() === 'cup' || this.competition().format === 'league_knockout') {
-      this.filter.set('all');
-    }
+    this.filter.set(this.restingFilter());
     this.load();
 
     this.realtime
@@ -624,6 +673,7 @@ export class CompetitionFixturesComponent implements OnInit {
       next: (page) => {
         this.noteScoreChanges(page.results);
         this.fixtures.set(page.results);
+        this.landOnLive();
         this.loading.set(false);
       },
       error: (err: unknown) => {
@@ -650,13 +700,29 @@ export class CompetitionFixturesComponent implements OnInit {
   }
 
   setFilter(value: string | undefined): void {
-    if (value === 'upcoming' || value === 'results' || value === 'all') {
+    if (value === 'live' || value === 'upcoming' || value === 'results' || value === 'all') {
+      if (value !== this.filter()) this.chosenFilter = true;
       this.filter.set(value);
     }
   }
 
+  /** The filter without live games: the whole bracket for cups, otherwise what is next. */
+  restingFilter(): Filter {
+    const format = this.competition().format;
+    if (this.isKnockout() || this.track() === 'cup' || format === 'league_knockout') return 'all';
+    return 'upcoming';
+  }
+
+  /** Open on Live while any game is in play, and step back once the last one ends. */
+  private landOnLive(): void {
+    if (this.chosenFilter) return;
+    this.filter.set(this.liveCount() ? 'live' : this.restingFilter());
+  }
+
   private matchesFilter(fixture: Fixture): boolean {
     switch (this.filter()) {
+      case 'live':
+        return fixture.status === 'live';
       case 'upcoming':
         return ['scheduled', 'live', 'postponed'].includes(fixture.status);
       case 'results':
@@ -721,6 +787,8 @@ export class CompetitionFixturesComponent implements OnInit {
   emptyTitle(): string {
     if (this.track() === 'cup' && this.filter() === 'all') return 'No cup fixtures yet';
     switch (this.filter()) {
+      case 'live':
+        return 'No games live right now';
       case 'upcoming':
         return 'Nothing scheduled';
       case 'results':

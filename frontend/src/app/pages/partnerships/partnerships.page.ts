@@ -20,11 +20,13 @@ import {
 } from '../../core/marketing-fallbacks';
 import type { MarketingAudience, MarketingPlacement } from '../../core/models';
 import { PageHeroComponent } from '../../shared/page-hero.component';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-partnerships',
   standalone: true,
   imports: [
+    HomeButtonComponent,
     PageHeroComponent,
     IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -34,6 +36,7 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
       <ion-toolbar>
         <ion-buttons slot="start">
           <ion-back-button [defaultHref]="backHref()" />
+          <fm-home-button />
         </ion-buttons>
         <ion-title>Partnerships</ion-title>
       </ion-toolbar>

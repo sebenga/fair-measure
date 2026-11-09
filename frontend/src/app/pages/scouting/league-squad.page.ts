@@ -27,6 +27,7 @@ import type {
   SquadPick,
 } from '../../core/scouting.models';
 import { SELECTOR_GUIDE, ScoutingService } from '../../core/scouting.service';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 const CONFIDENCE_LABEL: Record<EvidenceConfidence, string> = {
   strong: 'Strong evidence',
@@ -45,6 +46,7 @@ const SOURCE_LABEL: Record<string, string> = {
   selector: 'fm-league-squad',
   standalone: true,
   imports: [
+    HomeButtonComponent,
     DatePipe,
     IonHeader,
     IonToolbar,
@@ -61,7 +63,7 @@ const SOURCE_LABEL: Record<string, string> = {
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /><fm-home-button /></ion-buttons>
         <ion-title>League squad</ion-title>
         <ion-buttons slot="end">
           <ion-button (click)="openTalentReport()">

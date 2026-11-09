@@ -6,6 +6,7 @@ import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { FALLBACK_CORPORATE, FALLBACK_GOVERNMENT, FALLBACK_LOGOS } from '../../core/marketing-fallbacks';
 import type { Competition, MarketingPlacement, Post, StandingRow } from '../../core/models';
 import {
@@ -51,8 +52,12 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
             <button type="button" (click)="scrollTo('happening')">Discover</button>
           </nav>
           <div class="auth">
-            <button type="button" class="ghost" (click)="go('/login')">Sign in</button>
-            <button type="button" class="primary" (click)="go('/register')">Get started</button>
+            @if (auth.isAuthenticated()) {
+              <button type="button" class="primary" (click)="go('/tabs/competitions')">My leagues</button>
+            } @else {
+              <button type="button" class="ghost" (click)="go('/login')">Sign in</button>
+              <button type="button" class="primary" (click)="go('/register')">Get started</button>
+            }
           </div>
         </header>
 
@@ -145,17 +150,30 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
                     </ol>
                   }
                 </div>
-                <div class="card why">
-                  <h3>Why sign in?</h3>
-                  <p>
-                    Browsing is always free and open. Sign in only when you want to enter a
-                    competition, run your own, or follow live results.
-                  </p>
-                  <button type="button" class="primary block" (click)="go('/register')">
-                    Get started
-                  </button>
-                  <button type="button" class="ghost block" (click)="go('/login')">Sign in</button>
-                </div>
+                @if (auth.isAuthenticated()) {
+                  <div class="card why">
+                    <h3>You're signed in</h3>
+                    <p>Pick up where you left off: your leagues, live games and the feed.</p>
+                    <button type="button" class="primary block" (click)="go('/tabs/competitions')">
+                      My leagues
+                    </button>
+                    <button type="button" class="ghost block" (click)="go('/tabs/discover')">
+                      Discover
+                    </button>
+                  </div>
+                } @else {
+                  <div class="card why">
+                    <h3>Why sign in?</h3>
+                    <p>
+                      Browsing is always free and open. Sign in only when you want to enter a
+                      competition, run your own, or follow live results.
+                    </p>
+                    <button type="button" class="primary block" (click)="go('/register')">
+                      Get started
+                    </button>
+                    <button type="button" class="ghost block" (click)="go('/login')">Sign in</button>
+                  </div>
+                }
               </aside>
             </div>
           }
@@ -299,6 +317,7 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
 export class LandingPage {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
+  readonly auth = inject(AuthService);
 
   readonly corporateStories = CORPORATE_STORIES;
   readonly governmentStories = GOVERNMENT_STORIES;
@@ -347,6 +366,10 @@ export class LandingPage {
   }
 
   startCompetition(): void {
+    if (this.auth.isAuthenticated()) {
+      void this.router.navigateByUrl('/tabs/competitions/new');
+      return;
+    }
     void this.router.navigate(['/register'], {
       queryParams: { next: '/tabs/competitions/new' },
       replaceUrl: true,

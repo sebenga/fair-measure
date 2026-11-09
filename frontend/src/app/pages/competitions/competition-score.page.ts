@@ -26,11 +26,13 @@ import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail, ScoreAssistEntry } from '../../core/models';
 import { isPointsTable } from '../../core/models';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-competition-score',
   standalone: true,
   imports: [
+    HomeButtonComponent,
     FormsModule,
     IonHeader,
     IonToolbar,
@@ -55,6 +57,7 @@ import { isPointsTable } from '../../core/models';
       <ion-toolbar>
         <ion-buttons slot="start">
           <ion-back-button [defaultHref]="backHref()" />
+          <fm-home-button />
         </ion-buttons>
         <ion-title>{{ criteriaLeague() ? 'Add points' : 'Score' }}</ion-title>
       </ion-toolbar>

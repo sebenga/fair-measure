@@ -19,6 +19,7 @@ import { extractErrorMessage } from '../../core/error-message';
 import type { Athlete, GamesEventDetail, Noc, RecordScope } from '../../core/games.service';
 import { GamesService } from '../../core/games.service';
 import { GamesFollowComponent } from './games-follow.component';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 const MEDAL_TYPE: Record<string, string> = {
   standard: 'Gold, silver and bronze from the final result',
@@ -29,13 +30,13 @@ const MEDAL_TYPE: Record<string, string> = {
 @Component({
   selector: 'fm-games-event',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner, GamesFollowComponent],
+  imports: [HomeButtonComponent, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner, GamesFollowComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './games.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /><fm-home-button /></ion-buttons>
         <ion-title>{{ event()?.name ?? 'Event' }}</ion-title>
       </ion-toolbar>
     </ion-header>

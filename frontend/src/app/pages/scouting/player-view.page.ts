@@ -25,19 +25,20 @@ import type {
 import { ScoutingService } from '../../core/scouting.service';
 import { PlayerRatingsComponent } from './player-ratings.component';
 import { PlayerStatsComponent } from './player-stats.component';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 type Viewable = PlayerProfile | ScoutProfileView;
 
 @Component({
   selector: 'fm-scouting-player-view',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner, PlayerStatsComponent, PlayerRatingsComponent],
+  imports: [HomeButtonComponent, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner, PlayerStatsComponent, PlayerRatingsComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting/players" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting/players" /><fm-home-button /></ion-buttons>
         <ion-title>Player</ion-title>
       </ion-toolbar>
     </ion-header>

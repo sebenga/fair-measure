@@ -17,6 +17,7 @@ import {
 import { extractErrorMessage } from '../../core/error-message';
 import type { ReportSection, TalentReport, TalentReportKind } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 const KINDS: TalentReportKind[] = ['player', 'progress', 'compare', 'shortlist', 'competition', 'activity'];
 const COLOURS = ['#0f766e', '#c2410c', '#4338ca', '#a16207'];
@@ -28,13 +29,13 @@ const RADIUS = 86;
 @Component({
   selector: 'fm-talent-report',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
+  imports: [HomeButtonComponent, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrls: ['./scouting.scss', './talent-report.page.scss'],
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /><fm-home-button /></ion-buttons>
         <ion-title>{{ report()?.title ?? 'Report' }}</ion-title>
         <ion-buttons slot="end">
           <ion-button [disabled]="!report() || exporting()" (click)="downloadPdf()">

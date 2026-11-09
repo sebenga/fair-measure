@@ -14,18 +14,19 @@ import {
 import { extractErrorMessage } from '../../core/error-message';
 import type { CatalogItem, PhysicalTest, RecordablePlayers } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 /** Coach or official screen: record a physical test result for a player. */
 @Component({
   selector: 'fm-record-test',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonSpinner],
+  imports: [HomeButtonComponent, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /><fm-home-button /></ion-buttons>
         <ion-title>Record a test result</ion-title>
       </ion-toolbar>
     </ion-header>

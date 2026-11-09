@@ -21,9 +21,14 @@ export const guestGuard: CanActivateFn = () => {
   return auth.isAuthenticated() ? router.createUrlTree(['/tabs/competitions']) : true;
 };
 
+/** Navigation state that opens the landing page for a signed-in user too. */
+export const LANDING_STATE = { landing: true } as const;
+
 export const landingGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
   const router = inject(Router);
 
-  return auth.isAuthenticated() ? router.createUrlTree(['/tabs/competitions']) : true;
+  // Opening the app goes straight to the leagues; the home button asks for the landing page.
+  const asked = router.getCurrentNavigation()?.extras.state?.['landing'] === true;
+  return auth.isAuthenticated() && !asked ? router.createUrlTree(['/tabs/competitions']) : true;
 };

@@ -27,11 +27,13 @@ import { extractErrorMessage } from '../../core/error-message';
 import type { Competition, TeamPick } from '../../core/models';
 import { CompetitionCardComponent } from '../../shared/competition-card.component';
 import { PageHeroComponent } from '../../shared/page-hero.component';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-competition-list',
   standalone: true,
   imports: [
+    HomeButtonComponent,
     PageHeroComponent,
     DatePipe,
     RouterLink,
@@ -54,6 +56,7 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
   template: `
     <ion-header translucent="true">
       <ion-toolbar>
+        <ion-buttons slot="start"><fm-home-button /></ion-buttons>
         <ion-title>{{ auth.isAuthenticated() ? 'My leagues' : 'Leagues' }}</ion-title>
         <ion-buttons slot="end">
           @if (auth.isAuthenticated()) {

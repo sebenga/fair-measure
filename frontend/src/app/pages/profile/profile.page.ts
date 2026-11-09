@@ -5,6 +5,7 @@ import {
   AlertController,
   IonAvatar,
   IonButton,
+  IonButtons,
   IonContent,
   IonHeader,
   IonIcon,
@@ -27,15 +28,18 @@ import { extractErrorMessage } from '../../core/error-message';
 import { PushService } from '../../core/push.service';
 import { RealtimeService } from '../../core/realtime.service';
 import { ProfileTalentComponent } from './profile-talent.component';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-profile',
   standalone: true,
   imports: [
+    HomeButtonComponent,
     ReactiveFormsModule,
     RouterLink,
     IonHeader,
     IonToolbar,
+    IonButtons,
     IonTitle,
     IonContent,
     IonAvatar,
@@ -55,6 +59,7 @@ import { ProfileTalentComponent } from './profile-talent.component';
   template: `
     <ion-header translucent="true">
       <ion-toolbar>
+        <ion-buttons slot="start"><fm-home-button /></ion-buttons>
         <ion-title>Profile</ion-title>
       </ion-toolbar>
     </ion-header>

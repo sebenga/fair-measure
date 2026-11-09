@@ -56,6 +56,7 @@ import { FixtureTimelineComponent } from './fixture-timeline.component';
 import { MatchDayComponent } from './match-day.component';
 import { MatchRatersComponent } from './match-raters.component';
 import { ScrabbleScorerComponent } from './scrabble-scorer.component';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 type FixtureTab = 'overview' | 'lineups' | 'live' | 'stats' | 'raters' | 'setup';
 
@@ -77,6 +78,7 @@ interface Celebration {
   selector: 'fm-fixture-detail',
   standalone: true,
   imports: [
+    HomeButtonComponent,
     DatePipe,
     MatchAwardsComponent,
     MatchDayComponent,
@@ -102,6 +104,7 @@ interface Celebration {
       <ion-toolbar>
         <ion-buttons slot="start">
           <ion-back-button [defaultHref]="backHref()" />
+          <fm-home-button />
         </ion-buttons>
         <ion-title>{{ fixture()?.label || 'Fixture' }}</ion-title>
         <ion-buttons slot="end">

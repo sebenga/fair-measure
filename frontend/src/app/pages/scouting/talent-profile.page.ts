@@ -27,6 +27,7 @@ import type {
 import { ScoutingService } from '../../core/scouting.service';
 import { UploadService } from '../../core/upload.service';
 import { ScoutEligibilityComponent } from '../../shared/scout-eligibility.component';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 type Identity = Pick<
   PlayerProfile,
@@ -59,6 +60,7 @@ const EMPTY_IDENTITY: Identity = {
   selector: 'fm-talent-profile',
   standalone: true,
   imports: [
+    HomeButtonComponent,
     DatePipe,
     IonHeader,
     IonToolbar,
@@ -75,7 +77,7 @@ const EMPTY_IDENTITY: Identity = {
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /><fm-home-button /></ion-buttons>
         <ion-title>Scouting</ion-title>
       </ion-toolbar>
     </ion-header>

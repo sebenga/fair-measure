@@ -67,11 +67,13 @@ interface MarketSlide {
 const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
 import { PageHeroComponent } from '../../shared/page-hero.component';
 import { SponsorShowcaseComponent } from '../landing/sponsor-showcase.component';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-discover',
   standalone: true,
   imports: [
+    HomeButtonComponent,
     PageHeroComponent,
     SponsorShowcaseComponent,
     IonHeader,
@@ -94,6 +96,7 @@ import { SponsorShowcaseComponent } from '../landing/sponsor-showcase.component'
   template: `
     <ion-header translucent="true">
       <ion-toolbar>
+        <ion-buttons slot="start"><fm-home-button /></ion-buttons>
         <ion-title>Discover</ion-title>
         <ion-buttons slot="end">
           <fm-inbox-tray />

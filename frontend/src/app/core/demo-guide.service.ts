@@ -120,7 +120,8 @@ const STEPS: GuideStep[] = [
     route: (ctx) => competition(ctx, 'fixtures'),
     target: 'fm-competition-fixtures',
     actions: [
-      { say: 'Live games show a red Live badge and the score as it happens.', target: 'fm-competition-fixtures .fixture.is-live', point: true, optional: true },
+      { say: 'While games are in play, fixtures open on Live: a red badge and the score as it happens.', target: 'fm-competition-fixtures .fixture.is-live', point: true, optional: true },
+      { say: 'Tap Upcoming for the games still to come.', target: 'fm-competition-fixtures .filter ion-segment-button[value="upcoming"]' },
       { say: 'Upcoming games show the kick-off time and round.', target: 'fm-competition-fixtures .fixture:not(.is-live) .when', point: true, optional: true },
     ],
   },

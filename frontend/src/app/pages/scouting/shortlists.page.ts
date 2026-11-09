@@ -17,6 +17,7 @@ import {
 import { extractErrorMessage } from '../../core/error-message';
 import type { Shortlist, ShortlistEntry, ShortlistLogRow, ShortlistStatus } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 const STATUSES: Array<{ key: ShortlistStatus; label: string }> = [
   { key: 'watching', label: 'Watching' },
@@ -30,13 +31,13 @@ const STATUSES: Array<{ key: ShortlistStatus; label: string }> = [
 @Component({
   selector: 'fm-shortlists',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
+  imports: [HomeButtonComponent, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="listId() ? '/tabs/scouting/shortlists' : '/tabs/scouting'" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="listId() ? '/tabs/scouting/shortlists' : '/tabs/scouting'" /><fm-home-button /></ion-buttons>
         <ion-title>{{ current()?.name ?? 'Shortlists' }}</ion-title>
         <ion-buttons slot="end">
           @if (current(); as list) {

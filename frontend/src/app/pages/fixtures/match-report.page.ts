@@ -18,6 +18,7 @@ import { createOutline, printOutline } from 'ionicons/icons';
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { LineupPlayer, MatchReportData } from '../../core/models';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 interface ReportDraft {
   summary: string;
@@ -33,6 +34,7 @@ interface ReportDraft {
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    HomeButtonComponent,
     DatePipe,
     IonHeader,
     IonToolbar,
@@ -48,6 +50,7 @@ interface ReportDraft {
       <ion-toolbar>
         <ion-buttons slot="start">
           <ion-back-button [defaultHref]="backHref()" />
+          <fm-home-button />
         </ion-buttons>
         <ion-title>Match report</ion-title>
         <ion-buttons slot="end">

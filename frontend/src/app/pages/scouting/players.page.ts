@@ -14,17 +14,18 @@ import {
 import { extractErrorMessage } from '../../core/error-message';
 import type { ProfileCard, ScoutingCatalog } from '../../core/scouting.models';
 import { ScoutingService, groupBySport } from '../../core/scouting.service';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-scouting-players',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSearchbar],
+  imports: [HomeButtonComponent, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSearchbar],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /><fm-home-button /></ion-buttons>
         <ion-title>Players</ion-title>
       </ion-toolbar>
       <ion-toolbar>

@@ -36,6 +36,7 @@ import type { ScoutingCatalog } from '../../core/scouting.models';
 import { ScoutingService, scoutingSportFor } from '../../core/scouting.service';
 import type { CompetitionFormat, Preset, PresetKind } from '../../core/models';
 import { isPointsPreset } from '../../core/models';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 type StepKey = 'sport' | 'name' | 'format' | 'points' | 'dates' | 'visibility' | 'review';
 
@@ -204,6 +205,7 @@ function presetKind(preset: Preset): PresetKind {
   selector: 'fm-competition-create',
   standalone: true,
   imports: [
+    HomeButtonComponent,
     ReactiveFormsModule,
     NgTemplateOutlet,
     IonHeader,
@@ -232,6 +234,7 @@ function presetKind(preset: Preset): PresetKind {
       <ion-toolbar>
         <ion-buttons slot="start">
           <ion-back-button defaultHref="/tabs/competitions" />
+          <fm-home-button />
         </ion-buttons>
         <ion-title>New competition</ion-title>
       </ion-toolbar>

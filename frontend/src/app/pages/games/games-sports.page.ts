@@ -18,17 +18,18 @@ import { extractErrorMessage } from '../../core/error-message';
 import type { CatalogSport } from '../../core/games.service';
 import type { Preset } from '../../core/models';
 import { GamesService } from '../../core/games.service';
+import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-games-sports',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonFooter, IonSearchbar, IonSpinner],
+  imports: [HomeButtonComponent, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonFooter, IonSearchbar, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './games.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /><fm-home-button /></ion-buttons>
         <ion-title>Add sports</ion-title>
       </ion-toolbar>
       <ion-toolbar>
