@@ -11,7 +11,7 @@ import {
   FALLBACK_CORPORATE,
   FALLBACK_GOVERNMENT,
   FALLBACK_LOGOS,
-  placementImage,
+  showcaseSlides,
 } from '../../core/marketing-fallbacks';
 import type { Competition, MarketingPlacement, Post, StandingRow } from '../../core/models';
 import {
@@ -24,8 +24,6 @@ import {
 import { LandingEnquiryComponent } from './landing-enquiry.component';
 import { SponsorShowcaseComponent } from './sponsor-showcase.component';
 import { CompetitionStripComponent } from '../../shared/competition-strip.component';
-import { CarouselComponent } from '../../shared/carousel.component';
-import { PromoSlotComponent } from '../../shared/promo-slot.component';
 
 const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
 
@@ -33,8 +31,6 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
   selector: 'fm-landing',
   standalone: true,
   imports: [
-    CarouselComponent,
-    PromoSlotComponent,
     CompetitionStripComponent,
     DatePipe,
     IonContent,
@@ -199,22 +195,11 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
 
         @if (banners().length) {
           <section class="commercial" id="commercial">
-            <fm-carousel [items]="banners()" label="Commercial">
-              <ng-template let-banner>
-                <article class="banner">
-                  <p class="eyebrow">Commercial</p>
-                  <h2>{{ banner.name }}</h2>
-                  @if (banner.tagline) {
-                    <p>{{ banner.tagline }}</p>
-                  }
-                  @if (banner.cta_label) {
-                    <button type="button" class="primary" (click)="openPlacement(banner)">
-                      {{ banner.cta_label }}
-                    </button>
-                  }
-                </article>
-              </ng-template>
-            </fm-carousel>
+            <fm-sponsor-showcase
+              label="Commercial"
+              [sponsors]="bannerSlides()"
+              (open)="openPlacement($event)"
+            />
           </section>
         }
 
@@ -226,21 +211,12 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
             live boards. Slots are managed in admin so a campaign can go live without a release.
           </p>
           <fm-story-tiles [stories]="corporateStories" />
-          <fm-carousel class="offers" [items]="corporate()" label="Corporate offers">
-            <ng-template let-item let-i="index">
-              <fm-promo-slot
-                kind="corporate"
-                eyebrow="Corporate"
-                [title]="item.name"
-                [body]="item.tagline || item.body"
-                [action]="item.cta_label || 'Enquire'"
-                [logo]="item.logo_url"
-                [image]="placementImage(item, i)"
-                icon="briefcase-outline"
-                (open)="openPlacement(item)"
-              />
-            </ng-template>
-          </fm-carousel>
+          <fm-sponsor-showcase
+            class="offers"
+            label="Corporate offers"
+            [sponsors]="corporateSlides()"
+            (open)="openPlacement($event)"
+          />
         </section>
 
         <section class="partners government" id="government">
@@ -251,21 +227,12 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
             federations get a named programme on this page and a route to partner.
           </p>
           <fm-story-tiles [stories]="governmentStories" />
-          <fm-carousel class="offers" [items]="government()" label="Government offers">
-            <ng-template let-item let-i="index">
-              <fm-promo-slot
-                kind="government"
-                eyebrow="Government"
-                [title]="item.name"
-                [body]="item.tagline || item.body"
-                [action]="item.cta_label || 'Enquire'"
-                [logo]="item.logo_url"
-                [image]="placementImage(item, i)"
-                icon="business-outline"
-                (open)="openPlacement(item)"
-              />
-            </ng-template>
-          </fm-carousel>
+          <fm-sponsor-showcase
+            class="offers"
+            label="Government offers"
+            [sponsors]="governmentSlides()"
+            (open)="openPlacement($event)"
+          />
         </section>
 
         <section class="sponsors" id="sponsors">
@@ -342,7 +309,6 @@ export class LandingPage {
   readonly auth = inject(AuthService);
 
   readonly corporateStories = CORPORATE_STORIES;
-  readonly placementImage = placementImage;
   readonly governmentStories = GOVERNMENT_STORIES;
   readonly loading = signal(true);
   readonly competitions = signal<Competition[]>([]);
@@ -367,6 +333,9 @@ export class LandingPage {
     );
     return rows.length ? rows : FALLBACK_GOVERNMENT;
   });
+  readonly bannerSlides = computed(() => showcaseSlides(this.banners(), 'Commercial', 'Find out more'));
+  readonly corporateSlides = computed(() => showcaseSlides(this.corporate(), 'Corporate', 'Enquire'));
+  readonly governmentSlides = computed(() => showcaseSlides(this.government(), 'Government', 'Enquire'));
   readonly logos = computed(() => {
     const rows = this.placements().filter((item) => item.slot === 'logo');
     return rows.length ? rows : FALLBACK_LOGOS;

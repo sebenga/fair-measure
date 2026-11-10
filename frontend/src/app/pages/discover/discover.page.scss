@@ -28,8 +28,8 @@
 }
 
 .campaigns,
-fm-carousel + fm-carousel {
-  margin-top: 10px;
+.feed > fm-sponsor-showcase {
+  margin-top: 12px;
 }
 
 .rail-kicker,
@@ -171,7 +171,8 @@ fm-carousel + fm-carousel {
     display: grid;
   }
 
-  .market-carousel {
+  /* The side columns carry these on wide screens. */
+  fm-sponsor-showcase.market-carousel {
     display: none;
   }
 }

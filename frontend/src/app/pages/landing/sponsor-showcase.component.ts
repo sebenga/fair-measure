@@ -4,15 +4,18 @@ import {
   DestroyRef,
   afterNextRender,
   computed,
+  effect,
   inject,
   input,
   output,
   signal,
+  untracked,
 } from '@angular/core';
 
 import type { MarketingPlacement } from '../../core/models';
 
 const ROTATE_MS = 5000;
+const SWIPE_PX = 48;
 const TINTS = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
 
 /** Sponsors and partners, one at a time: photo, name and pitch, cross-fading to the next. */
@@ -26,7 +29,9 @@ const TINTS = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
       class="stage"
       role="region"
       aria-roledescription="carousel"
-      aria-label="Sponsors and partners"
+      [attr.aria-label]="label()"
+      (pointerdown)="onPointerDown($event)"
+      (pointerup)="onPointerUp($event)"
       (mouseenter)="hovered.set(true)"
       (mouseleave)="hovered.set(false)"
       (focusin)="hovered.set(true)"
@@ -56,7 +61,7 @@ const TINTS = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
               <p>{{ sponsor.body }}</p>
             }
             @if (sponsor.cta_label) {
-              <button type="button" [tabindex]="i === index() ? 0 : -1" (click)="open.emit(sponsor)">
+              <button type="button" [tabindex]="i === index() ? 0 : -1" (click)="choose(sponsor)">
                 {{ sponsor.cta_label }} →
               </button>
             }
@@ -72,7 +77,7 @@ const TINTS = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
       }
     </div>
     @if (sponsors().length > 1 && compact()) {
-      <div class="dots" role="group" aria-label="Choose a sponsor">
+      <div class="dots" role="group" [attr.aria-label]="'Choose: ' + label()">
         @for (sponsor of sponsors(); track sponsor.id; let i = $index) {
           <button
             type="button"
@@ -84,7 +89,7 @@ const TINTS = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
         }
       </div>
     } @else if (sponsors().length > 1) {
-      <div class="picker" role="group" aria-label="Choose a sponsor">
+      <div class="picker" role="group" [attr.aria-label]="'Choose: ' + label()">
         @for (sponsor of sponsors(); track sponsor.id; let i = $index) {
           <button
             type="button"
@@ -106,6 +111,7 @@ const TINTS = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
     .stage {
       position: relative;
       overflow: hidden;
+      touch-action: pan-y;
       min-height: 320px;
       border-radius: 22px;
       background: #0b1220;
@@ -308,6 +314,9 @@ export class SponsorShowcaseComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly sponsors = input.required<MarketingPlacement[]>();
+  readonly label = input('Sponsors and partners');
+  /** The slide to open on, so neighbouring carousels of the same partners differ. */
+  readonly start = input(0);
   /** Narrow sidebars: a shorter stage and dots instead of name chips. */
   readonly compact = input(false, { transform: (value: boolean | string) => value !== false });
   readonly open = output<MarketingPlacement>();
@@ -321,7 +330,14 @@ export class SponsorShowcaseComponent {
     return count ? this.position() % count : 0;
   });
 
+  private startX = 0;
+  private swipedAt = 0;
+
   constructor() {
+    effect(() => {
+      const start = this.start();
+      untracked(() => this.position.set(start));
+    });
     afterNextRender(() => {
       if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
       this.rotating.set(true);
@@ -353,5 +369,23 @@ export class SponsorShowcaseComponent {
   show(index: number): void {
     this.position.set(index);
     this.restart();
+  }
+
+  onPointerDown(event: PointerEvent): void {
+    this.startX = event.clientX;
+  }
+
+  onPointerUp(event: PointerEvent): void {
+    const count = this.sponsors().length;
+    const distance = event.clientX - this.startX;
+    if (count < 2 || Math.abs(distance) < SWIPE_PX) return;
+    this.swipedAt = Date.now();
+    this.show((this.index() + (distance < 0 ? 1 : -1) + count) % count);
+  }
+
+  /** A swipe can end on the slide's button; that must not open it. */
+  choose(sponsor: MarketingPlacement): void {
+    if (Date.now() - this.swipedAt < 500) return;
+    this.open.emit(sponsor);
   }
 }

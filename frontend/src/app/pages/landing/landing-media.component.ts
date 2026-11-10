@@ -14,7 +14,8 @@ import { IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { pauseOutline, playOutline, volumeHighOutline, volumeMuteOutline } from 'ionicons/icons';
 
-import { CarouselComponent } from '../../shared/carousel.component';
+import type { MarketingPlacement } from '../../core/models';
+import { SponsorShowcaseComponent } from './sponsor-showcase.component';
 
 const MEDIA = 'assets/landing';
 
@@ -440,7 +441,7 @@ interface Moment {
 @Component({
   selector: 'fm-landing-moments',
   standalone: true,
-  imports: [CarouselComponent],
+  imports: [SponsorShowcaseComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <p class="eyebrow">Match day, shared</p>
@@ -449,25 +450,7 @@ interface Moment {
       Score from the touchline, post the full-time photo, rate the players and argue about it in
       the feed — with your team, your office or the whole town.
     </p>
-    <fm-carousel class="grid" [items]="moments" label="Match day photos" [every]="4000">
-      <ng-template let-moment let-i="index">
-        <figure>
-          <img
-            [src]="moment.image"
-            [alt]="moment.title"
-            [attr.loading]="i === 0 ? 'eager' : 'lazy'"
-            decoding="async"
-            width="900"
-            height="675"
-          />
-          <figcaption>
-            <span class="tag">{{ moment.tag }}</span>
-            <strong>{{ moment.title }}</strong>
-            <span>{{ moment.body }}</span>
-          </figcaption>
-        </figure>
-      </ng-template>
-    </fm-carousel>
+    <fm-sponsor-showcase class="grid" label="Match day photos" [sponsors]="slides" />
   `,
   styles: `
     :host {
@@ -491,60 +474,8 @@ interface Moment {
       line-height: 1.55;
     }
     .grid {
-      margin-top: 16px;
-    }
-    figure {
-      position: relative;
-      margin: 0;
-      overflow: hidden;
-      aspect-ratio: 4 / 3;
-      border-radius: 18px;
-      background: #0b1220;
-      box-shadow: 0 8px 24px rgb(15 23 42 / 10%);
-    }
-    img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
       display: block;
-      transition: transform 0.6s ease;
-    }
-    figure:hover img {
-      transform: scale(1.04);
-    }
-    figcaption {
-      position: absolute;
-      inset: auto 0 0;
-      display: grid;
-      gap: 3px;
-      padding: 40px 14px 14px;
-      background: linear-gradient(0deg, rgb(4 10 22 / 88%), transparent);
-      color: #fff;
-    }
-    figcaption span:last-child {
-      color: rgb(255 255 255 / 80%);
-      font-size: 0.82rem;
-      line-height: 1.4;
-    }
-    .tag {
-      justify-self: start;
-      padding: 3px 8px;
-      border-radius: 999px;
-      background: rgb(15 118 110 / 90%);
-      font-size: 0.66rem;
-      font-weight: 800;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
-    @media (min-width: 720px) {
-      figure {
-        aspect-ratio: 16 / 7;
-      }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      img {
-        transition: none;
-      }
+      margin-top: 16px;
     }
   `,
 })
@@ -581,4 +512,18 @@ export class LandingMomentsComponent {
       body: 'Clean-ups, reading races and school challenges, scored your way.',
     },
   ];
+
+  readonly slides: MarketingPlacement[] = this.moments.map((moment, index) => ({
+    id: `moment-${index}`,
+    audience: 'general',
+    slot: 'feature',
+    name: moment.title,
+    tagline: moment.tag,
+    body: moment.body,
+    cta_label: '',
+    cta_url: '',
+    logo_url: '',
+    image_url: moment.image,
+    display_order: index,
+  }));
 }

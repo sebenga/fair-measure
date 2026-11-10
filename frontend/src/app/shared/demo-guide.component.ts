@@ -93,7 +93,7 @@ const TYPE_EVERY_MS = 16;
           <section class="bubble" aria-live="polite">
             <header>
               <span class="count">{{ guide.index() + 1 }} / {{ guide.steps().length }}</span>
-              <span class="who">Coach Kaya · platform tour</span>
+              <span class="who">{{ guide.tourLabel() }}</span>
               @if (guide.voice.supported) {
                 <button
                   type="button"

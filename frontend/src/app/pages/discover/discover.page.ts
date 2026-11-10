@@ -30,8 +30,9 @@ import {
   FALLBACK_CORPORATE,
   FALLBACK_GOVERNMENT,
   FALLBACK_LOGOS,
-  competitionImage,
-  placementImage,
+  COMPETITION_SLIDE,
+  competitionSlides,
+  showcaseSlides,
 } from '../../core/marketing-fallbacks';
 import type { Competition, MarketingPlacement, Post } from '../../core/models';
 import {
@@ -48,31 +49,30 @@ type FeedItem =
   | { kind: 'post'; id: string; post: Post }
   | { kind: 'promo'; id: string; placement: MarketingPlacement };
 
-interface MarketSlide {
-  id: string;
-  kind: 'corporate' | 'government' | 'competition';
-  eyebrow: string;
-  title: string;
-  body: string;
-  action: string;
-  icon: string;
-  logo: string;
-  image: string;
-  placement?: MarketingPlacement;
-  league?: Competition;
-}
+/** The current-competitions carousel before anyone opts in: an invitation instead. */
+const YOUR_LEAGUE_HERE: MarketingPlacement = {
+  id: 'grow',
+  audience: 'general',
+  slot: 'feature',
+  name: 'Put your league here',
+  tagline: 'Current competition',
+  body: 'Opt in when you create a competition so Discover and the landing page carry it.',
+  cta_label: 'Create a public league',
+  cta_url: '',
+  logo_url: '',
+  image_url: 'assets/landing/moment-fans.jpg',
+  display_order: 0,
+};
 
 const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
 import { PageHeroComponent } from '../../shared/page-hero.component';
 import { SponsorShowcaseComponent } from '../landing/sponsor-showcase.component';
 import { CompetitionStripComponent } from '../../shared/competition-strip.component';
-import { CarouselComponent } from '../../shared/carousel.component';
 
 @Component({
   selector: 'fm-discover',
   standalone: true,
   imports: [
-    CarouselComponent,
     CompetitionStripComponent,
     PageHeroComponent,
     SponsorShowcaseComponent,
@@ -137,21 +137,12 @@ import { CarouselComponent } from '../../shared/carousel.component';
           <aside class="sponsored-rail left" aria-label="Corporate marketing">
             <p class="rail-kicker">Commercial</p>
             <h3 class="rail-title">Corporate</h3>
-            <fm-carousel [items]="corporate()" label="Corporate partners">
-              <ng-template let-ad let-i="index">
-                <fm-promo-slot
-                  kind="corporate"
-                  eyebrow="Corporate"
-                  [title]="ad.name"
-                  [body]="ad.tagline || ad.body"
-                  [action]="ad.cta_label || 'Talk to partnerships'"
-                  [logo]="ad.logo_url"
-                  [image]="placementImage(ad, i)"
-                  icon="briefcase-outline"
-                  (open)="openPlacement(ad)"
-                />
-              </ng-template>
-            </fm-carousel>
+            <fm-sponsor-showcase
+              compact
+              label="Corporate partners"
+              [sponsors]="corporateSlides()"
+              (open)="openSlide($event)"
+            />
             @if (logos().length) {
               <div class="logo-card">
                 <p>Partners on this page</p>
@@ -161,40 +152,21 @@ import { CarouselComponent } from '../../shared/carousel.component';
           </aside>
 
           <div class="feed">
-            <fm-carousel
+            <fm-sponsor-showcase
               class="market-carousel"
-              [items]="marketSlides()"
+              compact
               label="Corporate, government and current competitions"
-            >
-              <ng-template let-slide>
-                <fm-promo-slot
-                  [kind]="slide.kind"
-                  [eyebrow]="slide.eyebrow"
-                  [title]="slide.title"
-                  [body]="slide.body"
-                  [action]="slide.action"
-                  [logo]="slide.logo"
-                  [image]="slide.image"
-                  [icon]="slide.icon"
-                  (open)="openMarket(slide)"
-                />
-              </ng-template>
-            </fm-carousel>
+              [sponsors]="marketSlides()"
+              (open)="openSlide($event)"
+            />
 
-            <fm-carousel class="campaigns" [items]="campaigns()" label="Campaigns">
-              <ng-template let-banner let-i="index">
-                <fm-promo-slot
-                  kind="banner"
-                  eyebrow="Campaign"
-                  [title]="banner.name"
-                  [body]="banner.tagline || banner.body"
-                  [action]="banner.cta_label || 'Create a public league'"
-                  [image]="placementImage(banner, i)"
-                  icon="megaphone-outline"
-                  (open)="openPlacement(banner)"
-                />
-              </ng-template>
-            </fm-carousel>
+            <fm-sponsor-showcase
+              class="campaigns"
+              compact
+              label="Campaigns"
+              [sponsors]="campaignSlides()"
+              (open)="openSlide($event)"
+            />
 
             @if (composerLeague(); as league) {
               <div class="composer-wrap">
@@ -279,26 +251,14 @@ import { CarouselComponent } from '../../shared/carousel.component';
                     (promoClick)="onCardPromo(item.competition, index)"
                   />
                 } @else if (item.kind === 'promo') {
-                  <fm-carousel
+                  <fm-sponsor-showcase
                     [style.--i]="index"
-                    [items]="feedAds()"
-                    [start]="feedAdStart(item.placement)"
+                    compact
                     label="Partners"
-                  >
-                    <ng-template let-ad let-i="index">
-                      <fm-promo-slot
-                        [kind]="promoKind(ad)"
-                        [eyebrow]="promoEyebrow(ad)"
-                        [title]="ad.name"
-                        [body]="ad.tagline || ad.body"
-                        [action]="ad.cta_label || 'Learn more'"
-                        [logo]="ad.logo_url"
-                        [image]="placementImage(ad, i)"
-                        [icon]="promoIcon(ad)"
-                        (open)="openPlacement(ad)"
-                      />
-                    </ng-template>
-                  </fm-carousel>
+                    [sponsors]="feedSlides()"
+                    [start]="feedAdStart(item.placement)"
+                    (open)="openSlide($event)"
+                  />
                 } @else {
                   <fm-post-card
                     [style.--i]="index"
@@ -336,51 +296,21 @@ import { CarouselComponent } from '../../shared/carousel.component';
           <aside class="sponsored-rail right" aria-label="Government and current competitions">
             <p class="rail-kicker">Public sector</p>
             <h3 class="rail-title">Government</h3>
-            <fm-carousel [items]="government()" label="Government programmes">
-              <ng-template let-ad let-i="index">
-                <fm-promo-slot
-                  kind="government"
-                  eyebrow="Government"
-                  [title]="ad.name"
-                  [body]="ad.tagline || ad.body"
-                  [action]="ad.cta_label || 'Plan a programme'"
-                  [logo]="ad.logo_url"
-                  [image]="placementImage(ad, i)"
-                  icon="business-outline"
-                  (open)="openPlacement(ad)"
-                />
-              </ng-template>
-            </fm-carousel>
+            <fm-sponsor-showcase
+              compact
+              label="Government programmes"
+              [sponsors]="governmentSlides()"
+              (open)="openSlide($event)"
+            />
 
             <p class="rail-kicker later">Featured</p>
             <h3 class="rail-title">Current competitions</h3>
-            <fm-carousel [items]="currentCompetitions()" label="Current competitions" [start]="1">
-              <ng-template let-league let-i="index">
-                <fm-promo-slot
-                  kind="competition"
-                  eyebrow="Current competition"
-                  [title]="league.name"
-                  [body]="(league.sport || 'League') + ' · ' + league.participant_count + ' sides'"
-                  action="Open"
-                  [logo]="league.logo_url"
-                  [image]="competitionImage(league, i)"
-                  icon="trophy-outline"
-                  (open)="open(league)"
-                />
-              </ng-template>
-            </fm-carousel>
-            @if (!currentCompetitions().length) {
-              <fm-promo-slot
-                kind="competition"
-                eyebrow="Current competition"
-                title="Put your league here"
-                body="Opt in when you create a competition so Discover and the landing page carry it."
-                action="Create a public league"
-                image="assets/landing/moment-fans.jpg"
-                icon="megaphone-outline"
-                (open)="createLeague()"
-              />
-            }
+            <fm-sponsor-showcase
+              compact
+              label="Current competitions"
+              [sponsors]="leagueSlides()"
+              (open)="openSlide($event)"
+            />
           </aside>
         </div>
       }
@@ -453,54 +383,26 @@ export class DiscoverPage implements OnInit {
     const rows = this.placements().filter((item) => item.slot === 'logo');
     return rows.length ? rows : FALLBACK_LOGOS;
   });
-  readonly placementImage = placementImage;
-  readonly competitionImage = competitionImage;
-  readonly marketSlides = computed<MarketSlide[]>(() => {
-    const slides: MarketSlide[] = [];
-    for (const [i, ad] of this.corporate().entries()) {
-      slides.push({
-        image: placementImage(ad, i),
-        id: `corporate-${ad.id}`,
-        kind: 'corporate',
-        eyebrow: 'Corporate',
-        title: ad.name,
-        body: ad.tagline || ad.body,
-        action: ad.cta_label || 'Enquire',
-        icon: 'briefcase-outline',
-        logo: ad.logo_url,
-        placement: ad,
-      });
-    }
-    for (const [i, ad] of this.government().entries()) {
-      slides.push({
-        image: placementImage(ad, i),
-        id: `government-${ad.id}`,
-        kind: 'government',
-        eyebrow: 'Government',
-        title: ad.name,
-        body: ad.tagline || ad.body,
-        action: ad.cta_label || 'Enquire',
-        icon: 'business-outline',
-        logo: ad.logo_url,
-        placement: ad,
-      });
-    }
-    for (const [i, league] of this.currentCompetitions().slice(0, 4).entries()) {
-      slides.push({
-        image: competitionImage(league, i),
-        id: `league-${league.id}`,
-        kind: 'competition',
-        eyebrow: 'Current competition',
-        title: league.name,
-        body: `${league.sport || 'League'} · on the public landing page`,
-        action: 'Open',
-        icon: 'trophy-outline',
-        logo: league.logo_url,
-        league,
-      });
-    }
-    return slides;
+  readonly corporateSlides = computed(() =>
+    showcaseSlides(this.corporate(), 'Corporate', 'Talk to partnerships'),
+  );
+  readonly governmentSlides = computed(() =>
+    showcaseSlides(this.government(), 'Government', 'Plan a programme'),
+  );
+  readonly leagueSlides = computed(() => {
+    const slides = competitionSlides(this.currentCompetitions());
+    return slides.length ? slides : [YOUR_LEAGUE_HERE];
   });
+  /** Phones have no side columns, so one carousel carries all three. */
+  readonly marketSlides = computed(() => [
+    ...this.corporateSlides(),
+    ...this.governmentSlides(),
+    ...this.leagueSlides().slice(0, 4),
+  ]);
+  readonly campaignSlides = computed(() =>
+    showcaseSlides(this.campaigns(), 'Campaign', 'Create a public league'),
+  );
+  readonly feedSlides = computed(() => [...this.corporateSlides(), ...this.governmentSlides()]);
   readonly composerLeague = computed(
     () => this.mine().find((row) => row.id === this.composerLeagueId()) ?? this.mine()[0] ?? null,
   );
@@ -686,12 +588,12 @@ export class DiscoverPage implements OnInit {
     void this.router.navigate(['/tabs/competitions', competition.id]);
   }
 
-  openMarket(slide: MarketSlide): void {
-    if (slide.league) {
-      this.open(slide.league);
+  openSlide(slide: MarketingPlacement): void {
+    if (slide.id.startsWith(COMPETITION_SLIDE)) {
+      void this.router.navigate(['/tabs/competitions', slide.id.slice(COMPETITION_SLIDE.length)]);
       return;
     }
-    if (slide.placement) this.openPlacement(slide.placement);
+    this.openPlacement(slide);
   }
 
   createLeague(): void {

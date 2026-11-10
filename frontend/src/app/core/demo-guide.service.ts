@@ -309,6 +309,131 @@ const STEPS: GuideStep[] = [
   },
 ];
 
+/** Which tour is running: the demo competition, or creating a competition. */
+export type TourKind = 'platform' | 'create';
+
+/** Remembers whether the create-competition guide opens with the page. */
+const CREATE_GUIDE_KEY = 'fm.guide.create';
+
+const CREATE_PAGE = () => ({ path: ['/tabs/competitions', 'new'] });
+const STAGE = (key: string) => `fm-competition-create nav.steps button.step[data-step="${key}"]`;
+const CREATE_CONTEXT: GuideContext = {
+  competitionId: '',
+  competitionName: 'New competition',
+  liveFixture: null,
+  liveCupFixture: null,
+  penaltyFixture: null,
+};
+
+/** Every stage of the create wizard, filled in on the real form while the user watches. */
+const CREATE_STEPS: GuideStep[] = [
+  {
+    key: 'create-welcome',
+    title: 'Create a competition',
+    body:
+      "I'm Coach Kaya. I'll walk you through every stage of creating a competition: the sport, the " +
+      'name, the format, the dates, who can see it, and a final check. Tap Next and watch the hand. ' +
+      'Use the Guide switch at the top to turn me off or on.',
+    pose: 'wave',
+    route: CREATE_PAGE,
+    target: 'fm-competition-create .guide-switch',
+  },
+  {
+    key: 'create-sport',
+    title: 'Stage 1 · The sport',
+    body:
+      'Start with what you are running. An official sport brings its official scoring, and Custom lets ' +
+      'you write your own. Just exploring? The demo card builds a whole league in one tap.',
+    pose: 'point',
+    route: CREATE_PAGE,
+    target: 'fm-competition-create .presets',
+    actions: [
+      { say: 'Tap Sport to start at the beginning.', target: STAGE('sport') },
+      { say: 'This card builds a one-hour demo league for you.', target: 'fm-competition-create .demo-start', point: true, optional: true },
+      { say: 'Or pick the sport you are running. Football here.', target: 'fm-competition-create button.preset', text: 'Football', optional: true },
+      { say: 'Its official scoring shows underneath. Nothing to fill in.', target: 'fm-competition-create .inline-scoring', point: true, optional: true },
+    ],
+  },
+  {
+    key: 'create-name',
+    title: 'Stage 2 · The name',
+    body:
+      'Give the competition a name people will recognise on the fixture list, and a line about who it is for.',
+    pose: 'point',
+    route: CREATE_PAGE,
+    target: 'fm-competition-create form',
+    actions: [
+      { say: 'Tap Name.', target: STAGE('name') },
+      { say: 'Type the name.', target: 'fm-competition-create ion-input[formcontrolname="name"]', type: 'Saturday Community League' },
+      { say: 'Add a short description. This one is optional.', target: 'fm-competition-create ion-textarea[formcontrolname="description"]', type: 'Eight local teams, every Saturday afternoon.', optional: true },
+    ],
+  },
+  {
+    key: 'create-format',
+    title: 'Stage 3 · The format',
+    body:
+      'Choose how it is played: a league where everyone plays everyone, a knockout, or both with a cup ' +
+      'between league rounds. Custom competitions also get a Points stage for wins, draws and losses.',
+    pose: 'think',
+    route: CREATE_PAGE,
+    target: 'fm-competition-create .formats',
+    actions: [
+      { say: 'Tap Format.', target: STAGE('format') },
+      { say: 'A league ranks everyone on a table.', target: 'fm-competition-create button.format', text: 'League', point: true, optional: true },
+      { say: 'A knockout is a bracket to a final.', target: 'fm-competition-create button.format', text: 'Knockout', point: true, optional: true },
+      { say: 'League and knockout runs a cup alongside the league. Tap it.', target: 'fm-competition-create button.format', text: 'League and knockout', optional: true },
+      { say: 'Name the cup and how often it is played.', target: 'fm-competition-create ion-input[formcontrolname="cup_every_league_rounds"]', point: true, optional: true },
+    ],
+  },
+  {
+    key: 'create-dates',
+    title: 'Stage 4 · Dates and match days',
+    body:
+      'Set when it starts and ends, and the usual match days. All of this is optional, and the ' +
+      'schedule you generate later uses these days.',
+    pose: 'point',
+    route: CREATE_PAGE,
+    target: 'fm-competition-create form',
+    actions: [
+      { say: 'Tap Dates.', target: STAGE('dates') },
+      { say: 'Pick a start date, or leave it for now.', target: 'fm-competition-create ion-input[formcontrolname="starts_on"]', point: true, optional: true },
+      { say: 'Tap the usual match day. Saturday.', target: 'fm-competition-create .weekdays button.day', text: 'Sat', optional: true },
+      { say: 'Kick-off times use this timezone.', target: 'fm-competition-create ion-select[formcontrolname="timezone"]', point: true, optional: true },
+    ],
+  },
+  {
+    key: 'create-visibility',
+    title: 'Stage 5 · Who can see it',
+    body:
+      'Public competitions can be found and followed by anyone signed in, and can go on the landing ' +
+      'page. Private ones are only for the people you add. Sports can also be opened to scouts.',
+    pose: 'point',
+    route: CREATE_PAGE,
+    target: 'fm-competition-create .visibility',
+    actions: [
+      { say: 'Tap Visibility.', target: STAGE('visibility') },
+      { say: 'Public, so people can find it.', target: 'fm-competition-create button.vis', text: 'Public' },
+      { say: 'This puts it on the landing page for visitors too.', target: 'fm-competition-create button.vis.landing', point: true, optional: true },
+      { say: 'Open it to scouts if players want to be seen.', target: 'fm-competition-create button.vis', text: 'Open to scouts', point: true, optional: true },
+    ],
+  },
+  {
+    key: 'create-review',
+    title: 'Stage 6 · Check and create',
+    body:
+      'Everything you chose, in one place. Tap any stage above to change it. When it looks right, tap ' +
+      'Create competition. Then Setup is where you add the teams and generate the schedule.',
+    pose: 'cheer',
+    route: CREATE_PAGE,
+    target: 'fm-competition-create .summary',
+    actions: [
+      { say: 'Tap Review.', target: STAGE('review') },
+      { say: 'Here is everything you picked.', target: 'fm-competition-create .summary', point: true },
+      { say: 'This creates it. I will leave that tap to you.', target: 'fm-competition-create ion-footer ion-button', text: 'Create competition', point: true, optional: true },
+    ],
+  },
+];
+
 const STATE_KEY = 'fm.guide';
 const SEEN_KEY = 'fm.guide.seen.';
 const SPOT = 'fm-guide-target';
@@ -328,11 +453,18 @@ export class DemoGuideService {
   readonly voice = inject(DemoVoiceService);
 
   readonly context = signal<GuideContext | null>(null);
+  readonly tour = signal<TourKind>('platform');
+  readonly tourLabel = computed(() =>
+    this.tour() === 'create' ? 'Coach Kaya · creating a competition' : 'Coach Kaya · platform tour',
+  );
+  /** The Guide switch on the create page. On until someone turns it off. */
+  readonly createGuideOn = signal(readFlag(CREATE_GUIDE_KEY) !== 'off');
   readonly index = signal(0);
   readonly open = signal(false);
   readonly minimized = signal(false);
 
   readonly steps = computed(() => {
+    if (this.tour() === 'create') return CREATE_STEPS;
     const ctx = this.context();
     if (!ctx) return [];
     return STEPS.filter(
@@ -388,7 +520,7 @@ export class DemoGuideService {
     if (this.open()) {
       if (this.context()?.competitionId === ctx.competitionId) return;
       // A tour left open for another (possibly deleted) demo points at the wrong games.
-      this.close();
+      this.dismiss();
     }
     if (localStorage.getItem(SEEN_KEY + ctx.competitionId)) return;
     localStorage.setItem(SEEN_KEY + ctx.competitionId, '1');
@@ -396,6 +528,7 @@ export class DemoGuideService {
   }
 
   start(ctx: GuideContext, navigate = true): void {
+    this.tour.set('platform');
     this.context.set(ctx);
     this.index.set(0);
     this.open.set(true);
@@ -432,6 +565,49 @@ export class DemoGuideService {
   }
 
   close(): void {
+    // Closing or finishing the create guide is the same as switching it off.
+    if (this.tour() === 'create') this.setCreatePreference(false);
+    this.dismiss();
+  }
+
+  /** The Guide switch on the create page. */
+  setCreateGuide(on: boolean): void {
+    this.setCreatePreference(on);
+    if (on) this.startCreate();
+    else if (this.tour() === 'create' && this.open()) this.dismiss();
+  }
+
+  /** Opens the create guide at its first stage, if the switch is on. */
+  offerCreate(): void {
+    if (this.createGuideOn() && !(this.tour() === 'create' && this.open())) this.startCreate();
+  }
+
+  /** The create page is going away; the guide goes with it but stays switched on. */
+  leaveCreate(): void {
+    if (this.tour() === 'create' && this.open()) this.dismiss();
+  }
+
+  private startCreate(): void {
+    if (this.open()) this.dismiss();
+    this.tour.set('create');
+    this.context.set(CREATE_CONTEXT);
+    this.index.set(0);
+    this.open.set(true);
+    this.minimized.set(false);
+    this.spotlight();
+    void this.voice.say(this.step()?.body ?? '');
+  }
+
+  private setCreatePreference(on: boolean): void {
+    this.createGuideOn.set(on);
+    try {
+      localStorage.setItem(CREATE_GUIDE_KEY, on ? 'on' : 'off');
+    } catch {
+      // Private browsing can refuse storage; the switch still works for this visit.
+    }
+  }
+
+  private dismiss(): void {
     this.halt();
     this.open.set(false);
     this.clearSpot();
@@ -623,7 +799,8 @@ export class DemoGuideService {
 
   private save(): void {
     const ctx = this.context();
-    if (!ctx) return;
+    // The create guide restarts with the page instead of surviving a reload.
+    if (!ctx || this.tour() === 'create') return;
     const state: SavedState = { context: ctx, index: this.index(), open: this.open() };
     sessionStorage.setItem(STATE_KEY, JSON.stringify(state));
   }
@@ -644,6 +821,14 @@ export class DemoGuideService {
     } catch {
       sessionStorage.removeItem(STATE_KEY);
     }
+  }
+}
+
+function readFlag(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
   }
 }
 

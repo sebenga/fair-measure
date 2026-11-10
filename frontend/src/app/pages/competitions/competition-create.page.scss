@@ -601,3 +601,10 @@
     transform: scale(1);
   }
 }
+
+.guide-switch {
+  padding-inline-end: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ion-color-primary);
+}

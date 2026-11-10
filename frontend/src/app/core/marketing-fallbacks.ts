@@ -174,3 +174,47 @@ export function competitionImage(competition: { banner_url?: string | null }, in
   const pool = [PHOTOS.touchline, PHOTOS.rugby, PHOTOS.township, PHOTOS.fans];
   return pool[index % pool.length];
 }
+
+/** Slides for the sponsor showcase: a short tag, the pitch underneath and a photo. */
+export function showcaseSlides(
+  placements: MarketingPlacement[],
+  tag: string,
+  action: string,
+): MarketingPlacement[] {
+  return placements.map((placement, index) => ({
+    ...placement,
+    tagline: tag,
+    body: placement.tagline || placement.body,
+    cta_label: placement.cta_label || action,
+    image_url: placementImage(placement, index),
+  }));
+}
+
+/** Showcase slides that open a competition rather than a partner enquiry. */
+export const COMPETITION_SLIDE = 'competition:';
+
+export function competitionSlides(
+  competitions: Array<{
+    id: string;
+    name: string;
+    sport: string;
+    participant_count: number;
+    logo_url: string;
+    banner_url?: string | null;
+  }>,
+  tag = 'Current competition',
+): MarketingPlacement[] {
+  return competitions.map((competition, index) => ({
+    id: `${COMPETITION_SLIDE}${competition.id}`,
+    audience: 'general',
+    slot: 'feature',
+    name: competition.name,
+    tagline: tag,
+    body: `${competition.sport || 'League'} · ${competition.participant_count} sides`,
+    cta_label: 'Open',
+    cta_url: '',
+    logo_url: competition.logo_url,
+    image_url: competitionImage(competition, index),
+    display_order: index,
+  }));
+}

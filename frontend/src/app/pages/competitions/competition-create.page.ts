@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import {
   AbstractControl,
@@ -25,6 +25,7 @@ import {
   IonSpinner,
   IonTextarea,
   IonTitle,
+  IonToggle,
   IonToolbar,
   AlertController,
   NavController,
@@ -36,6 +37,7 @@ import type { ScoutingCatalog } from '../../core/scouting.models';
 import { ScoutingService, scoutingSportFor } from '../../core/scouting.service';
 import type { CompetitionFormat, Preset, PresetKind } from '../../core/models';
 import { isPointsPreset } from '../../core/models';
+import { DemoGuideService } from '../../core/demo-guide.service';
 
 type StepKey = 'sport' | 'name' | 'format' | 'points' | 'dates' | 'visibility' | 'review';
 
@@ -207,6 +209,7 @@ function presetKind(preset: Preset): PresetKind {
     ReactiveFormsModule,
     NgTemplateOutlet,
     IonHeader,
+    IonToggle,
     IonToolbar,
     IonTitle,
     IonButtons,
@@ -234,6 +237,16 @@ function presetKind(preset: Preset): PresetKind {
           <ion-back-button defaultHref="/tabs/competitions" />
         </ion-buttons>
         <ion-title>New competition</ion-title>
+        <ion-buttons slot="end">
+          <ion-toggle
+            class="guide-switch"
+            labelPlacement="start"
+            [checked]="guide.createGuideOn()"
+            (ionChange)="guide.setCreateGuide($any($event).detail.checked === true)"
+          >
+            Guide
+          </ion-toggle>
+        </ion-buttons>
       </ion-toolbar>
       <ion-toolbar>
         <nav class="steps" aria-label="Create competition steps">
@@ -241,6 +254,7 @@ function presetKind(preset: Preset): PresetKind {
             <button
               type="button"
               class="step"
+              [attr.data-step]="item.key"
               [class.active]="step() === item.key"
               [class.done]="stepIndex() > i"
               [attr.aria-current]="step() === item.key ? 'step' : null"
@@ -1183,8 +1197,9 @@ function presetKind(preset: Preset): PresetKind {
     </ion-footer>
   `,
 })
-export class CompetitionCreatePage implements OnInit {
+export class CompetitionCreatePage implements OnInit, OnDestroy {
   private readonly fb = inject(FormBuilder);
+  readonly guide = inject(DemoGuideService);
   private readonly api = inject(ApiService);
   private readonly navCtrl = inject(NavController);
   private readonly alerts = inject(AlertController);
@@ -1444,6 +1459,7 @@ export class CompetitionCreatePage implements OnInit {
   }
 
   ngOnInit(): void {
+    this.guide.offerCreate();
     this.scouting.catalog().subscribe({
       next: (catalog) => this.scoutingCatalog.set(catalog),
       error: () => this.scoutingCatalog.set(null),
@@ -1455,6 +1471,19 @@ export class CompetitionCreatePage implements OnInit {
       },
       error: () => this.presets.set([]),
     });
+  }
+
+  ngOnDestroy(): void {
+    this.guide.leaveCreate();
+  }
+
+  /** Ionic keeps the page alive behind the next one; the guide must not follow you there. */
+  ionViewWillLeave(): void {
+    this.guide.leaveCreate();
+  }
+
+  ionViewDidEnter(): void {
+    this.guide.offerCreate();
   }
 
   readonly unitCount = signal<number | null>(null);
