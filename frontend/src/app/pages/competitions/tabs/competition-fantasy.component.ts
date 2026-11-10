@@ -265,7 +265,7 @@ const KITS: Array<[string, string]> = [
                 <thead>
                   <tr>
                     <th class="pos">#</th>
-                    <th>Team</th>
+                    <th class="fm-wrap">Team</th>
                     <th>GW</th>
                     <th class="pts">Pts</th>
                   </tr>
@@ -274,7 +274,7 @@ const KITS: Array<[string, string]> = [
                   @for (row of standings(); track row.team_id) {
                     <tr [class.mine]="row.manager.id === me()">
                       <td class="pos">{{ row.rank }}</td>
-                      <td>
+                      <td class="fm-wrap">
                         <strong>{{ row.name }}</strong>
                         <small>{{ row.manager.display_name }}</small>
                       </td>

@@ -337,7 +337,7 @@ type Tab = 'today' | 'medals' | 'points' | 'events' | 'nocs' | 'schedule' | 'rep
           <thead>
             <tr>
               <th>#</th>
-              <th class="noc">{{ teamWord() }}</th>
+              <th class="noc fm-wrap">{{ teamWord() }}</th>
               <th><span class="dot gold" title="Gold">G</span></th>
               <th><span class="dot silver" title="Silver">S</span></th>
               <th><span class="dot bronze" title="Bronze">B</span></th>
@@ -348,14 +348,14 @@ type Tab = 'today' | 'medals' | 'points' | 'events' | 'nocs' | 'schedule' | 'rep
             @for (row of asMedalRows(rows); track row.noc_id) {
               <tr (click)="go('nocs/' + row.noc_id)" [class.bump]="bumped().has(row.noc_id)">
                 <td>{{ row.rank }}</td>
-                <td class="noc"><span class="code" [style.background]="row.colour || null">{{ row.code }}</span>{{ row.name }}</td>
+                <td class="noc fm-wrap"><span class="code" [style.background]="row.colour || null">{{ row.code }}</span>{{ row.name }}</td>
                 <td>{{ row.gold }}</td>
                 <td>{{ row.silver }}</td>
                 <td>{{ row.bronze }}</td>
                 <td class="total">{{ row.total }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="6" class="hint">Add {{ teamWord().toLowerCase() }}s to start the table.</td></tr>
+              <tr><td colspan="6" class="hint fm-wrap">Add {{ teamWord().toLowerCase() }}s to start the table.</td></tr>
             }
           </tbody>
         </table>
@@ -366,7 +366,7 @@ type Tab = 'today' | 'medals' | 'points' | 'events' | 'nocs' | 'schedule' | 'rep
           <thead>
             <tr>
               <th>#</th>
-              <th class="noc">{{ teamWord() }}</th>
+              <th class="noc fm-wrap">{{ teamWord() }}</th>
               <th>Points</th>
               <th><span class="dot gold" title="Gold">G</span></th>
               <th><span class="dot silver" title="Silver">S</span></th>
@@ -377,7 +377,7 @@ type Tab = 'today' | 'medals' | 'points' | 'events' | 'nocs' | 'schedule' | 'rep
             @for (row of asPointsRows(rows); track row.noc_id) {
               <tr (click)="go('nocs/' + row.noc_id)" [class.bump]="bumped().has(row.noc_id)">
                 <td>{{ row.rank }}</td>
-                <td class="noc"><span class="code" [style.background]="row.colour || null">{{ row.code }}</span>{{ row.name }}</td>
+                <td class="noc fm-wrap"><span class="code" [style.background]="row.colour || null">{{ row.code }}</span>{{ row.name }}</td>
                 <td class="total">{{ row.points }}</td>
                 <td>{{ row.gold }}</td>
                 <td>{{ row.silver }}</td>

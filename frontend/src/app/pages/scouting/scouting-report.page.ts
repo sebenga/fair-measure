@@ -151,7 +151,7 @@ import { ScoutingService } from '../../core/scouting.service';
                 <tbody>
                   @for (item of r.profile.measurements; track item.id) {
                     <tr>
-                      <td>{{ item.label }}</td>
+                      <td class="fm-wrap">{{ item.label }}</td>
                       <td>{{ item.value !== null ? trim(item.value) + ' ' + item.unit : item.text_value }}</td>
                       <td>{{ item.measured_on | date: 'd MMM y' }}</td>
                       <td>
@@ -220,7 +220,7 @@ import { ScoutingService } from '../../core/scouting.service';
                   <tbody>
                     @for (stat of league.stats; track stat.key) {
                       <tr>
-                        <td>{{ stat.label }}</td>
+                        <td class="fm-wrap">{{ stat.label }}</td>
                         <td>{{ stat.count }}</td>
                         <td>{{ stat.points }}</td>
                         <td>{{ stat.first | date: 'd MMM y' }}{{ sameDay(stat.first, stat.last) ? '' : ' – ' + (stat.last | date: 'd MMM y') }}</td>

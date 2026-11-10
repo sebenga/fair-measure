@@ -338,7 +338,7 @@ function raceTime(value: number | string | null | undefined): string {
                         <tbody>
                           @for (item of s.config.sheet ?? []; track item.key) {
                             <tr [class.collective]="item.collective">
-                              <td>{{ item.label }}</td>
+                              <td class="fm-wrap">{{ item.label }}</td>
                               <td>{{ item.coefficient ?? 1 }}</td>
                               @for (judge of judges(); track judge) {
                                 <td>

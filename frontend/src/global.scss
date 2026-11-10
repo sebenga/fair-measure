@@ -643,3 +643,21 @@ ion-tabs ion-router-outlet[data-overlay-passthrough] {
     animation: none;
   }
 }
+
+// Long names, email addresses and statements wrap onto a second line on narrow screens
+// instead of being cut off or pushing a table past the edge.
+// Ionic list labels are single-line with "…" unless told otherwise.
+ion-item ion-label {
+  white-space: normal !important;
+}
+
+ion-item ion-label :is(h1, h2, h3, h4, p) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+// Table text columns. Number columns are left alone, so a score never splits in two.
+td.fm-wrap,
+th.fm-wrap {
+  overflow-wrap: anywhere;
+}

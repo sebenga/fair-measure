@@ -184,12 +184,12 @@ const MEDAL_TYPE: Record<string, string> = {
                 </ol>
               } @else {
                 <table class="results">
-                  <thead><tr><th>#</th><th class="left">Entrant</th><th>Mark</th><th></th></tr></thead>
+                  <thead><tr><th>#</th><th class="left fm-wrap">Entrant</th><th>Mark</th><th></th></tr></thead>
                   <tbody>
                     @for (row of round.results; track row.participant_id) {
                       <tr>
                         <td>{{ row.status || (row.rank ?? '–') }}</td>
-                        <td class="left">
+                        <td class="left fm-wrap">
                           <span class="code">{{ row.noc }}</span>
                           @if (row.athlete_id) {
                             <a (click)="goGames('athletes/' + row.athlete_id)">{{ row.name }}</a>

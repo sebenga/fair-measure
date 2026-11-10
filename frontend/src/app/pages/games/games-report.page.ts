@@ -62,7 +62,7 @@ const KINDS: ReportKind[] = ['medal-table', 'results-book', 'noc-summary', 'dail
                   <thead>
                     <tr>
                       @for (column of section.columns; track $index) {
-                        <th>{{ column }}</th>
+                        <th class="fm-wrap">{{ column }}</th>
                       }
                     </tr>
                   </thead>
@@ -70,7 +70,7 @@ const KINDS: ReportKind[] = ['medal-table', 'results-book', 'noc-summary', 'dail
                     @for (row of section.rows; track $index) {
                       <tr>
                         @for (cell of row; track $index) {
-                          <td>{{ cell }}</td>
+                          <td [class.fm-wrap]="isText(cell)">{{ cell }}</td>
                         }
                       </tr>
                     }
@@ -220,5 +220,10 @@ export class GamesReportPage {
         await toast.present();
       },
     });
+  }
+
+  /** Words and email addresses may wrap; figures stay on one line. */
+  isText(cell: unknown): boolean {
+    return typeof cell === 'string' && /[a-z@]/i.test(cell);
   }
 }

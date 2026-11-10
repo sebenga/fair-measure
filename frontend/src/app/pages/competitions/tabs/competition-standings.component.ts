@@ -107,7 +107,7 @@ import { ResultsService } from '../../../core/results.service';
           <thead>
             <tr>
               <th class="pos">#</th>
-              <th class="team">{{ pointsTable() ? 'Name' : seriesTable() ? 'Entrant' : 'Team' }}</th>
+              <th class="team fm-wrap">{{ pointsTable() ? 'Name' : seriesTable() ? 'Entrant' : 'Team' }}</th>
               <th>{{ pointsTable() ? 'E' : seriesTable() ? 'St' : 'P' }}</th>
               @if (seriesTable()) {
                 <th>1st</th>
@@ -151,7 +151,7 @@ import { ResultsService } from '../../../core/results.service';
                     </i>
                   }
                 </td>
-                <td class="team">
+                <td class="team fm-wrap">
                   <span class="name">{{ row.participant.short_name || row.participant.name }}</span>
                   @if (pointsTable()) {
                     <span class="form">{{ expanded() === row.participant.id ? 'Hide' : 'How' }}</span>
@@ -240,7 +240,7 @@ import { ResultsService } from '../../../core/results.service';
             <table>
               <thead>
                 <tr>
-                  <th class="team">{{ statLabel() }}</th>
+                  <th class="team fm-wrap">{{ statLabel() }}</th>
                   <th>St</th>
                   <th>1st</th>
                   <th>2nd</th>
@@ -254,7 +254,7 @@ import { ResultsService } from '../../../core/results.service';
               <tbody>
                 @for (row of stats(); track row.key) {
                   <tr>
-                    <td class="team"><span class="name">{{ row.name }}</span></td>
+                    <td class="team fm-wrap"><span class="name">{{ row.name }}</span></td>
                     <td>{{ row.starts }}</td>
                     <td>{{ row.wins }}</td>
                     <td>{{ row.seconds }}</td>
@@ -281,7 +281,7 @@ import { ResultsService } from '../../../core/results.service';
               <table>
                 <thead>
                   <tr>
-                    <th class="team">Player</th>
+                    <th class="team fm-wrap">Player</th>
                     @for (column of table.columns; track column.key) {
                       <th>{{ column.label }}</th>
                     }
@@ -290,7 +290,7 @@ import { ResultsService } from '../../../core/results.service';
                 <tbody>
                   @for (row of table.rows; track row.player_id) {
                     <tr>
-                      <td class="team">
+                      <td class="team fm-wrap">
                         <span class="name">{{ row.name }}</span>
                         <span class="form">{{ row.team }}</span>
                       </td>

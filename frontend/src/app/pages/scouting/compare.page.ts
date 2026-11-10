@@ -79,7 +79,7 @@ const RADIUS = 96;
             </thead>
             <tbody>
               @for (area of d.areas; track area.key) {
-                <tr><td>{{ area.label }}</td>@for (player of d.players; track player.id) {<td>{{ player.areas[area.key] ?? '–' }}</td>}</tr>
+                <tr><td class="fm-wrap">{{ area.label }}</td>@for (player of d.players; track player.id) {<td>{{ player.areas[area.key] ?? '–' }}</td>}</tr>
               }
               <tr class="strong"><td>Current ability</td>@for (player of d.players; track player.id) {<td>{{ player.current_ability ?? '–' }}</td>}</tr>
               <tr class="strong"><td>Potential</td>@for (player of d.players; track player.id) {<td>{{ player.potential ?? '–' }}</td>}</tr>

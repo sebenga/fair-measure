@@ -55,7 +55,7 @@ import { GamesFollowComponent } from './games-follow.component';
           <table class="medal-table">
             <thead>
               <tr>
-                <th class="noc">Sport</th>
+                <th class="noc fm-wrap">Sport</th>
                 <th><span class="dot gold">G</span></th>
                 <th><span class="dot silver">S</span></th>
                 <th><span class="dot bronze">B</span></th>
@@ -64,7 +64,7 @@ import { GamesFollowComponent } from './games-follow.component';
             <tbody>
               @for (row of n.medals_by_sport; track row.sport) {
                 <tr>
-                  <td class="noc">{{ row.sport }}</td>
+                  <td class="noc fm-wrap">{{ row.sport }}</td>
                   <td>{{ row.gold }}</td>
                   <td>{{ row.silver }}</td>
                   <td>{{ row.bronze }}</td>
