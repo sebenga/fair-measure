@@ -59,6 +59,8 @@ interface GuideStep {
   actions?: GuideAction[];
   feature?: FeatureKey;
   needs?: 'liveFixture' | 'liveCupFixture' | 'penaltyFixture';
+  /** Create guide: the wizard page this step explains, so the guide can follow the user. */
+  stage?: string;
 }
 
 const competition = (ctx: GuideContext, tab?: string) => ({
@@ -340,7 +342,8 @@ const CREATE_STEPS: GuideStep[] = [
   },
   {
     key: 'create-sport',
-    title: 'Stage 1 · The sport',
+    title: 'The sport',
+    stage: 'sport',
     body:
       'Start with what you are running. An official sport brings its official scoring, and Custom lets ' +
       'you write your own. Just exploring? The demo card builds a whole league in one tap.',
@@ -356,7 +359,8 @@ const CREATE_STEPS: GuideStep[] = [
   },
   {
     key: 'create-name',
-    title: 'Stage 2 · The name',
+    title: 'The name',
+    stage: 'name',
     body:
       'Give the competition a name people will recognise on the fixture list, and a line about who it is for.',
     pose: 'point',
@@ -370,7 +374,8 @@ const CREATE_STEPS: GuideStep[] = [
   },
   {
     key: 'create-format',
-    title: 'Stage 3 · The format',
+    title: 'The format',
+    stage: 'format',
     body:
       'Choose how it is played: a league where everyone plays everyone, a knockout, or both with a cup ' +
       'between league rounds. Custom competitions also get a Points stage for wins, draws and losses.',
@@ -386,8 +391,26 @@ const CREATE_STEPS: GuideStep[] = [
     ],
   },
   {
+    key: 'create-points',
+    title: 'Table points',
+    stage: 'points',
+    body:
+      'Custom matches need table points: what a win, a draw and a loss are worth. You can also give ' +
+      'bonus points for a big win or a close defeat.',
+    pose: 'think',
+    route: CREATE_PAGE,
+    target: 'fm-competition-create form',
+    actions: [
+      { say: 'Tap Points.', target: STAGE('points') },
+      { say: 'Points for a win.', target: 'fm-competition-create ion-input[label="Win"]', point: true, optional: true },
+      { say: 'A draw.', target: 'fm-competition-create ion-input[label="Draw"]', point: true, optional: true },
+      { say: 'And a loss.', target: 'fm-competition-create ion-input[label="Loss"]', point: true, optional: true },
+    ],
+  },
+  {
     key: 'create-dates',
-    title: 'Stage 4 · Dates and match days',
+    title: 'Dates and match days',
+    stage: 'dates',
     body:
       'Set when it starts and ends, and the usual match days. All of this is optional, and the ' +
       'schedule you generate later uses these days.',
@@ -403,7 +426,8 @@ const CREATE_STEPS: GuideStep[] = [
   },
   {
     key: 'create-visibility',
-    title: 'Stage 5 · Who can see it',
+    title: 'Who can see it',
+    stage: 'visibility',
     body:
       'Public competitions can be found and followed by anyone signed in, and can go on the landing ' +
       'page. Private ones are only for the people you add. Sports can also be opened to scouts.',
@@ -419,7 +443,8 @@ const CREATE_STEPS: GuideStep[] = [
   },
   {
     key: 'create-review',
-    title: 'Stage 6 · Check and create',
+    title: 'Check and create',
+    stage: 'review',
     body:
       'Everything you chose, in one place. Tap any stage above to change it. When it looks right, tap ' +
       'Create competition. Then Setup is where you add the teams and generate the schedule.',
@@ -459,12 +484,17 @@ export class DemoGuideService {
   );
   /** The Guide switch on the create page. On until someone turns it off. */
   readonly createGuideOn = signal(readFlag(CREATE_GUIDE_KEY) !== 'off');
+  /** The wizard pages this competition shows; Points only appears for custom matches. */
+  readonly createStages = signal<string[] | null>(null);
   readonly index = signal(0);
   readonly open = signal(false);
   readonly minimized = signal(false);
 
   readonly steps = computed(() => {
-    if (this.tour() === 'create') return CREATE_STEPS;
+    if (this.tour() === 'create') {
+      const stages = this.createStages();
+      return CREATE_STEPS.filter((step) => !step.stage || !stages || stages.includes(step.stage));
+    }
     const ctx = this.context();
     if (!ctx) return [];
     return STEPS.filter(
@@ -580,6 +610,20 @@ export class DemoGuideService {
   /** Opens the create guide at its first stage, if the switch is on. */
   offerCreate(): void {
     if (this.createGuideOn() && !(this.tour() === 'create' && this.open())) this.startCreate();
+  }
+
+  /**
+   * The user moved through the wizard themselves: the guide catches up with that page and
+   * explains it aloud, so every page is covered whichever buttons they use.
+   */
+  followCreateStage(stage: string): void {
+    if (this.tour() !== 'create' || !this.open() || this.driving()) return;
+    const index = this.steps().findIndex((step) => step.stage === stage);
+    if (index < 0 || index === this.index()) return;
+    this.halt();
+    this.index.set(index);
+    this.spotlight();
+    void this.voice.say(this.step()?.body ?? '');
   }
 
   /** The create page is going away; the guide goes with it but stays switched on. */

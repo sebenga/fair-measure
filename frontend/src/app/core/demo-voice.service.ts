@@ -16,9 +16,21 @@ export class DemoVoiceService {
 
   private voice: SpeechSynthesisVoice | null = null;
   private turn = 0;
+  /** Said before the page was touched; browsers only allow speech after a tap. */
+  private waiting: string | null = null;
+  private listening = false;
+  /** Set by the first tap or key press anywhere; some browsers misreport this themselves. */
+  private tapped = false;
 
   constructor() {
     if (!this.supported) return;
+    const tap = () => {
+      this.tapped = true;
+      document.removeEventListener('pointerdown', tap, true);
+      document.removeEventListener('keydown', tap, true);
+    };
+    document.addEventListener('pointerdown', tap, true);
+    document.addEventListener('keydown', tap, true);
     this.pickVoice();
     speechSynthesis.addEventListener('voiceschanged', () => this.pickVoice());
   }
@@ -34,6 +46,10 @@ export class DemoVoiceService {
   /** Speaks the text and resolves when it has been said, cut off or skipped. */
   say(text: string): Promise<void> {
     if (!this.supported || !this.on() || !text.trim()) return Promise.resolve();
+    if (!this.tapped && !browserSaysTouched()) {
+      this.sayOnFirstTap(text);
+      return Promise.resolve();
+    }
     this.hush();
     const turn = this.turn;
     // Chrome stops long utterances after about 15 seconds, so speak sentence by sentence.
@@ -60,7 +76,11 @@ export class DemoVoiceService {
           done();
         };
         utterance.onend = finish;
-        utterance.onerror = finish;
+        utterance.onerror = (event) => {
+          // iOS refuses speech until the first tap even when the page reports no tap yet.
+          if (event.error === 'not-allowed') this.sayOnFirstTap(text);
+          finish();
+        };
         speechSynthesis.speak(utterance);
       }
     });
@@ -68,9 +88,27 @@ export class DemoVoiceService {
 
   hush(): void {
     if (!this.supported) return;
+    this.waiting = null;
     this.turn++;
     this.speaking.set(false);
     speechSynthesis.cancel();
+  }
+
+  /** Holds the latest line and says it on the first tap or key press, within that gesture. */
+  private sayOnFirstTap(text: string): void {
+    this.waiting = text;
+    if (this.listening) return;
+    this.listening = true;
+    const speak = () => {
+      document.removeEventListener('pointerdown', speak, true);
+      document.removeEventListener('keydown', speak, true);
+      this.listening = false;
+      const line = this.waiting;
+      this.waiting = null;
+      if (line && this.on()) void this.say(line);
+    };
+    document.addEventListener('pointerdown', speak, true);
+    document.addEventListener('keydown', speak, true);
   }
 
   private pickVoice(): void {
@@ -87,4 +125,11 @@ export class DemoVoiceService {
     }
     this.voice = null;
   }
+}
+
+/** The browser's own record of a tap or key press; unknown counts as yes. */
+function browserSaysTouched(): boolean {
+  const activation = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } })
+    .userActivation;
+  return activation ? activation.hasBeenActive : true;
 }

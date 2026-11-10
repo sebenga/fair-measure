@@ -1,4 +1,15 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnDestroy,
+  OnInit,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import {
   AbstractControl,
@@ -1913,6 +1924,18 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
     Math.max(0, this.visibleSteps().findIndex((item) => item.key === this.step())),
   );
   readonly isLastStep = computed(() => this.stepIndex() === this.visibleSteps().length - 1);
+
+  /** The guide covers exactly the pages this competition shows, and follows the one in view. */
+  private shownStage: StepKey | null = null;
+  private readonly guideFollows = effect(() => {
+    const stages = this.visibleSteps().map((item) => item.key);
+    const stage = this.step();
+    untracked(() => {
+      this.guide.createStages.set(stages);
+      if (this.shownStage !== null && stage !== this.shownStage) this.guide.followCreateStage(stage);
+      this.shownStage = stage;
+    });
+  });
 
   latestEnd(): string {
     return addDays(this.form.controls.starts_on.value || this.today, MAX_DAYS_AHEAD);
