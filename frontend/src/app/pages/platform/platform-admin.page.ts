@@ -27,7 +27,6 @@ import {
   ReleasesService,
 } from '../../core/releases.service';
 import { PageHeroComponent } from '../../shared/page-hero.component';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 type Section = 'sports' | 'features' | 'competitions';
 type SportFilter = 'all' | 'live' | 'hidden';
@@ -46,7 +45,6 @@ type ToggleChange = CustomEvent<{ checked: boolean }> & { target: HTMLIonToggleE
   selector: 'fm-platform-admin',
   standalone: true,
   imports: [
-    HomeButtonComponent,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -67,7 +65,7 @@ type ToggleChange = CustomEvent<{ checked: boolean }> & { target: HTMLIonToggleE
   template: `
     <ion-header translucent="true">
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/profile" /><fm-home-button /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/profile" /></ion-buttons>
         <ion-title>Platform releases</ion-title>
       </ion-toolbar>
     </ion-header>

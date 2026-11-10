@@ -16,18 +16,17 @@ import {
 import { extractErrorMessage } from '../../core/error-message';
 import type { Organisation, ScoutingRole } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-scouting-organisation',
   standalone: true,
-  imports: [HomeButtonComponent, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
+  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /><fm-home-button /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
         <ion-title>{{ organisation()?.name ?? 'Organisation' }}</ion-title>
         <ion-buttons slot="end">
           @if (isAdmin()) {

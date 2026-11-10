@@ -14,19 +14,18 @@ import {
 import { extractErrorMessage } from '../../core/error-message';
 import type { ContactRequestRow } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 /** Contact requests: players and guardians answer them; scouts follow what they sent. */
 @Component({
   selector: 'fm-contact-requests',
   standalone: true,
-  imports: [HomeButtonComponent, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonSpinner],
+  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /><fm-home-button /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
         <ion-title>Contact requests</ion-title>
       </ion-toolbar>
     </ion-header>

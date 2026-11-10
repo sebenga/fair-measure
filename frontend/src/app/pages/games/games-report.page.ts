@@ -17,7 +17,6 @@ import {
 import { extractErrorMessage } from '../../core/error-message';
 import type { GamesReport, ReportKind } from '../../core/games.service';
 import { GamesService } from '../../core/games.service';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 const KINDS: ReportKind[] = ['medal-table', 'results-book', 'noc-summary', 'daily'];
 
@@ -25,13 +24,13 @@ const KINDS: ReportKind[] = ['medal-table', 'results-book', 'noc-summary', 'dail
 @Component({
   selector: 'fm-games-report',
   standalone: true,
-  imports: [HomeButtonComponent, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonContent, IonIcon, IonSpinner],
+  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonContent, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './games.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /><fm-home-button /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
         <ion-title>Report</ion-title>
         <ion-buttons slot="end">
           <ion-button [disabled]="!report() || busy()" (click)="downloadCsv()">

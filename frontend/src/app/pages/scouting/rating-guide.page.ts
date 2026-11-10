@@ -13,7 +13,6 @@ import {
 
 import type { CatalogAttribute, CatalogSport, RatingArea, SportCatalogue } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 const ANCHORS: Array<'2' | '5' | '8' | '10'> = ['2', '5', '8', '10'];
 const PER: Record<string, string> = { match: 'per match', '90min': 'per 90 minutes', game: 'per game' };
@@ -22,13 +21,13 @@ const PER: Record<string, string> = { match: 'per match', '90min': 'per 90 minut
 @Component({
   selector: 'fm-rating-guide',
   standalone: true,
-  imports: [HomeButtonComponent, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
+  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="sportKey() ? '/tabs/scouting/guide' : '/tabs/scouting'" /><fm-home-button /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="sportKey() ? '/tabs/scouting/guide' : '/tabs/scouting'" /></ion-buttons>
         <ion-title>{{ sport()?.label ?? 'Rating guide' }}</ion-title>
       </ion-toolbar>
     </ion-header>

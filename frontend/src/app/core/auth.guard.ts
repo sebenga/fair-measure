@@ -1,5 +1,5 @@
 import { inject } from '@angular/core';
-import { CanActivateFn, Router } from '@angular/router';
+import { CanActivateFn, RedirectCommand, Router } from '@angular/router';
 
 import { AuthService } from './auth.service';
 
@@ -31,4 +31,10 @@ export const landingGuard: CanActivateFn = () => {
   // Opening the app goes straight to the leagues; the home button asks for the landing page.
   const asked = router.getCurrentNavigation()?.extras.state?.['landing'] === true;
   return auth.isAuthenticated() && !asked ? router.createUrlTree(['/tabs/competitions']) : true;
+};
+
+/** The Home tab: tab buttons can only open routes inside the tabs, so this one forwards. */
+export const homeTabGuard: CanActivateFn = () => {
+  const router = inject(Router);
+  return new RedirectCommand(router.parseUrl('/'), { state: LANDING_STATE });
 };

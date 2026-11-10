@@ -226,8 +226,7 @@ nav {
   margin-top: 36px;
 }
 
-.commercial .banner,
-.offer {
+.commercial .banner {
   background: var(--fm-surface);
   border-radius: 18px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
@@ -237,24 +236,8 @@ nav {
   padding: 22px 20px;
 }
 
-.offer-grid {
-  display: grid;
-  gap: 12px;
+.offers {
   margin-top: 16px;
-}
-
-.offer {
-  padding: 18px 16px;
-
-  p {
-    margin: 8px 0 0;
-    color: var(--muted);
-    line-height: 1.5;
-  }
-
-  .text {
-    margin-top: 14px;
-  }
 }
 
 
@@ -475,10 +458,6 @@ h3 {
   .cards {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .offer-grid {
-    grid-template-columns: 1fr 1fr;
   }
 
   .happening {

@@ -16,13 +16,11 @@ import {
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { PlayerLeagueProfile } from '../../core/models';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-player-profile',
   standalone: true,
   imports: [
-    HomeButtonComponent,
     DatePipe,
     RouterLink,
     IonHeader,
@@ -41,7 +39,6 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
       <ion-toolbar>
         <ion-buttons slot="start">
           <ion-back-button [defaultHref]="backHref()" />
-          <fm-home-button />
         </ion-buttons>
         <ion-title>{{ card()?.profile?.display_name || 'Profile' }}</ion-title>
       </ion-toolbar>

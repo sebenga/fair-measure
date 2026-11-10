@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, booleanAttribute, input } from '@angular/core';
 
 /**
  * The landing page banner for app pages: a match-day photo under the teal
@@ -8,6 +8,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
   selector: 'fm-page-hero',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '[class.compact]': 'compact()' },
   template: `
     <img [src]="image()" alt="" decoding="async" />
     <div class="copy">
@@ -94,6 +95,37 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
         padding: 40px 36px 34px;
       }
     }
+    /* A list page's banner: the height of one card, so the list starts on screen. */
+    :host(.compact) {
+      border-radius: 18px;
+    }
+    :host(.compact) .copy {
+      gap: 4px;
+      padding: 12px 16px;
+    }
+    /* The page title above already names the page. */
+    :host(.compact) .eyebrow {
+      display: none;
+    }
+    :host(.compact) h1 {
+      font-size: 1.25rem;
+    }
+    :host(.compact) .lede {
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      font-size: 0.88rem;
+      line-height: 1.4;
+    }
+    :host(.compact) .actions {
+      margin-top: 2px;
+    }
+    @media (min-width: 880px) {
+      :host(.compact) .copy {
+        padding: 18px 22px;
+      }
+    }
   `,
 })
 export class PageHeroComponent {
@@ -101,4 +133,5 @@ export class PageHeroComponent {
   readonly title = input.required<string>();
   readonly subtitle = input('');
   readonly image = input('assets/landing/moment-fans.jpg');
+  readonly compact = input(false, { transform: booleanAttribute });
 }

@@ -22,7 +22,6 @@ import type {
   Visibility,
 } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 interface Decision {
   visibility: Visibility;
@@ -33,13 +32,13 @@ interface Decision {
 @Component({
   selector: 'fm-guardian-consent',
   standalone: true,
-  imports: [HomeButtonComponent, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
+  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /><fm-home-button /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
         <ion-title>Guardian consent</ion-title>
       </ion-toolbar>
     </ion-header>

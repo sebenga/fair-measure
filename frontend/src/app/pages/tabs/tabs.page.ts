@@ -19,6 +19,11 @@ import {
   template: `
     <ion-tabs>
       <ion-tab-bar slot="bottom">
+        <ion-tab-button tab="home" href="/tabs/home">
+          <ion-icon name="home-outline" aria-hidden="true" />
+          <ion-label>Home</ion-label>
+        </ion-tab-button>
+
         <ion-tab-button tab="competitions" href="/tabs/competitions">
           <ion-icon name="trophy-outline" aria-hidden="true" />
           <ion-label>{{ auth.isAuthenticated() ? 'My leagues' : 'Leagues' }}</ion-label>

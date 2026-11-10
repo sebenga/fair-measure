@@ -29,7 +29,6 @@ import type {
 } from '../../core/games.service';
 import { GamesService } from '../../core/games.service';
 import { RealtimeService, gamesRoom } from '../../core/realtime.service';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 type Tab = 'today' | 'medals' | 'points' | 'events' | 'nocs' | 'schedule' | 'reports';
 
@@ -37,7 +36,6 @@ type Tab = 'today' | 'medals' | 'points' | 'events' | 'nocs' | 'schedule' | 'rep
   selector: 'fm-games-home',
   standalone: true,
   imports: [
-    HomeButtonComponent,
     DatePipe,
     NgTemplateOutlet,
     IonHeader,
@@ -56,7 +54,7 @@ type Tab = 'today' | 'medals' | 'points' | 'events' | 'nocs' | 'schedule' | 'rep
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/games" /><fm-home-button /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/games" /></ion-buttons>
         <ion-title>{{ games()?.name ?? 'Games' }}</ion-title>
       </ion-toolbar>
     </ion-header>

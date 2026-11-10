@@ -3,15 +3,13 @@ import {
   Component,
   OnInit,
   computed,
-  effect,
   inject,
   signal,
-  untracked,
   viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
-import { Subject, debounceTime, distinctUntilChanged, forkJoin, interval, of, switchMap } from 'rxjs';
+import { Subject, debounceTime, distinctUntilChanged, forkJoin, of, switchMap } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import {
   IonButton,
@@ -67,13 +65,15 @@ interface MarketSlide {
 const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
 import { PageHeroComponent } from '../../shared/page-hero.component';
 import { SponsorShowcaseComponent } from '../landing/sponsor-showcase.component';
-import { HomeButtonComponent } from '../../shared/home-button.component';
+import { CompetitionStripComponent } from '../../shared/competition-strip.component';
+import { CarouselComponent } from '../../shared/carousel.component';
 
 @Component({
   selector: 'fm-discover',
   standalone: true,
   imports: [
-    HomeButtonComponent,
+    CarouselComponent,
+    CompetitionStripComponent,
     PageHeroComponent,
     SponsorShowcaseComponent,
     IonHeader,
@@ -96,7 +96,6 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
   template: `
     <ion-header translucent="true">
       <ion-toolbar>
-        <ion-buttons slot="start"><fm-home-button /></ion-buttons>
         <ion-title>Discover</ion-title>
         <ion-buttons slot="end">
           <fm-inbox-tray />
@@ -122,29 +121,37 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
           <ion-button fill="clear" (click)="load()">Try again</ion-button>
         </div>
       } @else {
+        <fm-competition-strip
+          [title]="query() ? 'Matching competitions' : 'Competitions'"
+          [competitions]="topCompetitions()"
+          (open)="open($event)"
+        />
         <fm-page-hero
           eyebrow="Discover"
           title="What's happening across Fair Measure"
           subtitle="Results, ratings, standout players and the conversation from public competitions."
           image="assets/landing/hero.jpg"
+          compact
         />
         <div class="discover-shell">
           <aside class="sponsored-rail left" aria-label="Corporate marketing">
             <p class="rail-kicker">Commercial</p>
             <h3 class="rail-title">Corporate</h3>
-            @for (ad of corporate(); track ad.id; let i = $index) {
-              <fm-promo-slot
-                kind="corporate"
-                eyebrow="Corporate"
-                [title]="ad.name"
-                [body]="ad.tagline || ad.body"
-                [action]="ad.cta_label || 'Talk to partnerships'"
-                [logo]="ad.logo_url"
-                [image]="placementImage(ad, i)"
-                icon="briefcase-outline"
-                (open)="openPlacement(ad)"
-              />
-            }
+            <fm-carousel [items]="corporate()" label="Corporate partners">
+              <ng-template let-ad let-i="index">
+                <fm-promo-slot
+                  kind="corporate"
+                  eyebrow="Corporate"
+                  [title]="ad.name"
+                  [body]="ad.tagline || ad.body"
+                  [action]="ad.cta_label || 'Talk to partnerships'"
+                  [logo]="ad.logo_url"
+                  [image]="placementImage(ad, i)"
+                  icon="briefcase-outline"
+                  (open)="openPlacement(ad)"
+                />
+              </ng-template>
+            </fm-carousel>
             @if (logos().length) {
               <div class="logo-card">
                 <p>Partners on this page</p>
@@ -154,65 +161,40 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
           </aside>
 
           <div class="feed">
-            <div
+            <fm-carousel
               class="market-carousel"
-              aria-roledescription="carousel"
-              aria-label="Corporate, government and current competitions"
-              (pointerdown)="onMarketPointerDown($event)"
-              (pointerup)="onMarketPointerUp($event)"
-              (pointercancel)="holdMarket(false)"
+              [items]="marketSlides()"
+              label="Corporate, government and current competitions"
             >
-              <div class="market-viewport">
-                <div
-                  class="market-track"
-                  [style.transform]="'translateX(' + -marketIndex() * 100 + '%)'"
-                >
-                  @for (slide of marketSlides(); track slide.id; let i = $index) {
-                    <div
-                      class="market-slide"
-                      role="group"
-                      [attr.aria-label]="slide.eyebrow + ': ' + slide.title"
-                      [attr.aria-hidden]="marketIndex() !== i ? 'true' : null"
-                    >
-                      <fm-promo-slot
-                        [kind]="slide.kind"
-                        [eyebrow]="slide.eyebrow"
-                        [title]="slide.title"
-                        [body]="slide.body"
-                        [action]="slide.action"
-                        [logo]="slide.logo"
-                        [image]="slide.image"
-                        [icon]="slide.icon"
-                        (open)="openMarket(slide)"
-                      />
-                    </div>
-                  }
-                </div>
-              </div>
-              @if (marketSlides().length > 1) {
-                <div class="market-dots">
-                  @for (slide of marketSlides(); track slide.id; let i = $index) {
-                    <button
-                      type="button"
-                      [class.on]="marketIndex() === i"
-                      [attr.aria-label]="'Show ' + slide.title"
-                      (click)="goMarket(i)"
-                    ></button>
-                  }
-                </div>
-              }
-            </div>
+              <ng-template let-slide>
+                <fm-promo-slot
+                  [kind]="slide.kind"
+                  [eyebrow]="slide.eyebrow"
+                  [title]="slide.title"
+                  [body]="slide.body"
+                  [action]="slide.action"
+                  [logo]="slide.logo"
+                  [image]="slide.image"
+                  [icon]="slide.icon"
+                  (open)="openMarket(slide)"
+                />
+              </ng-template>
+            </fm-carousel>
 
-            <fm-promo-slot
-              kind="banner"
-              eyebrow="Campaign"
-              [title]="campaign().name"
-              [body]="campaign().tagline || campaign().body"
-              [action]="campaign().cta_label || 'Create a public league'"
-              [image]="placementImage(campaign())"
-              icon="megaphone-outline"
-              (open)="openPlacement(campaign())"
-            />
+            <fm-carousel class="campaigns" [items]="campaigns()" label="Campaigns">
+              <ng-template let-banner let-i="index">
+                <fm-promo-slot
+                  kind="banner"
+                  eyebrow="Campaign"
+                  [title]="banner.name"
+                  [body]="banner.tagline || banner.body"
+                  [action]="banner.cta_label || 'Create a public league'"
+                  [image]="placementImage(banner, i)"
+                  icon="megaphone-outline"
+                  (open)="openPlacement(banner)"
+                />
+              </ng-template>
+            </fm-carousel>
 
             @if (composerLeague(); as league) {
               <div class="composer-wrap">
@@ -297,18 +279,26 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
                     (promoClick)="onCardPromo(item.competition, index)"
                   />
                 } @else if (item.kind === 'promo') {
-                  <fm-promo-slot
+                  <fm-carousel
                     [style.--i]="index"
-                    [kind]="promoKind(item.placement)"
-                    [eyebrow]="promoEyebrow(item.placement)"
-                    [title]="item.placement.name"
-                    [body]="item.placement.tagline || item.placement.body"
-                    [action]="item.placement.cta_label || 'Learn more'"
-                    [logo]="item.placement.logo_url"
-                    [image]="placementImage(item.placement, index)"
-                    [icon]="promoIcon(item.placement)"
-                    (open)="openPlacement(item.placement)"
-                  />
+                    [items]="feedAds()"
+                    [start]="feedAdStart(item.placement)"
+                    label="Partners"
+                  >
+                    <ng-template let-ad let-i="index">
+                      <fm-promo-slot
+                        [kind]="promoKind(ad)"
+                        [eyebrow]="promoEyebrow(ad)"
+                        [title]="ad.name"
+                        [body]="ad.tagline || ad.body"
+                        [action]="ad.cta_label || 'Learn more'"
+                        [logo]="ad.logo_url"
+                        [image]="placementImage(ad, i)"
+                        [icon]="promoIcon(ad)"
+                        (open)="openPlacement(ad)"
+                      />
+                    </ng-template>
+                  </fm-carousel>
                 } @else {
                   <fm-post-card
                     [style.--i]="index"
@@ -346,35 +336,39 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
           <aside class="sponsored-rail right" aria-label="Government and current competitions">
             <p class="rail-kicker">Public sector</p>
             <h3 class="rail-title">Government</h3>
-            @for (ad of government(); track ad.id; let i = $index) {
-              <fm-promo-slot
-                kind="government"
-                eyebrow="Government"
-                [title]="ad.name"
-                [body]="ad.tagline || ad.body"
-                [action]="ad.cta_label || 'Plan a programme'"
-                [logo]="ad.logo_url"
-                [image]="placementImage(ad, i)"
-                icon="business-outline"
-                (open)="openPlacement(ad)"
-              />
-            }
+            <fm-carousel [items]="government()" label="Government programmes">
+              <ng-template let-ad let-i="index">
+                <fm-promo-slot
+                  kind="government"
+                  eyebrow="Government"
+                  [title]="ad.name"
+                  [body]="ad.tagline || ad.body"
+                  [action]="ad.cta_label || 'Plan a programme'"
+                  [logo]="ad.logo_url"
+                  [image]="placementImage(ad, i)"
+                  icon="business-outline"
+                  (open)="openPlacement(ad)"
+                />
+              </ng-template>
+            </fm-carousel>
 
             <p class="rail-kicker later">Featured</p>
             <h3 class="rail-title">Current competitions</h3>
-            @for (league of currentCompetitions().slice(0, 4); track league.id; let i = $index) {
-              <fm-promo-slot
-                kind="competition"
-                eyebrow="Current competition"
-                [title]="league.name"
-                [body]="(league.sport || 'League') + ' · ' + league.participant_count + ' sides'"
-                action="Open"
-                [logo]="league.logo_url"
-                [image]="competitionImage(league, i)"
-                icon="trophy-outline"
-                (open)="open(league)"
-              />
-            }
+            <fm-carousel [items]="currentCompetitions()" label="Current competitions" [start]="1">
+              <ng-template let-league let-i="index">
+                <fm-promo-slot
+                  kind="competition"
+                  eyebrow="Current competition"
+                  [title]="league.name"
+                  [body]="(league.sport || 'League') + ' · ' + league.participant_count + ' sides'"
+                  action="Open"
+                  [logo]="league.logo_url"
+                  [image]="competitionImage(league, i)"
+                  icon="trophy-outline"
+                  (open)="open(league)"
+                />
+              </ng-template>
+            </fm-carousel>
             @if (!currentCompetitions().length) {
               <fm-promo-slot
                 kind="competition"
@@ -407,13 +401,7 @@ export class DiscoverPage implements OnInit {
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly query = signal('');
-  readonly marketIndex = signal(0);
   private readonly inbox = viewChild(InboxTrayComponent);
-  private marketTouching = false;
-  private marketHoldUntil = 0;
-  private marketKey = '';
-  private marketStartX = 0;
-  private suppressClickUntil = 0;
 
   readonly featured = computed(() =>
     this.results().filter((row) => row.open_to_scouts).slice(0, 8),
@@ -427,9 +415,28 @@ export class DiscoverPage implements OnInit {
     const opted = this.landing().length ? this.landing() : this.results().filter((row) => row.show_on_landing);
     return opted.slice(0, 8);
   });
-  readonly campaign = computed(
-    () => this.placements().find((item) => item.slot === 'banner') ?? FALLBACK_CAMPAIGN,
-  );
+  /** Yours first, then featured and public ones: the row at the top of the page. */
+  readonly topCompetitions = computed(() => {
+    const seen = new Set<string>();
+    const rows: Competition[] = [];
+    const sources = this.query()
+      ? [this.results()]
+      : [this.mine(), this.currentCompetitions(), this.results()];
+    for (const source of sources) {
+      for (const row of source) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        rows.push(row);
+      }
+    }
+    return rows.slice(0, 16);
+  });
+  readonly campaigns = computed(() => {
+    const rows = this.placements().filter((item) => item.slot === 'banner');
+    return rows.length ? rows : [FALLBACK_CAMPAIGN];
+  });
+  /** Every ad that can sit in the feed; each feed slot rotates through all of them. */
+  readonly feedAds = computed(() => [...this.corporate(), ...this.government()]);
   readonly corporate = computed(() => {
     const rows = this.placements().filter(
       (item) => item.audience === 'corporate' && item.slot === 'feature',
@@ -550,18 +557,6 @@ export class DiscoverPage implements OnInit {
         },
       });
 
-    interval(3000)
-      .pipe(takeUntilDestroyed())
-      .subscribe(() => this.advanceMarket());
-
-    effect(() => {
-      const key = this.marketSlides()
-        .map((slide) => slide.id)
-        .join('|');
-      if (key === this.marketKey) return;
-      this.marketKey = key;
-      untracked(() => this.marketIndex.set(0));
-    });
   }
 
   ngOnInit(): void {
@@ -692,39 +687,11 @@ export class DiscoverPage implements OnInit {
   }
 
   openMarket(slide: MarketSlide): void {
-    if (Date.now() < this.suppressClickUntil) return;
     if (slide.league) {
       this.open(slide.league);
       return;
     }
     if (slide.placement) this.openPlacement(slide.placement);
-  }
-
-  holdMarket(touching: boolean): void {
-    this.marketTouching = touching;
-    if (!touching) this.marketHoldUntil = Date.now() + 3000;
-  }
-
-  onMarketPointerDown(event: PointerEvent): void {
-    this.marketStartX = event.clientX;
-    this.holdMarket(true);
-  }
-
-  onMarketPointerUp(event: PointerEvent): void {
-    const distance = event.clientX - this.marketStartX;
-    const count = this.marketSlides().length;
-    if (count > 1 && Math.abs(distance) > 48) {
-      this.suppressClickUntil = Date.now() + 500;
-      const direction = distance < 0 ? 1 : -1;
-      this.marketIndex.set((this.marketIndex() + direction + count) % count);
-    }
-    this.holdMarket(false);
-  }
-
-  goMarket(index: number): void {
-    if (Date.now() < this.suppressClickUntil) return;
-    this.marketHoldUntil = Date.now() + 3000;
-    this.marketIndex.set(index);
   }
 
   createLeague(): void {
@@ -746,14 +713,8 @@ export class DiscoverPage implements OnInit {
     });
   }
 
-  private advanceMarket(): void {
-    if (this.marketTouching || Date.now() < this.marketHoldUntil) return;
-    if (document.hidden) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    if (window.matchMedia('(min-width: 1100px)').matches) return;
-    const count = this.marketSlides().length;
-    if (count < 2) return;
-    this.marketIndex.set((this.marketIndex() + 1) % count);
+  feedAdStart(placement: MarketingPlacement): number {
+    return Math.max(0, this.feedAds().findIndex((ad) => ad.id === placement.id));
   }
 
   private inFeedAds(): FeedItem[] {

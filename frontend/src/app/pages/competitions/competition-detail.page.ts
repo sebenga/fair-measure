@@ -44,7 +44,6 @@ import { CompetitionFeedComponent } from './tabs/competition-feed.component';
 import { CompetitionFixturesComponent } from './tabs/competition-fixtures.component';
 import { CompetitionStandingsComponent } from './tabs/competition-standings.component';
 import { LiveStripComponent } from '../../shared/live-strip.component';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
 
@@ -52,7 +51,6 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
   selector: 'fm-competition-detail',
   standalone: true,
   imports: [
-    HomeButtonComponent,
     IonHeader,
     IonToolbar,
     IonButtons,
@@ -79,7 +77,6 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
       <ion-toolbar>
         <ion-buttons slot="start">
           <ion-back-button [defaultHref]="auth.isAuthenticated() ? '/tabs/competitions' : '/'" />
-          <fm-home-button />
         </ion-buttons>
         <div class="title-cluster" slot="start">
           <span class="name">{{ competition()?.name ?? 'Competition' }}</span>

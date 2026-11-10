@@ -20,7 +20,6 @@ import type { Observable } from 'rxjs';
 import { extractErrorMessage } from '../../core/error-message';
 import type { EntryData, ResultEntry, ResultSheet } from '../../core/results.models';
 import { ResultsService } from '../../core/results.service';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 const TYPE_LABEL: Record<string, string> = {
   finishing_order: 'Finishing order',
@@ -78,7 +77,6 @@ function raceTime(value: number | string | null | undefined): string {
   selector: 'fm-event-results',
   standalone: true,
   imports: [
-    HomeButtonComponent,
     DatePipe,
     IonHeader,
     IonToolbar,
@@ -96,7 +94,7 @@ function raceTime(value: number | string | null | undefined): string {
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /><fm-home-button /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
         <ion-title>{{ sheet()?.fixture?.label || 'Event' }}</ion-title>
       </ion-toolbar>
     </ion-header>

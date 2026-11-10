@@ -16,13 +16,11 @@ import {
 import { extractErrorMessage } from '../../core/error-message';
 import type { ReportLeague, ScoutingCatalog, ScoutingReport } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-scouting-report',
   standalone: true,
   imports: [
-    HomeButtonComponent,
     DatePipe,
     IonHeader,
     IonToolbar,
@@ -39,7 +37,7 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /><fm-home-button /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
         <ion-title>Scouting report</ion-title>
         <ion-buttons slot="end">
           <ion-button [disabled]="!report() || exporting()" (click)="savePdf()">

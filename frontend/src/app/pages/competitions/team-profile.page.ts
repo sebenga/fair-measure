@@ -37,13 +37,11 @@ import type {
 } from '../../core/models';
 import { AVAILABILITY_LABELS, availabilityText, isUnavailable } from '../../core/player-status';
 import { squadSizeOf } from '../../core/models';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-team-profile',
   standalone: true,
   imports: [
-    HomeButtonComponent,
     FormsModule,
     RouterLink,
     IonHeader,
@@ -69,7 +67,6 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
       <ion-toolbar>
         <ion-buttons slot="start">
           <ion-back-button [defaultHref]="backHref()" />
-          <fm-home-button />
         </ion-buttons>
         <ion-title>{{ team()?.name || 'Team' }}</ion-title>
       </ion-toolbar>

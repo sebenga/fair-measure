@@ -12,18 +12,17 @@ import {
 
 import type { LeagueSummary, ScoutingCatalog } from '../../core/scouting.models';
 import { SELECTOR_GUIDE, ScoutingService, groupBySport } from '../../core/scouting.service';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-scouting-leagues',
   standalone: true,
-  imports: [HomeButtonComponent, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon],
+  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /><fm-home-button /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
         <ion-title>League squads</ion-title>
       </ion-toolbar>
     </ion-header>

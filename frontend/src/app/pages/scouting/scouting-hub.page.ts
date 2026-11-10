@@ -22,13 +22,11 @@ import { ROLE_GUIDE, ScoutingService } from '../../core/scouting.service';
 import { InboxTrayComponent } from '../../shared/inbox-tray.component';
 import { PromoSlotComponent } from '../../shared/promo-slot.component';
 import { PageHeroComponent } from '../../shared/page-hero.component';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-scouting-hub',
   standalone: true,
   imports: [
-    HomeButtonComponent,
     PageHeroComponent,
     IonHeader,
     IonToolbar,
@@ -47,7 +45,6 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><fm-home-button /></ion-buttons>
         <ion-title>Scouting</ion-title>
         <ion-buttons slot="end">
           <fm-inbox-tray />

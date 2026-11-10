@@ -17,13 +17,11 @@ import { extractErrorMessage } from '../../core/error-message';
 import type { Games, GamesKind, MedalRanking } from '../../core/games.service';
 import { GamesService } from '../../core/games.service';
 import { PageHeroComponent } from '../../shared/page-hero.component';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-games-list',
   standalone: true,
   imports: [
-    HomeButtonComponent,
     PageHeroComponent,
     DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -31,7 +29,7 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/competitions" /><fm-home-button /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/competitions" /></ion-buttons>
         <ion-title>Games</ion-title>
       </ion-toolbar>
     </ion-header>

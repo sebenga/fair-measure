@@ -14,6 +14,8 @@ import { IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { pauseOutline, playOutline, volumeHighOutline, volumeMuteOutline } from 'ionicons/icons';
 
+import { CarouselComponent } from '../../shared/carousel.component';
+
 const MEDIA = 'assets/landing';
 
 /** Looping match-day clip behind the hero. Muted until the visitor asks for sound. */
@@ -438,6 +440,7 @@ interface Moment {
 @Component({
   selector: 'fm-landing-moments',
   standalone: true,
+  imports: [CarouselComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <p class="eyebrow">Match day, shared</p>
@@ -446,13 +449,13 @@ interface Moment {
       Score from the touchline, post the full-time photo, rate the players and argue about it in
       the feed — with your team, your office or the whole town.
     </p>
-    <div class="grid">
-      @for (moment of moments; track moment.image; let first = $first) {
-        <figure [class.wide]="first">
+    <fm-carousel class="grid" [items]="moments" label="Match day photos" [every]="4000">
+      <ng-template let-moment let-i="index">
+        <figure>
           <img
             [src]="moment.image"
             [alt]="moment.title"
-            loading="lazy"
+            [attr.loading]="i === 0 ? 'eager' : 'lazy'"
             decoding="async"
             width="900"
             height="675"
@@ -463,8 +466,8 @@ interface Moment {
             <span>{{ moment.body }}</span>
           </figcaption>
         </figure>
-      }
-    </div>
+      </ng-template>
+    </fm-carousel>
   `,
   styles: `
     :host {
@@ -488,8 +491,6 @@ interface Moment {
       line-height: 1.55;
     }
     .grid {
-      display: grid;
-      gap: 12px;
       margin-top: 16px;
     }
     figure {
@@ -536,23 +537,8 @@ interface Moment {
       text-transform: uppercase;
     }
     @media (min-width: 720px) {
-      .grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-      figure.wide {
-        grid-column: 1 / -1;
-        aspect-ratio: 16 / 9;
-      }
-    }
-    @media (min-width: 1100px) {
-      .grid {
-        grid-template-columns: 2fr 1fr 1fr;
-        grid-template-rows: repeat(2, minmax(0, 1fr));
-      }
-      figure.wide {
-        grid-column: auto;
-        grid-row: span 2;
-        aspect-ratio: auto;
+      figure {
+        aspect-ratio: 16 / 7;
       }
     }
     @media (prefers-reduced-motion: reduce) {

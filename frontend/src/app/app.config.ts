@@ -21,7 +21,7 @@ import { isStaleBuildError, reloadForNewBuild } from './core/stale-build';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideZoneChangeDetection({ eventCoalescing: true }),
-    provideIonicAngular({ mode: 'ios' }),
+    provideIonicAngular({ mode: 'ios', backButtonText: '' }),
     { provide: RouteReuseStrategy, useClass: IonicRouteStrategy },
     { provide: ErrorHandler, useClass: FairMeasureErrorHandler },
     provideRouter(

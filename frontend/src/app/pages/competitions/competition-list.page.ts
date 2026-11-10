@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import {
   AlertController,
@@ -27,13 +27,12 @@ import { extractErrorMessage } from '../../core/error-message';
 import type { Competition, TeamPick } from '../../core/models';
 import { CompetitionCardComponent } from '../../shared/competition-card.component';
 import { PageHeroComponent } from '../../shared/page-hero.component';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-competition-list',
   standalone: true,
   imports: [
-    HomeButtonComponent,
+    NgTemplateOutlet,
     PageHeroComponent,
     DatePipe,
     RouterLink,
@@ -56,7 +55,6 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
   template: `
     <ion-header translucent="true">
       <ion-toolbar>
-        <ion-buttons slot="start"><fm-home-button /></ion-buttons>
         <ion-title>{{ auth.isAuthenticated() ? 'My leagues' : 'Leagues' }}</ion-title>
         <ion-buttons slot="end">
           @if (auth.isAuthenticated()) {
@@ -82,20 +80,9 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
       </ion-refresher>
 
       <div class="page-body">
-        <fm-page-hero
-          [eyebrow]="auth.isAuthenticated() ? 'My leagues' : 'Leagues'"
-          [title]="auth.isAuthenticated() ? 'Your leagues, live.' : 'See how a league runs.'"
-          subtitle="Run as many competitions as you need, each with its own scoring, table and feed."
-          image="assets/landing/moment-fans.jpg"
-        >
-          <ion-button
-            type="button"
-            [routerLink]="auth.isAuthenticated() ? '/tabs/competitions/new' : '/register'"
-            routerDirection="forward"
-          >
-            {{ auth.isAuthenticated() ? 'Create a competition' : 'Create an account' }}
-          </ion-button>
-        </fm-page-hero>
+        @if (loading() || error() || competitions().length === 0) {
+          <ng-container [ngTemplateOutlet]="createBanner" />
+        }
         @for (invite of invites(); track invite.id) {
           <div class="pick-banner">
             <p>
@@ -154,6 +141,9 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
           />
         }
 
+        <!-- Competitions are the point of this page, so they come first. -->
+        <ng-container [ngTemplateOutlet]="createBanner" />
+
         <p class="footnote">
           <ion-badge color="light">{{ competitions().length }}</ion-badge>
           shown · last refreshed {{ refreshedAt() | date: 'shortTime' }}
@@ -161,6 +151,25 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
       }
 
       </div>
+
+      <ng-template #createBanner>
+        <fm-page-hero
+          [eyebrow]="auth.isAuthenticated() ? 'My leagues' : 'Leagues'"
+          [title]="auth.isAuthenticated() ? 'Your leagues, live.' : 'See how a league runs.'"
+          subtitle="Run as many competitions as you need, each with its own scoring, table and feed."
+          image="assets/landing/moment-fans.jpg"
+          compact
+        >
+          <ion-button
+            size="small"
+            type="button"
+            [routerLink]="auth.isAuthenticated() ? '/tabs/competitions/new' : '/register'"
+            routerDirection="forward"
+          >
+            {{ auth.isAuthenticated() ? 'Create a competition' : 'Create an account' }}
+          </ion-button>
+        </fm-page-hero>
+      </ng-template>
 
       @if (auth.isAuthenticated()) {
       <ion-fab slot="fixed" vertical="bottom" horizontal="end">

@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 
-import { authGuard, guestGuard, landingGuard } from './core/auth.guard';
+import { authGuard, guestGuard, homeTabGuard, landingGuard } from './core/auth.guard';
 import { competitionIdCanMatch } from './core/competition-id.guard';
 import { featureGuard, platformAdminGuard } from './core/releases.service';
 
@@ -29,6 +29,7 @@ export const routes: Routes = [
     children: [
       { path: '', redirectTo: 'competitions', pathMatch: 'full' },
       { path: 'login', redirectTo: '/login', pathMatch: 'full' },
+      { path: 'home', canActivate: [homeTabGuard], children: [] },
       {
         path: 'competitions/new',
         canActivate: [authGuard],

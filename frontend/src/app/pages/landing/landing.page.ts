@@ -7,7 +7,12 @@ import { catchError } from 'rxjs/operators';
 
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { FALLBACK_CORPORATE, FALLBACK_GOVERNMENT, FALLBACK_LOGOS } from '../../core/marketing-fallbacks';
+import {
+  FALLBACK_CORPORATE,
+  FALLBACK_GOVERNMENT,
+  FALLBACK_LOGOS,
+  placementImage,
+} from '../../core/marketing-fallbacks';
 import type { Competition, MarketingPlacement, Post, StandingRow } from '../../core/models';
 import {
   CORPORATE_STORIES,
@@ -18,6 +23,9 @@ import {
 } from './landing-media.component';
 import { LandingEnquiryComponent } from './landing-enquiry.component';
 import { SponsorShowcaseComponent } from './sponsor-showcase.component';
+import { CompetitionStripComponent } from '../../shared/competition-strip.component';
+import { CarouselComponent } from '../../shared/carousel.component';
+import { PromoSlotComponent } from '../../shared/promo-slot.component';
 
 const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
 
@@ -25,6 +33,9 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
   selector: 'fm-landing',
   standalone: true,
   imports: [
+    CarouselComponent,
+    PromoSlotComponent,
+    CompetitionStripComponent,
     DatePipe,
     IonContent,
     IonSpinner,
@@ -60,6 +71,13 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
             }
           </div>
         </header>
+
+        <fm-competition-strip
+          class="top-competitions"
+          title="Competitions on Fair Measure"
+          [competitions]="competitions()"
+          (open)="openCompetition($event.id)"
+        />
 
         <section class="hero" id="top">
           <fm-hero-media />
@@ -181,20 +199,22 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
 
         @if (banners().length) {
           <section class="commercial" id="commercial">
-            @for (banner of banners(); track banner.id) {
-              <article class="banner">
-                <p class="eyebrow">Commercial</p>
-                <h2>{{ banner.name }}</h2>
-                @if (banner.tagline) {
-                  <p>{{ banner.tagline }}</p>
-                }
-                @if (banner.cta_label) {
-                  <button type="button" class="primary" (click)="openPlacement(banner)">
-                    {{ banner.cta_label }}
-                  </button>
-                }
-              </article>
-            }
+            <fm-carousel [items]="banners()" label="Commercial">
+              <ng-template let-banner>
+                <article class="banner">
+                  <p class="eyebrow">Commercial</p>
+                  <h2>{{ banner.name }}</h2>
+                  @if (banner.tagline) {
+                    <p>{{ banner.tagline }}</p>
+                  }
+                  @if (banner.cta_label) {
+                    <button type="button" class="primary" (click)="openPlacement(banner)">
+                      {{ banner.cta_label }}
+                    </button>
+                  }
+                </article>
+              </ng-template>
+            </fm-carousel>
           </section>
         }
 
@@ -206,20 +226,21 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
             live boards. Slots are managed in admin so a campaign can go live without a release.
           </p>
           <fm-story-tiles [stories]="corporateStories" />
-          <div class="offer-grid">
-            @for (item of corporate(); track item.id) {
-              <article class="offer">
-                <h3>{{ item.name }}</h3>
-                <p>{{ item.tagline || item.body }}</p>
-                @if (item.body && item.tagline) {
-                  <p class="hint">{{ item.body }}</p>
-                }
-                <button type="button" class="text" (click)="openPlacement(item)">
-                  {{ item.cta_label || 'Enquire' }} →
-                </button>
-              </article>
-            }
-          </div>
+          <fm-carousel class="offers" [items]="corporate()" label="Corporate offers">
+            <ng-template let-item let-i="index">
+              <fm-promo-slot
+                kind="corporate"
+                eyebrow="Corporate"
+                [title]="item.name"
+                [body]="item.tagline || item.body"
+                [action]="item.cta_label || 'Enquire'"
+                [logo]="item.logo_url"
+                [image]="placementImage(item, i)"
+                icon="briefcase-outline"
+                (open)="openPlacement(item)"
+              />
+            </ng-template>
+          </fm-carousel>
         </section>
 
         <section class="partners government" id="government">
@@ -230,20 +251,21 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
             federations get a named programme on this page and a route to partner.
           </p>
           <fm-story-tiles [stories]="governmentStories" />
-          <div class="offer-grid">
-            @for (item of government(); track item.id) {
-              <article class="offer">
-                <h3>{{ item.name }}</h3>
-                <p>{{ item.tagline || item.body }}</p>
-                @if (item.body && item.tagline) {
-                  <p class="hint">{{ item.body }}</p>
-                }
-                <button type="button" class="text" (click)="openPlacement(item)">
-                  {{ item.cta_label || 'Enquire' }} →
-                </button>
-              </article>
-            }
-          </div>
+          <fm-carousel class="offers" [items]="government()" label="Government offers">
+            <ng-template let-item let-i="index">
+              <fm-promo-slot
+                kind="government"
+                eyebrow="Government"
+                [title]="item.name"
+                [body]="item.tagline || item.body"
+                [action]="item.cta_label || 'Enquire'"
+                [logo]="item.logo_url"
+                [image]="placementImage(item, i)"
+                icon="business-outline"
+                (open)="openPlacement(item)"
+              />
+            </ng-template>
+          </fm-carousel>
         </section>
 
         <section class="sponsors" id="sponsors">
@@ -320,6 +342,7 @@ export class LandingPage {
   readonly auth = inject(AuthService);
 
   readonly corporateStories = CORPORATE_STORIES;
+  readonly placementImage = placementImage;
   readonly governmentStories = GOVERNMENT_STORIES;
   readonly loading = signal(true);
   readonly competitions = signal<Competition[]>([]);

@@ -5,7 +5,6 @@ import {
   AlertController,
   IonAvatar,
   IonButton,
-  IonButtons,
   IonContent,
   IonHeader,
   IonIcon,
@@ -28,18 +27,17 @@ import { extractErrorMessage } from '../../core/error-message';
 import { PushService } from '../../core/push.service';
 import { RealtimeService } from '../../core/realtime.service';
 import { ProfileTalentComponent } from './profile-talent.component';
-import { HomeButtonComponent } from '../../shared/home-button.component';
+import { FeatureSwitchComponent } from '../../shared/feature-switch.component';
 
 @Component({
   selector: 'fm-profile',
   standalone: true,
   imports: [
-    HomeButtonComponent,
+    FeatureSwitchComponent,
     ReactiveFormsModule,
     RouterLink,
     IonHeader,
     IonToolbar,
-    IonButtons,
     IonTitle,
     IonContent,
     IonAvatar,
@@ -59,7 +57,6 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
   template: `
     <ion-header translucent="true">
       <ion-toolbar>
-        <ion-buttons slot="start"><fm-home-button /></ion-buttons>
         <ion-title>Profile</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -96,6 +93,7 @@ import { HomeButtonComponent } from '../../shared/home-button.component';
             </span>
             <ion-icon name="chevron-forward-outline" aria-hidden="true" />
           </button>
+          <fm-feature-switch feature="games" label="Games" icon="trophy-outline" />
         }
 
         <fm-profile-talent />

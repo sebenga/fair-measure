@@ -17,18 +17,17 @@ import { extractErrorMessage } from '../../core/error-message';
 import type { AthletePage, PersonalBest } from '../../core/games.service';
 import { GamesService } from '../../core/games.service';
 import { GamesFollowComponent } from './games-follow.component';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 @Component({
   selector: 'fm-games-athlete',
   standalone: true,
-  imports: [HomeButtonComponent, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner, GamesFollowComponent],
+  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner, GamesFollowComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './games.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /><fm-home-button /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
         <ion-title>{{ athlete()?.name ?? 'Athlete' }}</ion-title>
       </ion-toolbar>
     </ion-header>

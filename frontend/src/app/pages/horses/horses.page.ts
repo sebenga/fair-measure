@@ -14,7 +14,6 @@ import {
 import { extractErrorMessage } from '../../core/error-message';
 import type { Horse } from '../../core/results.models';
 import { ResultsService } from '../../core/results.service';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 type Draft = Pick<
   Horse,
@@ -48,13 +47,13 @@ const EMPTY: Draft = {
 @Component({
   selector: 'fm-horses',
   standalone: true,
-  imports: [HomeButtonComponent, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
+  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: '../scouting/scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/profile" /><fm-home-button /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/profile" /></ion-buttons>
         <ion-title>My horses</ion-title>
       </ion-toolbar>
     </ion-header>

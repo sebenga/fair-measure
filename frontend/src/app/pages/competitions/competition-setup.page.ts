@@ -45,7 +45,6 @@ import type {
   ScoringCategory,
 } from '../../core/models';
 import { isPointsTable, isScoringLocked, squadSizeOf, tableBonusOf } from '../../core/models';
-import { HomeButtonComponent } from '../../shared/home-button.component';
 
 type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
 
@@ -53,7 +52,6 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
   selector: 'fm-competition-setup',
   standalone: true,
   imports: [
-    HomeButtonComponent,
     FormsModule,
     IonHeader,
     IonToolbar,
@@ -84,7 +82,6 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
       <ion-toolbar>
         <ion-buttons slot="start">
           <ion-back-button [defaultHref]="backHref()" />
-          <fm-home-button />
         </ion-buttons>
         <ion-title>Setup</ion-title>
         <ion-buttons slot="end">
