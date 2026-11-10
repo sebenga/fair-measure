@@ -21,7 +21,9 @@ import {
   IonSegment,
   IonSegmentButton,
   IonLabel,
+  IonModal,
   IonSpinner,
+  IonTitle,
   IonToolbar,
   ToastController,
 } from '@ionic/angular/standalone';
@@ -62,6 +64,8 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
     IonSegmentButton,
     IonLabel,
     IonSpinner,
+    IonModal,
+    IonTitle,
     CompetitionFeedComponent,
     CompetitionFixturesComponent,
     CompetitionCupComponent,
@@ -155,8 +159,8 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
         </div>
       } @else if (competition(); as comp) {
         @if (demoExpiryLabel(); as expiry) {
-          <div class="pick-banner">
-            <p>This is a one-hour demo with 16 teams, a league and a full cup. It deletes at {{ expiry }}.</p>
+          <div class="pick-banner demo-bar">
+            <p>One-hour demo · deletes at {{ expiry }}</p>
             <ion-button size="small" (click)="startTour(comp)">
               <ion-icon slot="start" name="school-outline" aria-hidden="true" />
               Guided tour
@@ -169,12 +173,6 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
             <ion-button size="small" (click)="goLogin()">Sign in</ion-button>
           </div>
         }
-        @if (canManage()) {
-          <div class="pick-banner">
-            <p>Change teams, scoring, fixtures or officials from setup.</p>
-            <ion-button size="small" (click)="openSetup()">Open setup</ion-button>
-          </div>
-        }
         @for (pick of myPicks(); track pick.id) {
           <div class="pick-banner">
             <p><strong>{{ pick.team_name }}</strong> picked you. Accept to join the team.</p>
@@ -185,39 +183,14 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
           </div>
         }
         @if (tab() !== 'fantasy') {
-          @if (governance(); as g) {
-            <section class="governance fm-card fm-enter">
-              <ion-icon name="ribbon-outline" aria-hidden="true" />
-              <div>
-                <strong>{{ g.body }}</strong>
-                @if (g.rulebook) {
-                  <small>Rules: {{ g.rulebook }}</small>
-                }
-                @if (g.local) {
-                  <small>Locally: {{ g.local }}</small>
-                }
-                @if (howItScores()) {
-                  <p>{{ howItScores() }}</p>
-                }
-              </div>
-            </section>
-          } @else if (howItScores()) {
-            <p class="how-points fm-enter">{{ howItScores() }}</p>
-          }
-          @if (comp.open_to_scouts || canManage()) {
-            <button type="button" class="scouted fm-enter" (click)="openSquad()">
-              <ion-icon name="ribbon-outline" aria-hidden="true" />
+          @if (hasInfo(comp)) {
+            <button type="button" class="info-bar" (click)="infoOpen.set(true)">
+              <ion-icon name="book-outline" aria-hidden="true" />
               <span>
-                <strong>{{ canManage() ? 'League squad' : 'Open to scouts' }}</strong>
-                <small>
-                  {{
-                    canManage()
-                      ? 'Amend the league squad: add, drop or move players by position.'
-                      : 'See the league squad: its best players, picked by position.'
-                  }}
-                </small>
+                <strong>Rules &amp; info</strong>
+                <small>{{ infoSummary(comp) }}</small>
               </span>
-              <ion-icon name="chevron-forward-outline" aria-hidden="true" />
+              <ion-icon name="chevron-up-outline" aria-hidden="true" />
             </button>
           }
           @if (canScheduleNext()) {
@@ -237,26 +210,98 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
               </div>
             </section>
           }
-          @if (comp.rules.length) {
-            <details class="rules fm-card fm-enter">
-              <summary>
-                <ion-icon name="book-outline" aria-hidden="true" />
-                Rules of play
-                <span class="count">{{ comp.rules.length }}</span>
-              </summary>
-              <ol class="fm-stagger">
-                @for (rule of comp.rules; track rule.id) {
-                  <li>
-                    <strong>{{ rule.name }}</strong>
-                    @if (rule.description) {
-                      <p>{{ rule.description }}</p>
-                    }
-                  </li>
-                }
-              </ol>
-            </details>
-          }
         }
+
+        <ion-modal
+          class="info-sheet"
+          [isOpen]="infoOpen()"
+          [initialBreakpoint]="0.75"
+          [breakpoints]="[0, 0.75, 1]"
+          (didDismiss)="infoOpen.set(false)"
+        >
+          <ng-template>
+            <ion-header>
+              <ion-toolbar>
+                <ion-title>Rules &amp; info</ion-title>
+                <ion-buttons slot="end">
+                  <ion-button (click)="infoOpen.set(false)">Close</ion-button>
+                </ion-buttons>
+              </ion-toolbar>
+            </ion-header>
+            <ion-content class="info-content">
+              @if (demoExpiryLabel(); as expiry) {
+                <p class="info-note">
+                  This is a one-hour demo with 16 teams, a league and a full cup. It deletes at
+                  {{ expiry }}.
+                </p>
+              }
+              @if (governance(); as g) {
+                <section class="governance fm-card">
+                  <ion-icon name="ribbon-outline" aria-hidden="true" />
+                  <div>
+                    <strong>{{ g.body }}</strong>
+                    @if (g.rulebook) {
+                      <small>Rules: {{ g.rulebook }}</small>
+                    }
+                    @if (g.local) {
+                      <small>Locally: {{ g.local }}</small>
+                    }
+                    @if (howItScores()) {
+                      <p>{{ howItScores() }}</p>
+                    }
+                  </div>
+                </section>
+              } @else if (howItScores()) {
+                <p class="how-points">{{ howItScores() }}</p>
+              }
+              @if (comp.rules.length) {
+                <section class="rules fm-card">
+                  <h3>
+                    <ion-icon name="book-outline" aria-hidden="true" />
+                    Rules of play
+                    <span class="count">{{ comp.rules.length }}</span>
+                  </h3>
+                  <ol>
+                    @for (rule of comp.rules; track rule.id) {
+                      <li>
+                        <strong>{{ rule.name }}</strong>
+                        @if (rule.description) {
+                          <p>{{ rule.description }}</p>
+                        }
+                      </li>
+                    }
+                  </ol>
+                </section>
+              }
+              @if (comp.open_to_scouts || canManage()) {
+                <button type="button" class="scouted" (click)="fromInfo('squad')">
+                  <ion-icon name="ribbon-outline" aria-hidden="true" />
+                  <span>
+                    <strong>{{ canManage() ? 'League squad' : 'Open to scouts' }}</strong>
+                    <small>
+                      {{
+                        canManage()
+                          ? 'Amend the league squad: add, drop or move players by position.'
+                          : 'See the league squad: its best players, picked by position.'
+                      }}
+                    </small>
+                  </span>
+                  <ion-icon name="chevron-forward-outline" aria-hidden="true" />
+                </button>
+              }
+              @if (canManage()) {
+                <button type="button" class="scouted" (click)="fromInfo('setup')">
+                  <ion-icon name="options-outline" aria-hidden="true" />
+                  <span>
+                    <strong>Setup</strong>
+                    <small>Change teams, scoring, fixtures or officials.</small>
+                  </span>
+                  <ion-icon name="chevron-forward-outline" aria-hidden="true" />
+                </button>
+              }
+            </ion-content>
+          </ng-template>
+        </ion-modal>
         @switch (tab()) {
           @case ('feed') {
             <fm-competition-feed [competition]="comp" />
@@ -399,42 +444,17 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
       }
 
       .rules {
-        padding: 0;
-        overflow: hidden;
+        margin: 12px 16px 0;
+        padding: 14px 16px;
       }
 
-      .rules summary {
+      .rules h3 {
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 14px 16px;
+        margin: 0 0 10px;
+        font-size: 1rem;
         font-weight: 650;
-        cursor: pointer;
-        list-style: none;
-        transition: background-color 0.2s ease;
-      }
-
-      .rules summary::-webkit-details-marker {
-        display: none;
-      }
-
-      .rules summary::after {
-        content: '';
-        margin-left: auto;
-        width: 8px;
-        height: 8px;
-        border-right: 2px solid var(--ion-color-medium);
-        border-bottom: 2px solid var(--ion-color-medium);
-        transform: rotate(45deg);
-        transition: transform 0.3s var(--fm-ease-spring);
-      }
-
-      .rules[open] summary::after {
-        transform: rotate(225deg);
-      }
-
-      .rules summary:active {
-        background: var(--ion-color-step-50, #f4f5f8);
       }
 
       .rules .count {
@@ -446,7 +466,7 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
 
       .rules ol {
         margin: 0;
-        padding: 0 16px 14px 36px;
+        padding-left: 20px;
       }
 
       .rules li + li {
@@ -458,6 +478,66 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
         color: var(--ion-color-medium);
         font-size: 0.86rem;
         line-height: 1.45;
+      }
+
+      .info-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: calc(100% - 32px);
+        margin: 10px 16px 0;
+        padding: 10px 14px;
+        border: 1px solid var(--ion-color-step-150, #e3e6eb);
+        border-radius: 14px;
+        background: var(--ion-card-background, #fff);
+        color: var(--ion-text-color);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+
+        > ion-icon:first-child {
+          font-size: 1.25rem;
+          color: var(--ion-color-primary);
+        }
+
+        span {
+          flex: 1 1 auto;
+          min-width: 0;
+          display: grid;
+        }
+
+        small {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          color: var(--ion-color-medium);
+        }
+
+        > ion-icon:last-child {
+          color: var(--ion-color-medium);
+        }
+      }
+
+      .info-content {
+        --padding-bottom: 24px;
+      }
+
+      .info-content .info-note {
+        margin: 16px 16px 0;
+        color: var(--ion-color-medium);
+        font-size: 0.92rem;
+      }
+
+      .info-content .scouted:last-child {
+        margin-bottom: 24px;
+      }
+
+      .demo-bar {
+        padding: 8px 8px 8px 12px;
+      }
+
+      .demo-bar p {
+        font-size: 0.9rem;
       }
 
       .next-season {
@@ -527,6 +607,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
 
   readonly competition = signal<CompetitionDetail | null>(null);
   readonly myPicks = signal<TeamPick[]>([]);
+  readonly infoOpen = signal(false);
   readonly loading = signal(true);
   readonly responding = signal(false);
   readonly error = signal<string | null>(null);
@@ -821,6 +902,35 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
 
   openSquad(): void {
     void this.router.navigate(['/tabs/competitions', this.competitionId, 'squad']);
+  }
+
+  /** Rules, scoring and links live in a sheet so the fixtures or table come first. */
+  hasInfo(competition: CompetitionDetail): boolean {
+    return Boolean(
+      this.governance() ||
+        this.howItScores() ||
+        competition.rules.length ||
+        competition.open_to_scouts ||
+        this.canManage(),
+    );
+  }
+
+  infoSummary(competition: CompetitionDetail): string {
+    const parts: string[] = [];
+    const body = this.governance()?.body;
+    if (body) parts.push(body);
+    if (this.howItScores()) parts.push('how points are scored');
+    if (competition.rules.length) {
+      parts.push(`${competition.rules.length} rule${competition.rules.length === 1 ? '' : 's'}`);
+    }
+    if (competition.open_to_scouts || this.canManage()) parts.push('league squad');
+    return parts.join(' · ');
+  }
+
+  fromInfo(target: 'squad' | 'setup'): void {
+    this.infoOpen.set(false);
+    if (target === 'squad') this.openSquad();
+    else this.openSetup();
   }
 
   async confirmDelete(): Promise<void> {
