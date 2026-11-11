@@ -4,6 +4,8 @@ import { IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { arrowBackOutline, briefcaseOutline, chatbubblesOutline, footballOutline } from 'ionicons/icons';
 
+import { LegalFooterComponent } from '../../shared/legal-footer.component';
+
 const MEDIA = 'assets/landing';
 const FADE_EVERY_MS = 5000;
 
@@ -11,7 +13,7 @@ const FADE_EVERY_MS = 5000;
 @Component({
   selector: 'fm-auth-shell',
   standalone: true,
-  imports: [IonIcon],
+  imports: [IonIcon, LegalFooterComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './auth-shell.component.scss',
   template: `
@@ -56,6 +58,7 @@ const FADE_EVERY_MS = 5000;
           <ng-content />
         </section>
       </div>
+      <fm-legal-footer />
     </div>
   `,
 })

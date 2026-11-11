@@ -22,6 +22,7 @@ import {
   StoryTilesComponent,
 } from './landing-media.component';
 import { LandingEnquiryComponent } from './landing-enquiry.component';
+import { LegalFooterComponent } from '../../shared/legal-footer.component';
 import { SponsorShowcaseComponent } from './sponsor-showcase.component';
 import { CompetitionStripComponent } from '../../shared/competition-strip.component';
 
@@ -40,6 +41,7 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
     StoryTilesComponent,
     SponsorShowcaseComponent,
     LandingEnquiryComponent,
+    LegalFooterComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'ion-page' },
@@ -299,6 +301,7 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
         <section id="enquire">
           <fm-landing-enquiry />
         </section>
+        <fm-legal-footer />
       </div>
     </ion-content>
   `,

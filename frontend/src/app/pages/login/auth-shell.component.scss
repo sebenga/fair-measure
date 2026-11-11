@@ -6,7 +6,7 @@
 .auth-page {
   box-sizing: border-box;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto 1fr auto;
   gap: 14px;
   min-height: 100dvh;
   padding: 16px 16px calc(24px + env(safe-area-inset-bottom));

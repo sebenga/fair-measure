@@ -28,12 +28,14 @@ import { PushService } from '../../core/push.service';
 import { RealtimeService } from '../../core/realtime.service';
 import { ProfileTalentComponent } from './profile-talent.component';
 import { FeatureSwitchComponent } from '../../shared/feature-switch.component';
+import { LegalFooterComponent } from '../../shared/legal-footer.component';
 
 @Component({
   selector: 'fm-profile',
   standalone: true,
   imports: [
     FeatureSwitchComponent,
+    LegalFooterComponent,
     ReactiveFormsModule,
     RouterLink,
     IonHeader,
@@ -246,6 +248,7 @@ import { FeatureSwitchComponent } from '../../shared/feature-switch.component';
 
         <ion-note class="footnote">Member since {{ memberSince(user.date_joined) }}</ion-note>
       }
+      <fm-legal-footer />
     </ion-content>
   `,
   styleUrl: './profile.page.scss',

@@ -22,6 +22,12 @@ export const routes: Routes = [
     canActivate: [guestGuard],
     loadComponent: () => import('./pages/register/register.page').then((m) => m.RegisterPage),
   },
+  {
+    path: 'legal',
+    loadComponent: () => import('./pages/legal/legal.page').then((m) => m.LegalPage),
+  },
+  { path: 'terms', redirectTo: 'legal', pathMatch: 'full' },
+  { path: 'privacy', redirectTo: 'legal', pathMatch: 'full' },
 
   {
     path: 'tabs',
