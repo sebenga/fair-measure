@@ -65,6 +65,9 @@ def _get_firebase_app():
 def wants_notification(user, competition, category: str) -> bool:
     """Competition-specific preferences win; otherwise fall back to the global row."""
 
+    # Invites wait for an answer, so muting a competition never hides one.
+    if category == "invites":
+        return True
     preference = (
         NotificationPreference.objects.filter(user=user, competition=competition).first()
         or NotificationPreference.objects.filter(user=user, competition__isnull=True).first()
@@ -151,6 +154,15 @@ def notify_users(
     for row in rows:
         fit_char_fields(row)
     Notification.objects.bulk_create(rows)
+
+    # Open apps refresh their inbox straight away instead of waiting for a reload.
+    from apps.core.bus import publish_event, user_room
+
+    publish_event(
+        "notification.created",
+        {"kind": kind},
+        [user_room(user.id) for user in recipients],
+    )
 
     tokens = DeviceToken.objects.filter(
         user__in=recipients, is_active=True

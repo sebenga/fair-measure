@@ -44,6 +44,7 @@ import { CompetitionFeedComponent } from './tabs/competition-feed.component';
 import { CompetitionFixturesComponent } from './tabs/competition-fixtures.component';
 import { CompetitionStandingsComponent } from './tabs/competition-standings.component';
 import { LiveStripComponent } from '../../shared/live-strip.component';
+import { MatchCentreComponent } from './match-centre.component';
 
 type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
 
@@ -70,6 +71,7 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
     CompetitionStandingsComponent,
     CompetitionFantasyComponent,
     LiveStripComponent,
+    MatchCentreComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -155,6 +157,7 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
           <ion-button fill="clear" (click)="load()">Try again</ion-button>
         </div>
       } @else if (competition(); as comp) {
+        <fm-match-centre [competition]="comp" />
         @if (demoExpiryLabel(); as expiry) {
           <div class="pick-banner demo-bar">
             <p>One-hour demo · deletes at {{ expiry }}</p>

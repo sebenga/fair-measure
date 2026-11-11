@@ -36,6 +36,7 @@ import type { LeagueScout } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
 import type {
   CompetitionDetail,
+  CompetitionInvite,
   DraftBoard,
   GenerateFixturesRequest,
   Membership,
@@ -85,9 +86,8 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
         </ion-buttons>
         <ion-title>Setup</ion-title>
         <ion-buttons slot="end">
-          <ion-button (click)="openCompetition()">
-            <ion-icon slot="start" name="trophy-outline" aria-hidden="true" />
-            Open competition
+          <ion-button (click)="openCompetition()" title="Open competition">
+            <ion-icon slot="icon-only" name="trophy-outline" aria-label="Open competition" />
           </ion-button>
         </ion-buttons>
       </ion-toolbar>
@@ -1081,6 +1081,19 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   }
                 </ion-item>
               }
+              @for (invite of pendingInvites(); track invite.id) {
+                <ion-item>
+                  <ion-label>
+                    <h2>{{ invite.user.display_name || 'Invited profile' }}</h2>
+                    <p>Invited as {{ invite.role === 'admin' ? 'an admin' : invite.role === 'scorer' ? 'a scorer' : 'a member' }} · waiting for an answer</p>
+                  </ion-label>
+                  @if (canManage()) {
+                    <ion-button slot="end" fill="clear" size="small" [disabled]="busy()" (click)="withdrawInvite(invite)">
+                      Cancel
+                    </ion-button>
+                  }
+                </ion-item>
+              }
             </ion-list>
             @if (canManage()) {
               <ion-searchbar
@@ -1216,6 +1229,8 @@ export class CompetitionSetupPage implements OnInit {
   readonly selectedProfileIds = signal<string[]>([]);
   readonly draftBoard = signal<DraftBoard | null>(null);
   readonly memberships = signal<Membership[]>([]);
+  /** Invites sent from here that are still waiting for the person's answer. */
+  readonly pendingInvites = signal<CompetitionInvite[]>([]);
   readonly officialQuery = signal('');
   readonly policy = signal<PointsPolicy | null>(null);
   readonly bonusEnabled = signal(false);
@@ -1362,6 +1377,12 @@ export class CompetitionSetupPage implements OnInit {
         this.api.listMembers(this.competitionId).subscribe({
           next: (page) => this.memberships.set(page.results),
         });
+        if (this.canManage()) {
+          this.api.competitionInvites(this.competitionId).subscribe({
+            next: (invites) => this.pendingInvites.set(invites),
+            error: () => this.pendingInvites.set([]),
+          });
+        }
       },
       error: async (err: unknown) => {
         this.loading.set(false);
@@ -1844,7 +1865,10 @@ export class CompetitionSetupPage implements OnInit {
   }
 
   readonly officialChoices = computed(() => {
-    const taken = new Set(this.admins().map((membership) => membership.user.id));
+    const taken = new Set([
+      ...this.admins().map((membership) => membership.user.id),
+      ...this.pendingInvites().map((invite) => invite.user.id),
+    ]);
     const query = this.officialQuery().trim().toLowerCase();
     return this.profiles()
       .filter((profile) => !taken.has(profile.id))
@@ -2107,23 +2131,52 @@ export class CompetitionSetupPage implements OnInit {
 
   appointAdmin(profile: ProfileSummary): void {
     if (!this.canManage() || this.busy()) return;
-    this.busy.set(true);
+    const name = profile.display_name || profile.email;
     const existing = this.memberships().find((membership) => membership.user.id === profile.id);
-    const request = existing
-      ? this.api.updateMember(this.competitionId, existing.id, { role: 'admin' })
-      : this.api.inviteMember(this.competitionId, { user_id: profile.id, role: 'admin' });
-    request.subscribe({
-      next: (membership) => {
-        this.memberships.update((current) => {
-          const without = current.filter((item) => item.id !== membership.id && item.user.id !== profile.id);
-          return [...without, membership];
-        });
+    this.busy.set(true);
+    if (existing) {
+      this.api.updateMember(this.competitionId, existing.id, { role: 'admin' }).subscribe({
+        next: (membership) => {
+          this.memberships.update((current) => [
+            ...current.filter((item) => item.id !== membership.id),
+            membership,
+          ]);
+          this.busy.set(false);
+          void this.toast(`${name} is now an admin.`, 'success');
+        },
+        error: async (err: unknown) => {
+          this.busy.set(false);
+          await this.toast(extractErrorMessage(err, 'Could not make that person an admin.'), 'danger');
+        },
+      });
+      return;
+    }
+    // Not in the competition yet: they are invited and become an admin once they accept.
+    this.api.inviteMember(this.competitionId, { user_id: profile.id, role: 'admin' }).subscribe({
+      next: (invite) => {
+        this.pendingInvites.update((current) => [...current, invite]);
         this.busy.set(false);
-        void this.toast(`${profile.display_name || profile.email} is now an admin.`, 'success');
+        void this.toast(`Invite sent to ${name}. They become an admin once they accept.`, 'success');
       },
       error: async (err: unknown) => {
         this.busy.set(false);
-        await this.toast(extractErrorMessage(err, 'Could not make that person an admin.'), 'danger');
+        await this.toast(extractErrorMessage(err, 'Could not invite that person.'), 'danger');
+      },
+    });
+  }
+
+  withdrawInvite(invite: CompetitionInvite): void {
+    if (!this.canManage() || this.busy()) return;
+    this.busy.set(true);
+    this.api.cancelInvite(this.competitionId, invite.id).subscribe({
+      next: () => {
+        this.pendingInvites.update((current) => current.filter((item) => item.id !== invite.id));
+        this.busy.set(false);
+        void this.toast('Invite cancelled.', 'success');
+      },
+      error: async (err: unknown) => {
+        this.busy.set(false);
+        await this.toast(extractErrorMessage(err, 'Could not cancel that invite.'), 'danger');
       },
     });
   }

@@ -17,6 +17,7 @@ User = get_user_model()
 
 from .models import (
     Competition,
+    CompetitionInvite,
     Membership,
     Participant,
     PointsPolicy,
@@ -527,21 +528,18 @@ def offer_team_pick(participant: Participant, user, actor) -> TeamPick:
     if participant.kind != Participant.Kind.TEAM:
         raise serializers.ValidationError({"user": "Pick profiles onto a team."})
 
-    membership = Membership.objects.filter(competition=participant.competition, user=user).first()
-    if membership is None:
-        invited_by = actor if getattr(actor, "is_authenticated", False) else None
-        Membership.objects.create(
-            competition=participant.competition,
-            user=user,
-            role=Role.MEMBER,
-            invited_by=invited_by,
-        )
-    elif membership.role in (Role.OWNER, Role.ADMIN):
+    # Someone who is not in the competition yet joins it only when they accept the pick.
+    role = (
+        Membership.objects.filter(competition=participant.competition, user=user)
+        .values_list("role", flat=True)
+        .first()
+    )
+    if role in (Role.OWNER, Role.ADMIN):
         if getattr(actor, "id", None) != user.id:
             raise serializers.ValidationError(
                 {"user": "An admin can only add themselves to a team."}
             )
-    elif membership.role != Role.MEMBER:
+    elif role not in (None, Role.MEMBER):
         raise serializers.ValidationError({"user": f"{user.get_full_name()} can't join a team."})
 
     competition_id = participant.competition_id
@@ -601,7 +599,11 @@ def _notify_team_invite(pick: TeamPick, actor, *, accepted: bool) -> None:
         data={
             "competition_id": str(team.competition_id),
             "pick_id": str(pick.id),
-            "path": f"/tabs/competitions/{team.competition_id}",
+            # Until they accept they may not see a private competition; My leagues has
+            # the Accept and Decline buttons.
+            "path": (
+                f"/tabs/competitions/{team.competition_id}" if accepted else "/tabs/competitions"
+            ),
         },
     )
 
@@ -955,6 +957,36 @@ def _enter_profile(participant: Participant, user, actor) -> RosterMember:
     return RosterMember.objects.create(
         participant=participant, user=user, name=user.get_full_name() or user.email
     )
+
+
+class CompetitionInviteSerializer(serializers.ModelSerializer):
+    user = UserSummarySerializer(read_only=True)
+    competition_name = serializers.CharField(source="competition.name", read_only=True)
+    competition_sport = serializers.CharField(source="competition.sport", read_only=True)
+    competition_is_private = serializers.BooleanField(
+        source="competition.is_private", read_only=True
+    )
+    invited_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CompetitionInvite
+        fields = [
+            "id",
+            "competition",
+            "competition_name",
+            "competition_sport",
+            "competition_is_private",
+            "user",
+            "role",
+            "status",
+            "invited_by_name",
+            "created_at",
+            "responded_at",
+        ]
+        read_only_fields = fields
+
+    def get_invited_by_name(self, obj: CompetitionInvite) -> str:
+        return obj.invited_by.get_full_name() if obj.invited_by else ""
 
 
 class MembershipSerializer(serializers.ModelSerializer):

@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import {
   AlertController,
@@ -23,15 +24,18 @@ import {
 import { AuthService } from '../../core/auth.service';
 import { ReleasesService } from '../../core/releases.service';
 import { ApiService } from '../../core/api.service';
+import { InvitesService } from '../../core/invites.service';
 import { extractErrorMessage } from '../../core/error-message';
-import type { Competition, TeamPick } from '../../core/models';
+import type { Competition } from '../../core/models';
 import { CompetitionCardComponent } from '../../shared/competition-card.component';
+import { InboxTrayComponent } from '../../shared/inbox-tray.component';
 import { PageHeroComponent } from '../../shared/page-hero.component';
 
 @Component({
   selector: 'fm-competition-list',
   standalone: true,
   imports: [
+    InboxTrayComponent,
     NgTemplateOutlet,
     PageHeroComponent,
     DatePipe,
@@ -58,6 +62,7 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
         <ion-title>{{ auth.isAuthenticated() ? 'My leagues' : 'Leagues' }}</ion-title>
         <ion-buttons slot="end">
           @if (auth.isAuthenticated()) {
+            <fm-inbox-tray />
             @if (releases.isOpen('games')) {
               <ion-button type="button" routerLink="/tabs/games" routerDirection="forward">
                 <ion-icon slot="start" name="trophy-outline" aria-hidden="true" />
@@ -83,19 +88,46 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
         @if (loading() || error() || competitions().length === 0) {
           <ng-container [ngTemplateOutlet]="createBanner" />
         }
-        @for (invite of invites(); track invite.id) {
+        @for (invite of competitionInvites.pending(); track invite.id) {
           <div class="pick-banner">
             <p>
-              <strong>{{ invite.team_name }}</strong> picked you in {{ invite.competition_name }}.
+              <strong>{{ invite.invited_by_name || 'An organiser' }}</strong> invited you to
+              <strong>{{ invite.competition_name }}</strong>.
             </p>
-            <ion-button size="small" (click)="acceptInvite(invite)" [disabled]="responding() === invite.id">
+            <ion-button
+              size="small"
+              (click)="competitionInvites.accept(invite)"
+              [disabled]="competitionInvites.answering() === invite.id"
+            >
               Accept
             </ion-button>
             <ion-button
               size="small"
               fill="outline"
-              (click)="declineInvite(invite)"
-              [disabled]="responding() === invite.id"
+              (click)="competitionInvites.decline(invite)"
+              [disabled]="competitionInvites.answering() === invite.id"
+            >
+              Decline
+            </ion-button>
+          </div>
+        }
+        @for (pick of competitionInvites.teamPicks(); track pick.id) {
+          <div class="pick-banner">
+            <p>
+              <strong>{{ pick.team_name }}</strong> picked you in {{ pick.competition_name }}.
+            </p>
+            <ion-button
+              size="small"
+              (click)="competitionInvites.answerPick(pick, 'accept')"
+              [disabled]="competitionInvites.answering() === pick.id"
+            >
+              Accept
+            </ion-button>
+            <ion-button
+              size="small"
+              fill="outline"
+              (click)="competitionInvites.answerPick(pick, 'decline')"
+              [disabled]="competitionInvites.answering() === pick.id"
             >
               Decline
             </ion-button>
@@ -235,14 +267,19 @@ export class CompetitionListPage {
   private readonly toasts = inject(ToastController);
 
   readonly competitions = signal<Competition[]>([]);
-  readonly invites = signal<TeamPick[]>([]);
-  readonly responding = signal<string | null>(null);
+  readonly competitionInvites = inject(InvitesService);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly refreshedAt = signal(new Date());
 
+  constructor() {
+    // A new invite or an answered one changes this list.
+    this.competitionInvites.arrived.pipe(takeUntilDestroyed()).subscribe(() => this.load(false));
+  }
+
   ionViewWillEnter(): void {
     this.load(this.competitions().length === 0);
+    this.competitionInvites.refresh();
   }
 
   private listQuery(): { mine?: boolean; show_on_landing?: boolean; page_size: number } {
@@ -266,14 +303,6 @@ export class CompetitionListPage {
         this.loading.set(false);
       },
     });
-    if (this.auth.isAuthenticated()) {
-      this.api.myPendingTeamPicks().subscribe({
-        next: (picks) => this.invites.set(picks),
-        error: () => this.invites.set([]),
-      });
-    } else {
-      this.invites.set([]);
-    }
   }
 
   refresh(event: RefresherCustomEvent): void {
@@ -285,43 +314,7 @@ export class CompetitionListPage {
       },
       error: () => void event.target.complete(),
     });
-    if (this.auth.isAuthenticated()) {
-      this.api.myPendingTeamPicks().subscribe({
-        next: (picks) => this.invites.set(picks),
-      });
-    }
-  }
-
-  acceptInvite(invite: TeamPick): void {
-    this.respondInvite(invite, 'accept');
-  }
-
-  declineInvite(invite: TeamPick): void {
-    this.respondInvite(invite, 'decline');
-  }
-
-  private respondInvite(invite: TeamPick, action: 'accept' | 'decline'): void {
-    if (this.responding()) return;
-    this.responding.set(invite.id);
-    const request =
-      action === 'accept'
-        ? this.api.acceptTeamPick(invite.competition, invite.id)
-        : this.api.declineTeamPick(invite.competition, invite.id);
-    request.subscribe({
-      next: () => {
-        this.responding.set(null);
-        this.invites.update((rows) => rows.filter((row) => row.id !== invite.id));
-        this.load(false);
-        void this.toast(
-          action === 'accept' ? `You joined ${invite.team_name}.` : 'Invite declined.',
-          'success',
-        );
-      },
-      error: (err: unknown) => {
-        this.responding.set(null);
-        void this.toast(extractErrorMessage(err, 'Could not update that invite.'), 'danger');
-      },
-    });
+    this.competitionInvites.refresh();
   }
 
   openCompetition(id: string): void {

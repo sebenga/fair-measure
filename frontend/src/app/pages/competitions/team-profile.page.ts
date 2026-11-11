@@ -609,20 +609,17 @@ export class TeamProfilePage implements OnInit {
     const email = this.inviteEmail.trim();
     if (!email || this.busy()) return;
     this.busy.set(true);
-    this.api.inviteMember(this.competitionId, { email, role: 'member' }).subscribe({
-      next: (membership) => {
-        this.memberships.update((current) => [...current, membership]);
+    // One invite: the team pick. Accepting it also brings them into the competition.
+    this.api.offerTeamPickByEmail(this.competitionId, this.participantId, email).subscribe({
+      next: () => {
+        this.busy.set(false);
         this.inviteEmail = '';
-        this.offer(membership.user.id);
+        this.refreshTeam();
+        void this.toast(`Invite sent to ${email}. They join the team once they accept.`, 'success');
       },
       error: (err: unknown) => {
-        const message = extractErrorMessage(err, 'Could not invite that person.');
-        if (message.toLowerCase().includes('already a member')) {
-          this.attachExisting(email);
-          return;
-        }
         this.busy.set(false);
-        void this.toast(message, 'danger');
+        void this.toast(extractErrorMessage(err, 'Could not invite that person.'), 'danger');
       },
     });
   }
@@ -690,32 +687,6 @@ export class TeamProfilePage implements OnInit {
       error: async (err: unknown) => {
         this.busy.set(false);
         await this.toast(extractErrorMessage(err, 'Could not pick that profile.'), 'danger');
-      },
-    });
-  }
-
-  private attachExisting(email: string): void {
-    this.api.listMembers(this.competitionId).subscribe({
-      next: (page) => {
-        this.memberships.set(page.results);
-        const membership = page.results.find(
-          (item) => item.member_email.toLowerCase() === email.toLowerCase(),
-        );
-        const selfAdmin =
-          !!membership &&
-          (membership.role === 'admin' || membership.role === 'owner') &&
-          membership.user.id === this.meId();
-        if (!membership || (membership.role !== 'member' && !selfAdmin)) {
-          this.busy.set(false);
-          void this.toast('That profile cannot join this team.', 'danger');
-          return;
-        }
-        this.inviteEmail = '';
-        this.offer(membership.user.id);
-      },
-      error: async (err: unknown) => {
-        this.busy.set(false);
-        await this.toast(extractErrorMessage(err, 'Could not look up that member.'), 'danger');
       },
     });
   }

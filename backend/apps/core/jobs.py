@@ -190,16 +190,50 @@ def dispatch_notification(job: str, data: dict) -> dict:
         )
         return {"sent": sent}
 
-    if job == "competition-invite":
-        competition = get_object_or_404(Competition, pk=data.get("competition_id"))
+    if job in {"competition-invite", "competition-invite-answered"}:
+        from apps.competitions.invites import role_words
+        from apps.competitions.models import CompetitionInvite
+
+        invite = get_object_or_404(
+            CompetitionInvite.objects.select_related("competition", "invited_by", "user"),
+            pk=data.get("invite_id"),
+        )
+        competition = invite.competition
+        if job == "competition-invite":
+            if invite.status != CompetitionInvite.Status.PENDING:
+                return {"sent": 0}
+            inviter = invite.invited_by.get_full_name() if invite.invited_by else "An organiser"
+            sent = notify_users(
+                [invite.user],
+                kind="competition-invite",
+                title=f"{inviter} invited you to {competition.name}",
+                body=f"Join as {role_words(invite.role)}. Accept or decline the invite.",
+                competition=competition,
+                # An invite needs an answer, so it is never muted.
+                category="invites",
+                data={
+                    "invite_id": str(invite.id),
+                    "competition_id": str(competition.id),
+                    "path": "/tabs/competitions",
+                },
+            )
+            return {"sent": sent}
+        if not invite.invited_by:
+            return {"sent": 0}
+        accepted = invite.status == CompetitionInvite.Status.ACCEPTED
+        who = invite.user.get_full_name()
         sent = notify_users(
-            User.objects.filter(pk=data.get("user_id")),
-            kind="invite",
-            title=f"You were added to {competition.name}",
-            body=f"{data.get('invited_by', 'An admin')} added you to the competition.",
+            [invite.invited_by],
+            kind="competition-invite-answered",
+            title=f"{who} {'joined' if accepted else 'declined'} {competition.name}",
+            body=(
+                f"They are now {role_words(invite.role)}."
+                if accepted
+                else "They said no to your invite."
+            ),
             competition=competition,
-            category="announcements",
-            data={"competition_id": str(competition.id)},
+            category="invites",
+            data={"invite_id": str(invite.id), "competition_id": str(competition.id)},
         )
         return {"sent": sent}
 

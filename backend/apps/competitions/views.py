@@ -27,8 +27,17 @@ from apps.core.permissions import (
     has_at_least,
 )
 
+from .invites import (
+    accept_invite,
+    cancel_invite,
+    decline_invite,
+    own_pending_invite,
+    pending_invites_for,
+    send_invite,
+)
 from .models import (
     Competition,
+    CompetitionInvite,
     Membership,
     Participant,
     PointsPolicy,
@@ -44,6 +53,7 @@ from .serializers import (
     ApplyPresetSerializer,
     CompetitionDetailSerializer,
     CompetitionListSerializer,
+    CompetitionInviteSerializer,
     CompetitionWriteSerializer,
     MembershipSerializer,
     ParticipantSerializer,
@@ -782,7 +792,12 @@ class RosterMemberViewSet(viewsets.ModelViewSet):
 
 @extend_schema_view(
     list=extend_schema(tags=["Members"], summary="List competition members"),
-    create=extend_schema(tags=["Members"], summary="Invite a member by user id or email"),
+    create=extend_schema(
+        tags=["Members"],
+        summary="Invite someone by user id or email",
+        description="Sends an invite. They become a member only once they accept it.",
+        responses={201: CompetitionInviteSerializer},
+    ),
     partial_update=extend_schema(tags=["Members"], summary="Change a member's role"),
     destroy=extend_schema(tags=["Members"], summary="Remove a member"),
 )
@@ -791,9 +806,11 @@ class MembershipViewSet(CompetitionScopedViewSet):
     serializer_class = MembershipSerializer
     basename = "membership"
 
-    def perform_create(self, serializer) -> None:
+    def create(self, request: Request, *args, **kwargs) -> Response:
         self._assert_can_write()
         competition = self.get_competition()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
         if data.get("user_id"):
@@ -805,27 +822,8 @@ class MembershipViewSet(CompetitionScopedViewSet):
                     {"email": "No Fair Measure account uses that email address yet."}
                 )
 
-        if Membership.objects.filter(competition=competition, user=user).exists():
-            raise ValidationError("That person is already a member.")
-
-        membership = Membership.objects.create(
-            competition=competition,
-            user=user,
-            role=data.get("role", Role.MEMBER),
-            invited_by=self.request.user,
-        )
-        serializer.instance = membership
-
-        enqueue_job(
-            Queues.NOTIFICATIONS,
-            "competition-invite",
-            {
-                "user_id": str(user.id),
-                "competition_id": str(competition.id),
-                "competition_name": competition.name,
-                "invited_by": self.request.user.get_full_name(),
-            },
-        )
+        invite = send_invite(competition, user, data.get("role", Role.MEMBER), request.user)
+        return Response(CompetitionInviteSerializer(invite).data, status=status.HTTP_201_CREATED)
 
     def perform_destroy(self, instance: Membership) -> None:
         self._assert_can_write()
@@ -838,6 +836,66 @@ class MembershipViewSet(CompetitionScopedViewSet):
         if serializer.instance.role == Role.OWNER:
             raise ValidationError("Transfer ownership before changing the owner's role.")
         serializer.save()
+
+
+class MyInviteListView(APIView):
+    """Invites waiting for the signed-in person's answer, private competitions included."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(tags=["Members"], responses={200: CompetitionInviteSerializer(many=True)})
+    def get(self, request: Request) -> Response:
+        return Response(
+            CompetitionInviteSerializer(pending_invites_for(request.user), many=True).data
+        )
+
+
+class InviteAcceptView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(tags=["Members"], request=None, responses={200: CompetitionInviteSerializer})
+    def post(self, request: Request, invite_pk) -> Response:
+        invite = own_pending_invite(request.user, invite_pk)
+        accept_invite(invite)
+        return Response(CompetitionInviteSerializer(invite).data)
+
+
+class InviteDeclineView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(tags=["Members"], request=None, responses={200: CompetitionInviteSerializer})
+    def post(self, request: Request, invite_pk) -> Response:
+        invite = own_pending_invite(request.user, invite_pk)
+        decline_invite(invite)
+        return Response(CompetitionInviteSerializer(invite).data)
+
+
+class CompetitionInviteListView(APIView):
+    """Admins see who has been invited and has not answered yet."""
+
+    permission_classes = [IsAuthenticated]
+
+    def _competition(self, request: Request, competition_pk) -> Competition:
+        competition = get_object_or_404(visible_competitions(request.user), pk=competition_pk)
+        if not has_at_least(competition, request.user, Role.ADMIN):
+            raise PermissionDenied("Only competition admins can see invites.")
+        return competition
+
+    @extend_schema(tags=["Members"], responses={200: CompetitionInviteSerializer(many=True)})
+    def get(self, request: Request, competition_pk) -> Response:
+        competition = self._competition(request, competition_pk)
+        invites = competition.invites.filter(
+            status=CompetitionInvite.Status.PENDING
+        ).select_related("user", "invited_by", "competition")
+        return Response(CompetitionInviteSerializer(invites, many=True).data)
+
+
+class CompetitionInviteCancelView(CompetitionInviteListView):
+    @extend_schema(tags=["Members"], responses={204: None})
+    def delete(self, request: Request, competition_pk, invite_pk) -> Response:
+        competition = self._competition(request, competition_pk)
+        cancel_invite(get_object_or_404(competition.invites, pk=invite_pk))
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @extend_schema_view(
@@ -1008,9 +1066,17 @@ class TeamPickListCreateView(APIView):
                 {"team_entry": "Add every team first, then start picking or drafting."}
             )
         user_id = request.data.get("user")
-        if not user_id:
+        email = str(request.data.get("email") or "").strip()
+        if user_id:
+            user = get_object_or_404(get_user_model(), pk=user_id)
+        elif email:
+            user = get_user_model().objects.filter(email__iexact=email).first()
+            if user is None:
+                raise ValidationError(
+                    {"email": "No Fair Measure account uses that email address yet."}
+                )
+        else:
             raise ValidationError({"user": "Choose a profile."})
-        user = get_object_or_404(get_user_model(), pk=user_id)
         pick = offer_team_pick(participant, user, request.user)
         return Response(TeamPickSerializer(pick).data, status=status.HTTP_201_CREATED)
 

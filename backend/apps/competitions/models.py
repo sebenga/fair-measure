@@ -392,6 +392,48 @@ class TeamPick(BaseModel):
         return f"{self.user_id} → {self.participant_id} ({self.status})"
 
 
+class CompetitionInvite(BaseModel):
+    """An invitation to join a competition. The person becomes a member only once they accept."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Waiting for an answer")
+        ACCEPTED = "accepted", _("Accepted")
+        DECLINED = "declined", _("Declined")
+        CANCELLED = "cancelled", _("Cancelled")
+
+    competition = models.ForeignKey(
+        Competition, on_delete=models.CASCADE, related_name="invites"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="competition_invites"
+    )
+    role = models.CharField(max_length=16, choices=Role.CHOICES, default=Role.MEMBER)
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="competition_invites_sent",
+    )
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.PENDING, db_index=True
+    )
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competition", "user"],
+                condition=models.Q(status="pending"),
+                name="unique_pending_competition_invite",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} → {self.competition_id} as {self.role} ({self.status})"
+
+
 class RosterMember(BaseModel):
     """An individual within a participant, so events can name a scorer."""
 

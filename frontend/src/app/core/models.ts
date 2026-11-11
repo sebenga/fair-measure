@@ -180,6 +180,21 @@ export interface RosterMember extends AvailabilityInfo {
   is_active: boolean;
 }
 
+/** An invitation to join a competition; nothing changes until the person accepts. */
+export interface CompetitionInvite {
+  id: string;
+  competition: string;
+  competition_name: string;
+  competition_sport: string;
+  competition_is_private: boolean;
+  user: UserSummary;
+  role: Role;
+  status: 'pending' | 'accepted' | 'declined' | 'cancelled';
+  invited_by_name: string;
+  created_at: string;
+  responded_at: string | null;
+}
+
 export interface TeamPick {
   id: string;
   participant: string;

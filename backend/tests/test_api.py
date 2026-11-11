@@ -1389,16 +1389,22 @@ def test_an_admin_can_appoint_another_admin_and_a_referee_scores_one_game(
     from apps.accounts.models import User
     from apps.fixtures.models import FixtureSide
 
-    appointed = api.post(
+    invited = api.post(
         f"/api/v1/competitions/{competition.id}/members",
         {"user_id": str(other_user.id), "role": "admin"},
         format="json",
     )
-    assert appointed.status_code == 201
-    assert appointed.data["role"] == "admin"
+    assert invited.status_code == 201
+    assert invited.data["role"] == "admin"
+    assert invited.data["status"] == "pending"
+    invitee = APIClient()
+    invitee.force_authenticate(user=other_user)
+    assert invitee.post(f"/api/v1/invites/{invited.data['id']}/accept").status_code == 200
+    appointed = competition.memberships.get(user=other_user)
+    assert appointed.role == "admin"
 
     changed = api.patch(
-        f"/api/v1/competitions/{competition.id}/members/{appointed.data['id']}",
+        f"/api/v1/competitions/{competition.id}/members/{appointed.id}",
         {"role": "member"},
         format="json",
     )
@@ -1687,13 +1693,14 @@ def test_a_game_needs_a_time_limit_and_a_referee_before_kickoff(api, other_user)
     assert no_overtime.status_code == 200
     assert no_overtime.data["overtime_minutes"] == 0
 
-    api.post(
+    invited = api.post(
         f"/api/v1/competitions/{competition_id}/members",
         {"user_id": str(other_user.id), "role": "scorer"},
         format="json",
     )
     scorer = APIClient()
     scorer.force_authenticate(user=other_user)
+    assert scorer.post(f"/api/v1/invites/{invited.data['id']}/accept").status_code == 200
     denied = scorer.patch(detail_url, {"overtime_minutes": 10}, format="json")
     assert denied.status_code == 403
 

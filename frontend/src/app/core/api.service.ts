@@ -7,6 +7,7 @@ import type {
   AppNotification,
   Comment,
   Competition,
+  CompetitionInvite,
   CompetitionDetail,
   CursorPaginated,
   Fixture,
@@ -343,6 +344,14 @@ export class ApiService {
     );
   }
 
+  /** Invites someone to the team by email; they join once they accept. */
+  offerTeamPickByEmail(competitionId: string, participantId: string, email: string) {
+    return this.http.post<TeamPick>(
+      `${this.base}/competitions/${competitionId}/participants/${participantId}/picks`,
+      { email },
+    );
+  }
+
   myPendingTeamPicks(): Observable<TeamPick[]> {
     return this.http.get<TeamPick[]>(`${this.base}/me/team-picks`);
   }
@@ -383,8 +392,28 @@ export class ApiService {
     );
   }
 
+  /** Sends an invite; the person becomes a member only once they accept. */
   inviteMember(competitionId: string, body: { email?: string; user_id?: string; role?: string }) {
-    return this.http.post<Membership>(`${this.base}/competitions/${competitionId}/members`, body);
+    return this.http.post<CompetitionInvite>(
+      `${this.base}/competitions/${competitionId}/members`,
+      body,
+    );
+  }
+
+  competitionInvites(competitionId: string): Observable<CompetitionInvite[]> {
+    return this.http.get<CompetitionInvite[]>(`${this.base}/competitions/${competitionId}/invites`);
+  }
+
+  cancelInvite(competitionId: string, inviteId: string) {
+    return this.http.delete<void>(`${this.base}/competitions/${competitionId}/invites/${inviteId}`);
+  }
+
+  myInvites(): Observable<CompetitionInvite[]> {
+    return this.http.get<CompetitionInvite[]>(`${this.base}/me/invites`);
+  }
+
+  answerInvite(inviteId: string, answer: 'accept' | 'decline') {
+    return this.http.post<CompetitionInvite>(`${this.base}/invites/${inviteId}/${answer}`, {});
   }
 
   updateMember(competitionId: string, membershipId: string, body: { role: string }) {

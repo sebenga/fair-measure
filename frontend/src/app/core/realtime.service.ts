@@ -14,6 +14,7 @@ export interface RealtimeMessage<T = Record<string, unknown>> {
 
 /** Every event the gateway can relay. Mirrors the names Django publishes. */
 const RELAYED_EVENTS = [
+  'notification.created',
   'competition.updated',
   'fixture.created',
   'fixture.updated',
@@ -218,6 +219,11 @@ interface PolledEvents {
   enabled: boolean;
   now: number;
   events: { id: string; event: string; payload: Record<string, unknown>; ts: number }[];
+}
+
+/** The signed-in person's own events, such as a new notification. */
+export function userRoom(id: string): string {
+  return `user:${id}`;
 }
 
 export function competitionRoom(id: string): string {

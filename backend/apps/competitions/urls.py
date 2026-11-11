@@ -2,8 +2,13 @@ from django.urls import path
 from rest_framework_nested import routers
 
 from .views import (
+    CompetitionInviteCancelView,
+    CompetitionInviteListView,
     CompetitionViewSet,
+    InviteAcceptView,
+    InviteDeclineView,
     MembershipViewSet,
+    MyInviteListView,
     MyPendingTeamPickListView,
     MyTeamPickListView,
     ParticipantViewSet,
@@ -41,6 +46,19 @@ participant_router = routers.NestedSimpleRouter(
 participant_router.register("roster", RosterMemberViewSet, basename="roster-member")
 
 urlpatterns = [
+    path("me/invites", MyInviteListView.as_view(), name="my-invites"),
+    path("invites/<uuid:invite_pk>/accept", InviteAcceptView.as_view(), name="invite-accept"),
+    path("invites/<uuid:invite_pk>/decline", InviteDeclineView.as_view(), name="invite-decline"),
+    path(
+        "competitions/<uuid:competition_pk>/invites",
+        CompetitionInviteListView.as_view(),
+        name="competition-invites",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/invites/<uuid:invite_pk>",
+        CompetitionInviteCancelView.as_view(),
+        name="competition-invite-cancel",
+    ),
     path(
         "me/team-picks",
         MyPendingTeamPickListView.as_view(),
