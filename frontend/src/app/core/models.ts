@@ -381,6 +381,8 @@ export interface LineupPlayer extends MatchPlayer {
   on_field: boolean;
   subbed_off: boolean;
   sent_off?: boolean;
+  /** Cards shown to the player in this match. */
+  cards?: { yellow: number; red: number };
   minutes?: number | null;
   rating?: string | null;
   stats?: Array<{ code: string; label: string; count: string }>;

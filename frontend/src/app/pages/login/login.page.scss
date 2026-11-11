@@ -46,8 +46,8 @@ form {
 }
 
 .field input:focus {
-  outline: 2px solid rgb(15 118 110 / 35%);
-  border-color: #0f766e;
+  outline: 2px solid rgb(14 165 233 / 30%);
+  border-color: var(--ion-color-primary);
 }
 
 .password-row {
@@ -67,8 +67,8 @@ form {
 }
 
 .password-row:focus-within {
-  outline: 2px solid rgb(15 118 110 / 35%);
-  border-color: #0f766e;
+  outline: 2px solid rgb(14 165 233 / 30%);
+  border-color: var(--ion-color-primary);
 }
 
 .ghost,
@@ -121,9 +121,9 @@ form {
   overflow: hidden;
   margin-top: 4px;
   border: 0;
-  background: linear-gradient(90deg, #0f766e, #0d9488);
+  background: var(--fm-gradient);
   color: #fff;
-  box-shadow: 0 8px 18px rgb(15 118 110 / 28%);
+  box-shadow: 0 8px 18px rgb(14 116 144 / 26%);
 }
 
 

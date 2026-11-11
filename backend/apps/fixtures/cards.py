@@ -60,6 +60,21 @@ def sent_off_ids(fixture) -> set:
     )
 
 
+def card_counts(fixture) -> dict:
+    """Yellow and red cards per player in one match, for marking shirts."""
+
+    counts: dict = {}
+    rows = ScoreEvent.objects.filter(
+        fixture=fixture,
+        player__isnull=False,
+        scoring_category__code__in=(YELLOW, RED),
+    ).values_list("player_id", "scoring_category__code", "quantity")
+    for player_id, code, quantity in rows:
+        cards = counts.setdefault(player_id, {"yellow": 0, "red": 0})
+        cards["yellow" if code == YELLOW else "red"] += int(quantity or 1)
+    return counts
+
+
 def assert_can_record_card(fixture, player_id, category) -> None:
     """A player who is already off cannot pick up another card."""
 

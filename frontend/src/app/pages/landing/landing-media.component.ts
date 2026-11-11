@@ -82,8 +82,8 @@ const MEDIA = 'assets/landing';
       position: absolute;
       inset: 0;
       background:
-        linear-gradient(90deg, rgb(4 10 22 / 82%) 0%, rgb(4 10 22 / 55%) 45%, rgb(4 10 22 / 10%) 100%),
-        linear-gradient(0deg, rgb(4 10 22 / 70%) 0%, transparent 45%);
+        linear-gradient(0deg, rgb(4 10 22 / 72%) 0%, transparent 50%),
+        linear-gradient(135deg, rgb(13 104 97 / 90%) 0%, rgb(13 104 97 / 62%) 45%, rgb(14 165 233 / 30%) 100%);
     }
     .controls {
       position: absolute;

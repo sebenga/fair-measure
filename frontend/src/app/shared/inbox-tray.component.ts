@@ -262,7 +262,7 @@ import type { AppNotification, CompetitionInvite } from '../core/models';
 
       .answer .accept {
         border: 0;
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
       }
 

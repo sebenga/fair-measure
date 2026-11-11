@@ -549,7 +549,7 @@ interface ReportDraft {
         opacity: 0.5;
       }
       .actions .primary {
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
       }
       .actions .ghost {

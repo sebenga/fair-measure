@@ -95,7 +95,7 @@ import { PostComposerComponent } from '../../../shared/post-composer.component';
         padding: 7px 16px;
         border: none;
         border-radius: 999px;
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: #fff;
         font-size: 0.8rem;
         font-weight: 600;

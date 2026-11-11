@@ -29,7 +29,7 @@
     font-weight: 600;
 
     &.selected {
-      background: var(--ion-color-primary);
+      background: var(--fm-gradient);
       color: var(--ion-color-primary-contrast, #fff);
       border-color: transparent;
     }
@@ -182,7 +182,7 @@
 
     &.on {
       border-color: var(--ion-color-primary);
-      background: var(--ion-color-primary);
+      background: var(--fm-gradient);
       color: var(--fm-on-fill);
     }
   }

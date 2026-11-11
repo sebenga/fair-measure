@@ -295,7 +295,7 @@ export class MatchCentreComponent implements OnInit {
   private readonly leader = signal<{ name: string; points: string } | null>(null);
   readonly flash = signal<string | null>(null);
   /** The numbers as drawn right now, rolling up towards the real values. */
-  readonly shown = signal<Record<string, number>>({});
+  readonly shown = signal<Partial<Record<string, number>>>({});
 
   private scores = new Map<string, number>();
   private flashTimer: ReturnType<typeof setTimeout> | undefined;

@@ -397,7 +397,7 @@ interface BarcodeDetectorLike {
       }
       .scale button.on {
         border-color: var(--ion-color-primary);
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
       }
       .anchors {

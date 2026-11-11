@@ -40,8 +40,8 @@ type Moment = {
           <span></span>
           <span>{{ teamName(1) }}</span>
         </div>
-        @for (moment of moments(); track moment.id) {
-          <div class="moment">
+        @for (moment of moments(); track moment.id; let index = $index) {
+          <div class="moment" [class.away]="!moment.home" [style.--i]="index">
             <span class="home">
               @if (moment.home) {
                 <ng-container *ngTemplateOutlet="what; context: { $implicit: moment }" />
@@ -75,7 +75,7 @@ type Moment = {
 
     @if (ratings().length) {
       <h3 class="fm-section-title">Match ratings</h3>
-      <ul class="fm-card rates">
+      <ul class="fm-card rates fm-stagger">
         @for (row of ratings(); track row.id) {
           <li>
             <span>{{ row.player_name }}</span>
@@ -150,6 +150,35 @@ type Moment = {
         align-items: center;
         gap: 6px;
         font-size: 0.88rem;
+      }
+      .moment:not(.heads) {
+        animation: moment-in 0.4s var(--fm-ease-out, ease-out) backwards;
+        animation-delay: calc(min(var(--i, 0), 12) * 45ms);
+      }
+      .moment.away {
+        animation-name: moment-in-away;
+      }
+      .moment .card {
+        animation: card-raised 0.5s var(--fm-ease-out, ease-out) backwards;
+        animation-delay: calc(min(var(--i, 0), 12) * 45ms + 0.15s);
+      }
+      @keyframes moment-in {
+        from {
+          opacity: 0;
+          transform: translateX(-14px);
+        }
+      }
+      @keyframes moment-in-away {
+        from {
+          opacity: 0;
+          transform: translateX(14px);
+        }
+      }
+      @keyframes card-raised {
+        from {
+          opacity: 0;
+          transform: translateY(6px) rotate(-20deg);
+        }
       }
       .moment.heads {
         padding-bottom: 6px;

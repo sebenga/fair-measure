@@ -52,8 +52,8 @@ interface Activity {
           <span></span>
           <span>{{ teamName(1) }}</span>
         </div>
-        @for (item of activity(); track item.id) {
-          <div class="row">
+        @for (item of activity(); track item.id; let index = $index) {
+          <div class="row" [class.from-away]="item.side === 1" [style.--i]="index">
             <div class="cell home">
               @if (item.side === 0) {
                 <ng-container *ngTemplateOutlet="entry; context: { $implicit: item }" />
@@ -75,8 +75,8 @@ interface Activity {
       </div>
     } @else {
       <div class="fm-card board single">
-        @for (item of activity(); track item.id) {
-          <div class="row">
+        @for (item of activity(); track item.id; let index = $index) {
+          <div class="row" [style.--i]="index">
             <div class="mid">
               <span class="min">{{ minuteLabel(item) }}</span>
             </div>
@@ -176,6 +176,36 @@ interface Activity {
       .row:last-child {
         border-bottom: 0;
       }
+      .row {
+        animation: row-in 0.4s var(--fm-ease-out, ease-out) backwards;
+        animation-delay: calc(min(var(--i, 0), 12) * 40ms);
+      }
+      .row.from-away {
+        animation-name: row-in-away;
+      }
+      .entry[data-kind='yellow'] .card,
+      .entry[data-kind='red'] .card {
+        animation: card-raised 0.5s var(--fm-ease-out, ease-out) backwards;
+        animation-delay: calc(min(var(--i, 0), 12) * 40ms + 0.15s);
+      }
+      @keyframes row-in {
+        from {
+          opacity: 0;
+          transform: translateX(-14px);
+        }
+      }
+      @keyframes row-in-away {
+        from {
+          opacity: 0;
+          transform: translateX(14px);
+        }
+      }
+      @keyframes card-raised {
+        from {
+          opacity: 0;
+          transform: translateY(6px) rotate(-20deg);
+        }
+      }
       .single .row {
         grid-template-columns: 48px 1fr;
       }
@@ -193,7 +223,7 @@ interface Activity {
       .sc {
         padding: 1px 6px;
         border-radius: 999px;
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
         font-size: 0.7rem;
         font-weight: 800;

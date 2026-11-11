@@ -149,7 +149,35 @@ ion-button.button-solid.ion-color-primary {
   --background: var(--fm-gradient);
   --background-hover: var(--fm-gradient);
   --background-activated: var(--fm-gradient);
-  --box-shadow: 0 8px 18px rgba(15, 118, 110, 0.24);
+  --box-shadow: 0 8px 18px rgba(14, 116, 144, 0.26);
+}
+
+ion-toggle {
+  --track-background-checked: var(--fm-gradient);
+}
+
+ion-fab-button:not(.ion-color),
+ion-fab-button.ion-color-primary {
+  --background: var(--fm-gradient);
+  --background-activated: var(--fm-gradient);
+  --background-hover: var(--fm-gradient);
+  --box-shadow: 0 10px 22px rgba(14, 116, 144, 0.32);
+}
+
+// The open tab carries the brand sweep as a short bar along its top edge.
+ion-tab-button {
+  position: relative;
+}
+
+ion-tab-button.tab-selected::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 30%;
+  right: 30%;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--fm-gradient);
 }
 
 ion-button.button-outline {
@@ -172,7 +200,7 @@ ion-segment {
 
 ion-segment-button {
   --border-radius: 999px;
-  --indicator-color: var(--ion-color-primary);
+  --indicator-color: var(--fm-gradient);
   --color-checked: var(--fm-on-fill);
   min-height: 34px;
   font-weight: 700;
@@ -217,8 +245,8 @@ label.field > textarea {
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
-  outline: 2px solid rgba(15, 118, 110, 0.35);
-  border-color: #0f766e;
+  outline: 2px solid rgb(14 165 233 / 30%);
+  border-color: var(--ion-color-primary);
 }
 
 .fm-empty {

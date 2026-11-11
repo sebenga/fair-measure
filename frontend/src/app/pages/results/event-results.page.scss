@@ -9,7 +9,7 @@
   padding: 18px;
   border-radius: 20px;
   color: #fff;
-  background: linear-gradient(135deg, var(--ion-color-primary), var(--ion-color-secondary));
+  background: var(--fm-gradient);
 
   h2 {
     margin: 2px 0 10px;
@@ -87,7 +87,7 @@
   }
 
   .badge.ok {
-    background: var(--ion-color-primary);
+    background: var(--fm-gradient);
     color: #fff;
   }
 }
@@ -295,7 +295,7 @@
   padding: 10px 18px;
   border: 0;
   border-radius: 999px;
-  background: var(--ion-color-primary);
+  background: var(--fm-gradient);
   color: var(--ion-color-primary-contrast);
   font: inherit;
   font-weight: 700;

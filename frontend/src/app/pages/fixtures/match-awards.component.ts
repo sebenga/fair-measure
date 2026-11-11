@@ -125,7 +125,7 @@ import { RealtimeService } from '../../core/realtime.service';
         padding: 6px 12px;
         border: none;
         border-radius: 8px;
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: #fff;
         font-weight: 600;
         cursor: pointer;

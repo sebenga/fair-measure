@@ -574,7 +574,7 @@ const KITS: Array<[string, string]> = [
       }
 
       .slot-filters button.on {
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
       }
 

@@ -70,8 +70,8 @@ interface Draft {
       @if (side.lineup; as lineup) {
         @if (pitchSlots(side).length) {
           <div class="pitch" [attr.aria-label]="side.name + ' line-up'">
-            @for (row of rows(pitchSlots(side)); track $index) {
-              <div class="pitch-row">
+            @for (row of rows(pitchSlots(side)); track $index; let index = $index, count = $count) {
+              <div class="pitch-row" [style.--i]="count - 1 - index">
                 @for (slot of row; track slot.index) {
                   @if (starterAt(side, slot.index); as starter) {
                     @let player = onPitch(side, starter);
@@ -142,6 +142,7 @@ interface Draft {
                     @if (lineup.captain_id === player.player_id) {
                       <i class="badge inline" aria-label="Captain">C</i>
                     }
+                    <ng-container *ngTemplateOutlet="cardMarks; context: { $implicit: player }" />
                   </button>
                 } @else {
                   <span class="num">{{ player.number ?? '' }}</span>
@@ -157,6 +158,7 @@ interface Draft {
                   @if (lineup.captain_id === player.player_id) {
                     <i class="badge inline" aria-label="Captain">C</i>
                   }
+                  <ng-container *ngTemplateOutlet="cardMarks; context: { $implicit: player }" />
                 }
               </li>
             }
@@ -249,6 +251,19 @@ interface Draft {
       }
     </ng-template>
 
+    <ng-template #cardMarks let-player>
+      @if (cardLabel(player); as label) {
+        <span class="cards" role="img" [attr.aria-label]="label" [attr.title]="label">
+          @if (player.cards?.yellow) {
+            <i class="card yellow"></i>
+          }
+          @if (player.cards?.red) {
+            <i class="card red"></i>
+          }
+        </span>
+      }
+    </ng-template>
+
     <ng-template #shirtBody let-player let-lineup="lineup" let-replaced="replaced">
       @if (lineup.captain_id === player.player_id) {
         <i class="badge" aria-label="Captain">C</i>
@@ -256,6 +271,7 @@ interface Draft {
       @if (replaced) {
         <i class="badge came-on" [attr.aria-label]="'Came on for ' + replaced.name">↑</i>
       }
+      <ng-container *ngTemplateOutlet="cardMarks; context: { $implicit: player }" />
       <span class="kit">{{ player.number ?? '' }}</span>
       <span class="who">
         <b>{{ shortName(player.name) }}</b>
@@ -637,8 +653,66 @@ interface Draft {
         color: inherit;
         cursor: pointer;
       }
-      .shirt.off {
+      .shirt.off .kit,
+      .shirt.off .who {
         opacity: 0.55;
+      }
+      .cards {
+        position: absolute;
+        top: 26px;
+        right: 4px;
+        z-index: 1;
+        display: flex;
+        pointer-events: none;
+      }
+      .card {
+        display: block;
+        width: 13px;
+        height: 18px;
+        border-radius: 2px;
+        border: 1px solid rgb(0 0 0 / 35%);
+        box-shadow: 0 2px 5px rgb(0 0 0 / 35%);
+        transform: rotate(10deg);
+      }
+      .card.yellow {
+        background: #facc15;
+      }
+      .card.red {
+        background: #dc2626;
+      }
+      .card + .card {
+        margin-left: -7px;
+        transform: rotate(18deg);
+      }
+      .pitch-row {
+        animation: row-rise 0.45s var(--fm-ease-out, ease-out) backwards;
+        animation-delay: calc(var(--i, 0) * 70ms);
+      }
+      .card {
+        animation: card-shown 0.5s var(--fm-ease-out, ease-out) backwards;
+      }
+      .card + .card {
+        animation-delay: 0.2s;
+      }
+      @keyframes row-rise {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+      }
+      @keyframes card-shown {
+        from {
+          opacity: 0;
+          transform: translateY(10px) rotate(-25deg) scale(0.7);
+        }
+      }
+      .list .cards {
+        position: static;
+        margin-left: 6px;
+      }
+      .list .card,
+      .list .card + .card {
+        transform: none;
       }
       .empty {
         display: grid;
@@ -753,7 +827,7 @@ interface Draft {
       }
       .pick.on {
         border-color: var(--ion-color-primary);
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
       }
       .numbers {
@@ -796,7 +870,7 @@ interface Draft {
         cursor: not-allowed;
       }
       .actions .primary {
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
       }
       .actions .ghost {
@@ -915,7 +989,7 @@ export class MatchDayComponent implements OnInit {
   ngOnInit(): void {
     this.load();
     this.realtime
-      .onAny<{ fixture_id: string }>(['fixture.updated'])
+      .onAny<{ fixture_id: string }>(['fixture.updated', 'score.recorded', 'score.corrected', 'score.removed'])
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((message) => {
         if (message.payload.fixture_id === this.fixtureId() && !this.draft()) this.load();
@@ -1057,9 +1131,21 @@ export class MatchDayComponent implements OnInit {
   }
 
   pressLabel(player: LineupPlayer, replaced: LineupPlayer | null): string {
-    if (this.rating()) return `Stats and rating for ${player.name}`;
+    const booked = this.cardLabel(player);
+    const notes = `${replaced ? `, on for ${replaced.name}` : ''}${booked ? `, ${booked.toLowerCase()}` : ''}`;
+    if (this.rating()) return `Stats and rating for ${player.name}${notes}`;
     const action = this.day()?.can_substitute ? 'Goal, card or substitution' : 'Record a goal or card';
-    return `${action} for ${player.name}${replaced ? `, on for ${replaced.name}` : ''}`;
+    return `${action} for ${player.name}${notes}`;
+  }
+
+  /** Words for the cards a player has been shown, or '' when they have none. */
+  cardLabel(player: LineupPlayer): string {
+    const yellow = player.cards?.yellow ?? 0;
+    const red = player.cards?.red ?? 0;
+    if (red && yellow >= 2) return 'Sent off: second yellow card';
+    if (red) return yellow ? 'Yellow card, then sent off' : 'Red card: sent off';
+    if (yellow > 1) return `${yellow} yellow cards`;
+    return yellow ? 'Yellow card' : '';
   }
 
   /** Who is in a starter's position now: the last player to come on for them, or the starter. */

@@ -217,11 +217,11 @@ interface CupStep {
 
       .steps li.done i,
       .steps li.now i {
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
       }
 
       .steps li.done:not(:last-child)::after {
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
       }
 
       .steps li.now i {

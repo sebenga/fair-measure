@@ -201,8 +201,9 @@ const INTERESTS: Record<Audience, string[]> = {
       position: absolute;
       inset: 0;
       background:
-        linear-gradient(160deg, rgb(15 118 110 / 88%) 0%, rgb(4 10 22 / 88%) 70%),
-        linear-gradient(0deg, rgb(4 10 22 / 50%), transparent);
+        linear-gradient(0deg, rgb(4 10 22 / 45%), transparent 70%),
+        var(--fm-gradient);
+      opacity: 0.92;
     }
     .pitch-copy {
       position: relative;
@@ -401,9 +402,9 @@ const INTERESTS: Record<Audience, string[]> = {
     }
     .primary {
       border: 0;
-      background: linear-gradient(90deg, #0f766e, #0d9488);
+      background: var(--fm-gradient);
       color: #fff;
-      box-shadow: 0 8px 18px rgb(15 118 110 / 28%);
+      box-shadow: 0 8px 18px rgb(14 116 144 / 26%);
     }
     .primary:disabled {
       opacity: 0.6;

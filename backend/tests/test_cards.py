@@ -5,7 +5,14 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
 from apps.competitions.models import Competition, Participant, RosterMember
-from apps.fixtures.models import Fixture, FixtureRater, FixtureSide, ScoreEvent
+from apps.fixtures.models import (
+    Fixture,
+    FixtureLineup,
+    FixtureRater,
+    FixtureSide,
+    LineupEntry,
+    ScoreEvent,
+)
 
 User = get_user_model()
 
@@ -66,6 +73,31 @@ def test_two_yellow_cards_become_a_red(api, match):
 
     third = _card(api, fixture, side, player, codes["yellow-card"], 70)
     assert third.status_code == 400
+
+
+def test_team_sheet_marks_each_players_cards(api, match):
+    competition, fixture, side, player = match
+    codes = _codes(api, competition)
+    clean = RosterMember.objects.create(participant=side.participant, name="Clean", number=7)
+    lineup = FixtureLineup.objects.create(fixture=fixture, side=side)
+    for order, member in enumerate((player, clean)):
+        LineupEntry.objects.create(
+            lineup=lineup, player=member, role=LineupEntry.Role.STARTER, slot=order, position="MF", order=order
+        )
+    url = f"/api/v1/competitions/{competition.id}/fixtures/{fixture.id}/team-sheets"
+
+    def cards():
+        sheet = api.get(url).data
+        starters = next(item for item in sheet["sides"] if item["side_id"] == str(side.id))["lineup"]["starters"]
+        return {row["name"]: row["cards"] for row in starters}
+
+    assert cards() == {"Booked": {"yellow": 0, "red": 0}, "Clean": {"yellow": 0, "red": 0}}
+
+    _card(api, fixture, side, player, codes["yellow-card"], 18)
+    assert cards()["Booked"] == {"yellow": 1, "red": 0}
+
+    _card(api, fixture, side, player, codes["yellow-card"], 40)
+    assert cards() == {"Booked": {"yellow": 2, "red": 1}, "Clean": {"yellow": 0, "red": 0}}
 
 
 def test_a_red_card_stops_the_players_rating(api, match):

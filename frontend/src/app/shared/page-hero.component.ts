@@ -1,8 +1,8 @@
 import { ChangeDetectionStrategy, Component, booleanAttribute, input } from '@angular/core';
 
 /**
- * The landing page banner for app pages: a match-day photo under the teal
- * overlay, with an eyebrow, a headline and room for buttons (projected).
+ * The landing page banner for app pages: a match-day photo under the brand
+ * gradient, with an eyebrow, a headline and room for buttons (projected).
  */
 @Component({
   selector: 'fm-page-hero',
@@ -46,8 +46,9 @@ import { ChangeDetectionStrategy, Component, booleanAttribute, input } from '@an
       position: absolute;
       inset: 0;
       background:
-        linear-gradient(160deg, rgb(15 118 110 / 80%) 0%, rgb(4 10 22 / 84%) 72%),
-        linear-gradient(0deg, rgb(4 10 22 / 40%), transparent);
+        linear-gradient(0deg, rgb(4 10 22 / 35%), transparent 70%),
+        var(--fm-gradient);
+      opacity: 0.9;
     }
     .copy {
       position: relative;

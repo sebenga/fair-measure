@@ -370,7 +370,7 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
         padding: 20px 18px;
         border-radius: var(--fm-radius);
         color: #fff;
-        background: linear-gradient(135deg, var(--ion-color-primary-shade), var(--ion-color-secondary));
+        background: var(--fm-gradient);
         box-shadow: var(--fm-shadow);
 
         h2 {

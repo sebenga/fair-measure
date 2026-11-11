@@ -46,7 +46,7 @@ import { GamesService } from '../../core/games.service';
         transition: background 0.18s ease, color 0.18s ease;
       }
       .follow.on {
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
       }
       .follow:disabled {

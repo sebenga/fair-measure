@@ -304,9 +304,10 @@ def _side_payload(
 ) -> dict:
     lineup = getattr(side, "lineup", None)
     side_subs = [sub for sub in subs if sub.side_id == side.id]
-    from .cards import sent_off_ids
+    from .cards import card_counts, sent_off_ids
 
     dismissed = sent_off_ids(fixture)
+    cards = card_counts(fixture)
     on, bench_left, off = _field_state(lineup, side_subs, dismissed)
     entries = list(lineup.entries.select_related("player").all()) if lineup else []
     squad = [
@@ -331,6 +332,7 @@ def _side_payload(
             "on_field": entry.player_id in on,
             "subbed_off": entry.player_id in off,
             "sent_off": entry.player_id in dismissed,
+            "cards": cards.get(entry.player_id, {"yellow": 0, "red": 0}),
             "minutes": minutes.get(entry.player_id),
             "rating": ratings.get(entry.player_id),
             "stats": stats.get(entry.player_id, []),

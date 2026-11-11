@@ -300,7 +300,7 @@ import { ScoutingService } from '../../core/scouting.service';
         padding: 18px;
         border-radius: 20px;
         color: #fff;
-        background: linear-gradient(135deg, var(--ion-color-primary), var(--ion-color-secondary));
+        background: var(--fm-gradient);
 
         h1 {
           margin: 2px 0 4px;

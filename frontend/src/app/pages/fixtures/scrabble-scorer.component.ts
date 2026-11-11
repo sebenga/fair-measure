@@ -276,7 +276,7 @@ interface DraftWord {
         text-transform: uppercase;
       }
       .tiny.on {
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
       }
       .mults,
@@ -304,7 +304,7 @@ interface DraftWord {
         color: #fff;
       }
       .primary {
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
       }
       .ghost,

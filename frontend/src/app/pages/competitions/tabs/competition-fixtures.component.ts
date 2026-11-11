@@ -263,7 +263,7 @@ interface FixtureGroup {
         padding: 8px 16px;
         border: 0;
         border-radius: 999px;
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
         font: inherit;
         font-weight: 700;

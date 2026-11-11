@@ -77,7 +77,7 @@ nav button {
   border-radius: 8px;
   display: grid;
   place-items: center;
-  background: var(--teal);
+  background: var(--fm-gradient);
 
   span {
     width: 9px;
@@ -120,8 +120,9 @@ nav {
 }
 
 .primary {
-  background: var(--teal);
+  background: var(--fm-gradient);
   color: var(--fm-on-fill);
+  box-shadow: 0 8px 18px rgb(14 116 144 / 26%);
 }
 
 .primary.block,

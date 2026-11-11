@@ -132,7 +132,7 @@ const RECOMMENDATION: Record<string, string> = { monitor: 'Monitor', trial: 'Tri
       .bar span {
         display: block;
         height: 100%;
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
       }
       .grades {
         display: grid;

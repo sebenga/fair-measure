@@ -271,7 +271,7 @@ import { RealtimeService } from '../../core/realtime.service';
         padding: 9px 14px;
         border: 0;
         border-radius: 999px;
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
         font: inherit;
         font-weight: 700;
@@ -292,7 +292,7 @@ import { RealtimeService } from '../../core/realtime.service';
         cursor: pointer;
       }
       .sheet-head .close {
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
       }
       .sheet-nav button:disabled {
@@ -544,7 +544,7 @@ import { RealtimeService } from '../../core/realtime.service';
       }
       .marks button.on {
         border-color: var(--ion-color-primary);
-        background: var(--ion-color-primary);
+        background: var(--fm-gradient);
         color: var(--ion-color-primary-contrast);
       }
       .marks button:disabled,

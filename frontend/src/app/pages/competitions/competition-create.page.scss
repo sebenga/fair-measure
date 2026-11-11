@@ -39,7 +39,7 @@
 
     .num {
       border-color: var(--ion-color-primary);
-      background: var(--ion-color-primary);
+      background: var(--fm-gradient);
       color: var(--fm-on-fill);
     }
   }
@@ -317,7 +317,7 @@
       font-size: 0.7rem;
       font-weight: 800;
       color: var(--fm-on-fill);
-      background: var(--ion-color-primary);
+      background: var(--fm-gradient);
       animation: fm-pop 0.45s var(--fm-ease-spring);
     }
   }
@@ -456,7 +456,7 @@
 
     &.on {
       border-color: var(--ion-color-primary);
-      background: var(--ion-color-primary);
+      background: var(--fm-gradient);
       color: var(--fm-on-fill);
     }
   }

@@ -249,8 +249,8 @@ const TINTS = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
       cursor: pointer;
     }
     .picker button.on {
-      border-color: #0f766e;
-      background: #0f766e;
+      border-color: transparent;
+      background: var(--fm-gradient);
       color: #fff;
     }
     @media (min-width: 880px) {
@@ -297,7 +297,7 @@ const TINTS = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
     .dots button.on {
       width: 20px;
       border-radius: 999px;
-      background: #0f766e;
+      background: var(--fm-gradient);
     }
     @media (prefers-reduced-motion: reduce) {
       .slide,

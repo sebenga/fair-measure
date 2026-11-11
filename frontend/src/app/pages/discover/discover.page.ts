@@ -17,7 +17,6 @@ import {
   IonContent,
   IonHeader,
   IonIcon,
-  IonSearchbar,
   IonSpinner,
   IonTitle,
   IonToolbar,
@@ -65,7 +64,6 @@ const YOUR_LEAGUE_HERE: MarketingPlacement = {
 };
 
 const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
-import { PageHeroComponent } from '../../shared/page-hero.component';
 import { SponsorShowcaseComponent } from '../landing/sponsor-showcase.component';
 import { CompetitionStripComponent } from '../../shared/competition-strip.component';
 
@@ -74,14 +72,12 @@ import { CompetitionStripComponent } from '../../shared/competition-strip.compon
   standalone: true,
   imports: [
     CompetitionStripComponent,
-    PageHeroComponent,
     SponsorShowcaseComponent,
     IonHeader,
     IonToolbar,
     IonTitle,
     IonButtons,
     IonContent,
-    IonSearchbar,
     IonSpinner,
     IonIcon,
     IonButton,
@@ -101,16 +97,56 @@ import { CompetitionStripComponent } from '../../shared/competition-strip.compon
           <fm-inbox-tray />
         </ion-buttons>
       </ion-toolbar>
-      <ion-toolbar>
-        <ion-searchbar
-          placeholder="Search public competitions"
-          [debounce]="0"
-          (ionInput)="onQuery($any($event).detail.value ?? '')"
-        />
-      </ion-toolbar>
     </ion-header>
 
     <ion-content fullscreen="true">
+      <section class="discover-top" aria-label="Find a competition">
+        <span class="field" aria-hidden="true"></span>
+        <ion-icon class="ball" name="football-outline" aria-hidden="true" />
+        <p class="pulse-line">
+          @if (inPlay()) {
+            <span class="dot" aria-hidden="true"></span>
+            <b>{{ inPlay() }}</b> in play ·
+          }
+          <b>{{ publicCount() }}</b> {{ query() ? 'matching' : 'public' }}
+          {{ publicCount() === 1 ? 'competition' : 'competitions' }}
+        </p>
+        <h2>Find your next match</h2>
+        <label class="search" [class.open]="searchOpen() || typed()">
+          <ion-icon name="search-outline" aria-hidden="true" />
+          <input
+            type="search"
+            enterkeyhint="search"
+            placeholder="Search competitions"
+            aria-label="Search public competitions"
+            [value]="typed()"
+            (input)="type($any($event.target).value)"
+            (focus)="searchOpen.set(true)"
+            (blur)="searchOpen.set(false)"
+          />
+          @if (typed()) {
+            <button type="button" class="clear" aria-label="Clear search" (click)="type('')">
+              <ion-icon name="close-outline" aria-hidden="true" />
+            </button>
+          }
+        </label>
+        @if (sports().length) {
+          <div class="sports" role="group" aria-label="Browse by sport">
+            <button type="button" [class.on]="!query()" style="--i: 0" (click)="type('')">All</button>
+            @for (sport of sports(); track sport; let index = $index) {
+              <button
+                type="button"
+                [class.on]="query().toLowerCase() === sport.toLowerCase()"
+                [style.--i]="index + 1"
+                (click)="type(sport)"
+              >
+                {{ sport }}
+              </button>
+            }
+          </div>
+        }
+      </section>
+
       @if (loading()) {
         <div class="centered"><ion-spinner name="crescent" /></div>
       } @else if (error()) {
@@ -125,13 +161,6 @@ import { CompetitionStripComponent } from '../../shared/competition-strip.compon
           [title]="query() ? 'Matching competitions' : 'Competitions'"
           [competitions]="topCompetitions()"
           (open)="open($event)"
-        />
-        <fm-page-hero
-          eyebrow="Discover"
-          title="What's happening across Fair Measure"
-          subtitle="Results, ratings, standout players and the conversation from public competitions."
-          image="assets/landing/hero.jpg"
-          compact
         />
         <div class="discover-shell">
           <aside class="sponsored-rail left" aria-label="Corporate marketing">
@@ -331,6 +360,14 @@ export class DiscoverPage implements OnInit {
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly query = signal('');
+  /** What is in the search box right now; the search itself waits for a pause in typing. */
+  readonly typed = signal('');
+  readonly searchOpen = signal(false);
+  /** Every sport seen on Discover, kept when a search narrows the list. */
+  private readonly seenSports = signal<string[]>([]);
+  readonly sports = computed(() => this.seenSports().slice(0, 8));
+  readonly inPlay = computed(() => this.topCompetitions().filter((row) => row.status === 'active').length);
+  readonly publicCount = computed(() => this.topCompetitions().length);
   private readonly inbox = viewChild(InboxTrayComponent);
 
   readonly featured = computed(() =>
@@ -451,6 +488,7 @@ export class DiscoverPage implements OnInit {
       .subscribe({
         next: (page) => {
           this.results.set(page.results);
+          this.noteSports(page.results);
           this.loading.set(false);
         },
         error: (err: unknown) => {
@@ -489,6 +527,7 @@ export class DiscoverPage implements OnInit {
     }).subscribe({
       next: ({ competitions, posts, mine, placements, landing }) => {
         this.results.set(competitions.results);
+        this.noteSports([...competitions.results, ...mine.results, ...landing.results]);
         this.posts.set(posts.results);
         this.mine.set(mine.results);
         this.placements.set(placements);
@@ -515,6 +554,22 @@ export class DiscoverPage implements OnInit {
 
   onQuery(value: string): void {
     this.queries.next(value.trim());
+  }
+
+  type(value: string): void {
+    this.typed.set(value);
+    this.onQuery(value);
+  }
+
+  private noteSports(rows: Competition[]): void {
+    const known = new Map(this.seenSports().map((sport) => [sport.toLowerCase(), sport]));
+    for (const row of rows) {
+      const sport = (row.sport || '').trim();
+      if (sport && !known.has(sport.toLowerCase())) {
+        known.set(sport.toLowerCase(), sport.charAt(0).toUpperCase() + sport.slice(1));
+      }
+    }
+    this.seenSports.set([...known.values()]);
   }
 
   isSoccerLeague(competition: Competition): boolean {

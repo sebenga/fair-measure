@@ -68,6 +68,11 @@ const PITCH_CONTRIBUTIONS = [
 ];
 const FIXTURE_TABS: FixtureTab[] = ['overview', 'lineups', 'live', 'stats', 'raters', 'setup'];
 
+interface CardMoment {
+  kind: 'yellow' | 'red';
+  text: string;
+}
+
 interface Celebration {
   title: string;
   pieces: Array<{ dx: number; dy: number; rot: number; delay: number; color: string }>;
@@ -219,7 +224,7 @@ interface Celebration {
 
           <div class="line">
             @for (side of fx.sides; track side.id) {
-              <div class="team" [class.winner]="side.outcome === 'win'">
+              <div class="team" [class.winner]="side.outcome === 'win'" [class.scored]="bumped().has(side.id)">
                 <span class="name">{{ side.participant.name }}</span>
                 <span class="score" [class.fm-bump]="bumped().has(side.id)">{{ trim(side.score) }}</span>
                 @if (side.forfeited) {
@@ -231,6 +236,12 @@ interface Celebration {
               </div>
             }
           </div>
+          @if (cardMoment(); as moment) {
+            <div class="card-moment" role="status" [attr.data-kind]="moment.kind">
+              <i class="card" aria-hidden="true"></i>
+              <span>{{ moment.text }}</span>
+            </div>
+          }
         </section>
 
         @if (fx.shootout; as so) {
@@ -312,7 +323,7 @@ interface Celebration {
           <h3 class="fm-section-title">Match stats</h3>
           <div class="fm-team-columns" [class.many]="fx.sides.length > 2">
             @for (side of fx.sides; track side.id) {
-              <div class="fm-card match-stats">
+              <div class="fm-card match-stats fm-stagger">
                 <span class="fm-team-head">{{ side.participant.short_name || side.participant.name }}</span>
                 @for (row of statsFor(side.id); track row.key) {
                   <button
@@ -653,6 +664,9 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   readonly celebration = signal<Celebration | null>(null);
   private bumpTimer: ReturnType<typeof setTimeout> | undefined;
   private celebrationTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A card just shown in this match, held briefly on the scoreboard. */
+  readonly cardMoment = signal<CardMoment | null>(null);
+  private cardTimer: ReturnType<typeof setTimeout> | undefined;
   readonly profiles = signal<ProfileSummary[]>([]);
   readonly refereeQuery = signal('');
   readonly timeLimitDraft = signal('');
@@ -719,6 +733,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     clearTimeout(this.bumpTimer);
     clearTimeout(this.celebrationTimer);
+    clearTimeout(this.cardTimer);
     if (this.tickHandle !== null) {
       clearInterval(this.tickHandle);
     }
@@ -1194,10 +1209,27 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
         this.bumpTimer = setTimeout(() => this.bumped.set(new Set()), 1200);
       }
       if (rose.length && next.status !== 'completed') this.celebrate(next, rose[0]);
+      this.noticeCard(before, next);
     }
     this.fixture.set(next);
     if (next.status === 'live') this.syncClockToPhase();
     this.syncUnitIndex();
+  }
+
+  private noticeCard(before: FixtureDetail, next: FixtureDetail): void {
+    const seen = new Set((before.highlights ?? []).map((item) => item.id));
+    const shown = (next.highlights ?? []).filter(
+      (item) => !seen.has(item.id) && (item.kind === 'yellow' || item.kind === 'red'),
+    );
+    const latest = shown.find((item) => item.kind === 'red') ?? shown.at(-1);
+    if (!latest) return;
+    const minute = latest.minute !== null ? ` ${latest.minute}'` : '';
+    clearTimeout(this.cardTimer);
+    this.cardMoment.set({
+      kind: latest.kind as CardMoment['kind'],
+      text: `${latest.label}${latest.player_name ? ' · ' + latest.player_name : ''}${minute}`,
+    });
+    this.cardTimer = setTimeout(() => this.cardMoment.set(null), 3200);
   }
 
   private celebrate(next: FixtureDetail, sideId: string): void {
