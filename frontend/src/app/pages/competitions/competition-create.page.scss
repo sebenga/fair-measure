@@ -571,6 +571,29 @@
     grid-column: 1 / -1;
     margin: 4px 0 0;
   }
+
+  .demo-finished {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 6px;
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 1px dashed rgba(var(--ion-color-primary-rgb), 0.3);
+
+    p {
+      margin: 0;
+      font-size: 0.86rem;
+      color: var(--ion-color-medium-shade);
+    }
+
+    strong {
+      color: var(--fm-ink);
+    }
+
+    ion-button {
+      margin: 0;
+    }
+  }
 }
 
 .hint.or {

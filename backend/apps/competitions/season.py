@@ -5,12 +5,12 @@ from __future__ import annotations
 from datetime import date, time
 
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import F, Max, Min
 from rest_framework.exceptions import ValidationError
 
 from apps.competitions.models import Competition, Stage
 from apps.competitions.presets import format_allowed
-from apps.fixtures.models import Fixture
+from apps.fixtures.models import Fixture, FixtureSide
 from apps.fixtures.services import ScheduleOptions, generate_knockout, generate_round_robin
 
 OPEN = {Fixture.Status.SCHEDULED, Fixture.Status.LIVE, Fixture.Status.POSTPONED}
@@ -47,6 +47,51 @@ def maybe_finish_competition(competition: Competition) -> bool:
     competition.status = Competition.Status.COMPLETED
     competition.save(update_fields=["status", "updated_at"])
     return True
+
+
+def stage_is_finished(stage: Stage) -> bool:
+    fixtures = stage.fixtures.exclude(status=Fixture.Status.CANCELLED)
+    return fixtures.exists() and not fixtures.filter(status__in=OPEN).exists()
+
+
+def archive_first_season(competition: Competition) -> Stage | None:
+    """Put a league's first season, played before seasons had names, into "Season 1".
+
+    Without it the first season's matches belong to no stage, so its table and results
+    cannot be told apart from the seasons that follow.
+    """
+
+    loose = Fixture.objects.filter(competition=competition, stage__isnull=True).exclude(
+        status=Fixture.Status.CANCELLED
+    )
+    if not loose.exists():
+        return None
+    dates = loose.aggregate(first=Min("scheduled_at"), last=Max("scheduled_at"))
+    Stage.objects.filter(competition=competition).update(display_order=F("display_order") + 1)
+    stage = Stage.objects.create(
+        competition=competition,
+        name="Season 1",
+        kind=Stage.Kind.LEAGUE,
+        display_order=0,
+        starts_on=dates["first"].date() if dates["first"] else None,
+        ends_on=dates["last"].date() if dates["last"] else None,
+    )
+    loose.update(stage=stage)
+    entrants = (
+        FixtureSide.objects.filter(fixture__stage=stage, participant__isnull=False)
+        .values_list("participant_id", flat=True)
+        .distinct()
+    )
+    stage.participants.add(*entrants)
+    return stage
+
+
+def _close_finished_seasons(competition: Competition) -> None:
+    for stage in competition.stages.filter(kind=Stage.Kind.LEAGUE, ends_on__isnull=True):
+        if stage_is_finished(stage):
+            last = stage.fixtures.aggregate(last=Max("scheduled_at"))["last"]
+            stage.ends_on = last.date() if last else date.today()
+            stage.save(update_fields=["ends_on", "updated_at"])
 
 
 def _next_season_name(competition: Competition) -> str:
@@ -141,6 +186,12 @@ def schedule_next(
         stage_kind = Stage.Kind.KNOCKOUT
         stage_name = _next_knockout_name(competition)
     else:
+        archived = archive_first_season(competition)
+        _close_finished_seasons(competition)
+        if archived is not None:
+            from apps.standings.services import refresh_standings
+
+            refresh_standings(competition, archived)
         if not (
             format_allowed(settings, "league")
             or competition.format

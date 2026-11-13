@@ -15,6 +15,11 @@ urlpatterns = [
         name="platform-admin-competitions",
     ),
     path(
+        "platform/admin/competitions/clear",
+        views.ClearCompetitionsView.as_view(),
+        name="platform-admin-competitions-clear",
+    ),
+    path(
         "platform/admin/competitions/<uuid:pk>",
         views.CompetitionAdminDetailView.as_view(),
         name="platform-admin-competition",

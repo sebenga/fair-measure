@@ -374,6 +374,9 @@ export class MatchCentreComponent implements OnInit {
         'fixture.live',
         'fixture.completed',
         'fixture.updated',
+        'fixture.deleted',
+        'fixtures.generated',
+        'competition.updated',
         'standings.updated',
       ])
       .pipe(takeUntilDestroyed(this.destroyRef))

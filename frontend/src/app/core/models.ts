@@ -156,6 +156,10 @@ export interface Stage {
   starts_on: string | null;
   ends_on: string | null;
   advances_count: number;
+  /** Every match in this stage is played. */
+  finished?: boolean;
+  /** Top of a finished league season's table. */
+  champion?: string | null;
 }
 
 export type ParticipantKind = 'individual' | 'team';

@@ -472,6 +472,22 @@ export class ApiService {
     );
   }
 
+  /** Every fixture, page after page: a page holds at most 100, and a few seasons hold more. */
+  listAllFixtures(competitionId: string, query: Query = {}): Observable<Paginated<Fixture>> {
+    return this.listFixtures(competitionId, { ...query, page_size: 100 }).pipe(
+      expand((page) => (page.next ? this.http.get<Paginated<Fixture>>(page.next) : EMPTY)),
+      reduce(
+        (all, page) => ({
+          count: page.count,
+          next: null,
+          previous: null,
+          results: all.results.concat(page.results),
+        }),
+        { count: 0, next: null, previous: null, results: [] as Fixture[] },
+      ),
+    );
+  }
+
   getFixture(competitionId: string, fixtureId: string): Observable<FixtureDetail> {
     return this.http.get<FixtureDetail>(
       `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}`,
@@ -505,7 +521,8 @@ export class ApiService {
     }>(`${this.base}/competitions/${competitionId}/advance`, {});
   }
 
-  generateDemoLeague(competitionId: string) {
+  /** `finished` builds a league whose season is already over, ready for a new season. */
+  generateDemoLeague(competitionId: string, season: 'live' | 'finished' = 'live') {
     return this.http.post<{
       active: boolean;
       deleted?: boolean;
@@ -519,7 +536,7 @@ export class ApiService {
       squad?: number;
       fantasy?: number;
       competition: CompetitionDetail;
-    }>(`${this.base}/competitions/${competitionId}/demo-league`, {});
+    }>(`${this.base}/competitions/${competitionId}/demo-league`, season === 'finished' ? { season } : {});
   }
 
   clearDemoLeague(competitionId: string) {

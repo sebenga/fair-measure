@@ -411,7 +411,7 @@ export class KnockoutTreeComponent implements OnInit {
   ngOnInit(): void {
     const id = this.competitionId();
     if (this.fixtures() !== null || !id) return;
-    this.api.listFixtures(id, { page_size: 200 }).subscribe({
+    this.api.listAllFixtures(id).subscribe({
       next: (page) => this.loaded.set(page.results),
     });
   }

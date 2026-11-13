@@ -416,7 +416,9 @@ class CompetitionViewSet(viewsets.ModelViewSet):
         if request.method == "DELETE":
             payload = clear_demo_league(competition)
             return Response(payload, status=status.HTTP_200_OK)
-        payload = generate_demo_league(competition, request.user)
+        payload = generate_demo_league(
+            competition, request.user, finished=request.data.get("season") == "finished"
+        )
         # Re-read through the detail queryset so the response is built from prefetched
         # rosters rather than one query per player.
         self.action = "retrieve"

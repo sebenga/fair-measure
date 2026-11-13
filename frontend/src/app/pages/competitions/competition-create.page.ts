@@ -303,12 +303,32 @@ function presetKind(preset: Preset): PresetKind {
                   [disabled]="saving()"
                   (click)="createDemo()"
                 >
-                  @if (saving() && fillSample()) {
+                  @if (saving() && fillSample() && demoSeason() === 'live') {
                     <ion-spinner name="crescent" />
                   } @else {
                     Create a {{ demo.family_label || demo.label }} demo
                   }
                 </ion-button>
+                <div class="demo-finished">
+                  <p>
+                    <strong>Or see a season that has ended.</strong>
+                    Every match played and the final table in, so you can start the next season.
+                  </p>
+                  <ion-button
+                    type="button"
+                    expand="block"
+                    fill="outline"
+                    [disabled]="saving()"
+                    (click)="createDemo('finished')"
+                  >
+                    @if (saving() && fillSample() && demoSeason() === 'finished') {
+                      <ion-spinner name="crescent" />
+                    } @else {
+                      <ion-icon slot="start" name="calendar-outline" aria-hidden="true" />
+                      Finished season example
+                    }
+                  </ion-button>
+                </div>
               </div>
               <p class="hint or">Or set up your own competition:</p>
             }
@@ -1366,15 +1386,29 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
     return sports.find((preset) => preset.key === 'soccer' && playable(preset)) ?? sports.find(playable) ?? null;
   });
 
+  /** Which demo the first step is building: a season in play, or one that has ended. */
+  readonly demoSeason = signal<'live' | 'finished'>('live');
+
   /** Create a demo straight from the first step: sensible defaults, then the demo fills it. */
-  createDemo(): void {
+  createDemo(season: 'live' | 'finished' = 'live'): void {
     const demo = this.demoPreset();
     if (!demo || this.saving()) return;
     if (demo.key !== this.selectedPreset()) this.selectPreset(demo.key);
     const allowed = demo.formats_allowed ?? [];
+    const sport = demo.family_label || demo.label;
+    this.demoSeason.set(season);
     this.form.patchValue({
-      name: this.form.controls.name.value.trim() || `${demo.family_label || demo.label} demo`,
-      format: allowed.includes('league_knockout') ? 'league_knockout' : demo.format,
+      name:
+        this.form.controls.name.value.trim() ||
+        (season === 'finished' ? `${sport} league · season ended` : `${sport} demo`),
+      format:
+        season === 'finished'
+          ? allowed.includes('league') || demo.format === 'league'
+            ? 'league'
+            : demo.format
+          : allowed.includes('league_knockout')
+            ? 'league_knockout'
+            : demo.format,
       starts_on: '',
       ends_on: '',
     });
@@ -2132,6 +2166,18 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
             `Building the demo: ${this.samplePeople()}, fixtures, results and ratings. ` +
               'A few seconds…',
           );
+          if (this.demoSeason() === 'finished') {
+            const goTable = () => {
+              this.saving.set(false);
+              this.progress.set('');
+              void this.navCtrl.navigateForward(`/tabs/competitions/${competition.id}`, {
+                queryParams: { tab: 'standings' },
+                replaceUrl: true,
+              });
+            };
+            this.api.generateDemoLeague(competition.id, 'finished').subscribe({ next: goTable, error: goSetup });
+            return;
+          }
           this.api.generateDemoLeague(competition.id).subscribe({
             next: () => goSetup(),
             error: () => goSetup(),

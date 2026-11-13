@@ -79,6 +79,15 @@ def is_platform_admin(user) -> bool:
     return (user.email or "").lower() in emails
 
 
+def can_clear_leagues(user) -> bool:
+    """Only the named owner accounts may wipe every competition; staff status is not enough."""
+
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    emails = {email.strip().lower() for email in settings.LEAGUE_RESET_EMAILS if email.strip()}
+    return bool(user.email) and user.email.lower() in emails
+
+
 def sport_is_live(key: str) -> bool:
     explicit = _state()["sport"].get(key)
     if explicit is not None:

@@ -11,6 +11,15 @@ export type FeatureKey = 'games' | 'scouting' | 'fantasy' | 'discover' | 'partne
 export interface ReleaseState {
   features: Partial<Record<FeatureKey, boolean>>;
   platform_admin: boolean;
+  /** Only the platform owner account may delete every competition. */
+  clear_leagues?: boolean;
+}
+
+export interface ClearedCounts {
+  competitions: number;
+  fixtures: number;
+  participants: number;
+  games_events: number;
 }
 
 export interface ReleaseFeature {
@@ -72,6 +81,7 @@ export class ReleasesService {
   private pending: Promise<ReleaseState | null> | null = null;
 
   readonly platformAdmin = computed(() => this.state()?.platform_admin ?? false);
+  readonly canClearLeagues = computed(() => this.state()?.clear_leagues ?? false);
 
   constructor() {
     effect(() => {
@@ -117,6 +127,12 @@ export class ReleasesService {
       `${this.base}/platform/admin/competitions`,
       { params },
     );
+  }
+
+  clearAllCompetitions(confirm: string): Observable<{ cleared: ClearedCounts }> {
+    return this.http.post<{ cleared: ClearedCounts }>(`${this.base}/platform/admin/competitions/clear`, {
+      confirm,
+    });
   }
 
   setCompetitionHidden(id: string, hidden: boolean): Observable<PlatformCompetition> {

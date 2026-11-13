@@ -16,6 +16,7 @@ from apps.competitions.presets import PRESETS, public_preset
 from .models import Release
 from .services import (
     FEATURES,
+    can_clear_leagues,
     feature_is_live,
     feature_map,
     is_platform_admin,
@@ -33,13 +34,24 @@ class IsPlatformAdmin(BasePermission):
         return is_platform_admin(request.user)
 
 
+class CanClearLeagues(BasePermission):
+    message = "Only the platform owner can clear every competition."
+
+    def has_permission(self, request, view) -> bool:
+        return can_clear_leagues(request.user)
+
+
 class ReleaseStateView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(tags=["Platform"], summary="Features open to the public")
     def get(self, request: Request) -> Response:
         return Response(
-            {"features": feature_map(), "platform_admin": is_platform_admin(request.user)}
+            {
+                "features": feature_map(),
+                "platform_admin": is_platform_admin(request.user),
+                "clear_leagues": can_clear_leagues(request.user),
+            }
         )
 
 
@@ -189,3 +201,32 @@ class CompetitionAdminDetailView(APIView):
         competition.platform_hidden = serializer.validated_data["platform_hidden"]
         competition.save(update_fields=["platform_hidden", "updated_at"])
         return Response(_competition_row(competition))
+
+
+CLEAR_PHRASE = "CLEAR ALL LEAGUES"
+
+
+class ClearCompetitionsSerializer(serializers.Serializer):
+    confirm = serializers.CharField()
+
+    def validate_confirm(self, value: str) -> str:
+        if value.strip() != CLEAR_PHRASE:
+            raise serializers.ValidationError(f'Type "{CLEAR_PHRASE}" to confirm.')
+        return value
+
+
+class ClearCompetitionsView(APIView):
+    permission_classes = [CanClearLeagues]
+
+    @extend_schema(
+        tags=["Platform"],
+        summary="Delete every competition on the platform",
+        description=f'Irreversible. The body must carry confirm: "{CLEAR_PHRASE}".',
+        request=ClearCompetitionsSerializer,
+        responses={200: dict},
+    )
+    def post(self, request: Request) -> Response:
+        ClearCompetitionsSerializer(data=request.data).is_valid(raise_exception=True)
+        from apps.competitions.reset import clear_all_competitions
+
+        return Response({"cleared": clear_all_competitions(by=request.user)})

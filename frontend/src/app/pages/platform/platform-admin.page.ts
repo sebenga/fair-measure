@@ -16,6 +16,8 @@ import {
   IonToolbar,
   ToastController,
 } from '@ionic/angular/standalone';
+import { addIcons } from 'ionicons';
+import { warningOutline } from 'ionicons/icons';
 import { Subject, debounceTime } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
@@ -235,6 +237,38 @@ type ToggleChange = CustomEvent<{ checked: boolean }> & { target: HTMLIonToggleE
                 }
               </section>
             }
+            @if (canClearLeagues()) {
+              <section class="danger fm-card" aria-labelledby="clear-title">
+                <h3 id="clear-title">
+                  <ion-icon name="warning-outline" aria-hidden="true" />
+                  Danger zone: clear all leagues
+                </h3>
+                <p>
+                  Deletes every competition on the platform, from every account: fixtures, results, teams, members,
+                  feeds, fantasy and scouting data inside them, and the accounts made up for demos. Games keep their
+                  name but lose their events. This cannot be undone.
+                </p>
+                <label>
+                  <span>Type <b>{{ clearPhrase }}</b> to confirm</span>
+                  <input
+                    type="text"
+                    autocomplete="off"
+                    autocapitalize="characters"
+                    spellcheck="false"
+                    [value]="clearTyped()"
+                    (input)="clearTyped.set($any($event.target).value)"
+                  />
+                </label>
+                <button type="button" [disabled]="!clearReady() || clearing()" (click)="confirmClear()">
+                  @if (clearing()) {
+                    <ion-spinner name="crescent" />
+                    Clearing…
+                  } @else {
+                    Clear all {{ competitionCount() }} {{ competitionCount() === 1 ? 'league' : 'leagues' }}
+                  }
+                </button>
+              </section>
+            }
           }
         }
       }
@@ -266,6 +300,14 @@ export class PlatformAdminPage implements OnInit {
   readonly competitionQuery = signal('');
   readonly hiddenOnly = signal(false);
   readonly competitionsLoading = signal(false);
+
+  readonly clearPhrase = 'CLEAR ALL LEAGUES';
+  readonly canClearLeagues = this.releases.canClearLeagues;
+  readonly clearTyped = signal('');
+  readonly clearing = signal(false);
+  readonly clearReady = computed(
+    () => this.clearTyped().trim() === this.clearPhrase && this.competitionCount() > 0,
+  );
   private readonly competitionSearch = new Subject<void>();
 
   readonly sportsOnly = computed(() => this.sports().filter((sport) => sport.kind === 'sport'));
@@ -301,6 +343,7 @@ export class PlatformAdminPage implements OnInit {
   });
 
   constructor() {
+    addIcons({ warningOutline });
     this.competitionSearch
       .pipe(debounceTime(300), takeUntilDestroyed())
       .subscribe(() => this.loadCompetitions());
@@ -388,6 +431,38 @@ export class PlatformAdminPage implements OnInit {
       error: (err: unknown) => {
         this.busy.set(false);
         event.target.checked = !hidden;
+        void this.toast(extractErrorMessage(err));
+      },
+    });
+  }
+
+  async confirmClear(): Promise<void> {
+    if (!this.clearReady()) return;
+    const total = this.competitionCount();
+    const alert = await this.alerts.create({
+      header: `Delete all ${total} ${total === 1 ? 'league' : 'leagues'}?`,
+      message: 'Every competition on the platform goes, for every account. There is no undo.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Delete everything', role: 'destructive', handler: () => this.clearAll() },
+      ],
+    });
+    await alert.present();
+  }
+
+  private clearAll(): void {
+    this.clearing.set(true);
+    this.releases.clearAllCompetitions(this.clearTyped().trim()).subscribe({
+      next: ({ cleared }) => {
+        this.clearing.set(false);
+        this.clearTyped.set('');
+        this.loadCompetitions();
+        void this.toast(
+          `Cleared ${cleared.competitions} competitions, ${cleared.fixtures} fixtures and ${cleared.participants} entrants.`,
+        );
+      },
+      error: (err: unknown) => {
+        this.clearing.set(false);
         void this.toast(extractErrorMessage(err));
       },
     });

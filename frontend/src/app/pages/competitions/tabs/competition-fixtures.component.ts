@@ -4,13 +4,16 @@ import {
   DestroyRef,
   OnInit,
   computed,
+  effect,
   inject,
   input,
   signal,
+  untracked,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
+import { Observable, forkJoin, map } from 'rxjs';
 import {
   AlertController,
   IonBadge,
@@ -24,9 +27,17 @@ import {
 
 import { ApiService } from '../../../core/api.service';
 import { extractErrorMessage } from '../../../core/error-message';
-import type { CompetitionDetail, Fixture, FixtureHighlight, MatchRating } from '../../../core/models';
+import type {
+  CompetitionDetail,
+  Fixture,
+  FixtureHighlight,
+  MatchRating,
+  Paginated,
+} from '../../../core/models';
 import { RealtimeService } from '../../../core/realtime.service';
 import { ResultsService } from '../../../core/results.service';
+import { currentSeason, seasonsOf } from '../../../core/seasons';
+import { SeasonPickerComponent } from '../../../shared/season-picker.component';
 import { cupNameOf, isCupFixture } from './cup';
 import { KnockoutTreeComponent } from './knockout-tree.component';
 
@@ -45,6 +56,7 @@ interface FixtureGroup {
   standalone: true,
   imports: [
     DatePipe,
+    SeasonPickerComponent,
     IonIcon,
     IonButton,
     IonBadge,
@@ -63,6 +75,9 @@ interface FixtureGroup {
         </button>
         <span>Every active entrant is entered. Results are recorded on the event's page.</span>
       </div>
+    }
+    @if (seasons().length > 1 && track() !== 'cup') {
+      <fm-season-picker [seasons]="seasons()" [selected]="seasonId()" (choose)="chooseSeason($event)" />
     }
     <div class="filter">
       <ion-segment [value]="filter()" (ionChange)="setFilter($any($event).detail.value)">
@@ -585,7 +600,18 @@ export class CompetitionFixturesComponent implements OnInit {
     return groups;
   });
 
-  readonly leagueFixtures = computed(() => this.fixtures().filter((fixture) => !this.isCup(fixture)));
+  readonly seasons = computed(() => seasonsOf(this.competition()));
+  /** The season whose league matches are shown; cups are listed whatever the season. */
+  readonly seasonId = signal<string | null>(null);
+  private chosenSeason = false;
+  private started = false;
+
+  readonly leagueFixtures = computed(() => {
+    const season = this.seasons().length > 1 ? this.seasonId() : null;
+    return this.fixtures().filter(
+      (fixture) => !this.isCup(fixture) && (!season || fixture.stage === season),
+    );
+  });
 
   readonly cupFixtures = computed(() => this.fixtures().filter((fixture) => this.isCup(fixture)));
 
@@ -593,6 +619,7 @@ export class CompetitionFixturesComponent implements OnInit {
     const track = this.track();
     if (track === 'league') return this.leagueFixtures();
     if (track === 'cup') return this.cupFixtures();
+    if (this.seasons().length > 1) return [...this.leagueFixtures(), ...this.cupFixtures()];
     return this.fixtures();
   });
 
@@ -645,7 +672,48 @@ export class CompetitionFixturesComponent implements OnInit {
     return groups;
   });
 
+  constructor() {
+    effect(() => {
+      const current = currentSeason(this.competition())?.id ?? null;
+      untracked(() => {
+        if (this.chosenSeason || current === this.seasonId()) return;
+        this.seasonId.set(current);
+        if (this.started) this.load(false);
+      });
+    });
+  }
+
+  chooseSeason(id: string | null): void {
+    this.chosenSeason = true;
+    this.seasonId.set(id);
+    this.chosenFilter = true;
+    const season = this.seasons().find((item) => item.id === id);
+    if (season?.finished) this.filter.set('results');
+    this.load();
+  }
+
+  /** With several seasons, only the chosen one is fetched, with every cup alongside it. */
+  private fixturesForView(): Observable<Paginated<Fixture>> {
+    const competition = this.competition();
+    const season = this.seasons().length > 1 ? this.seasonId() : null;
+    if (!season) return this.api.listAllFixtures(competition.id);
+    const stages = [
+      season,
+      ...competition.stages.filter((stage) => stage.kind === 'knockout').map((stage) => stage.id),
+    ];
+    return forkJoin(stages.map((stage) => this.api.listAllFixtures(competition.id, { stage }))).pipe(
+      map((pages) => ({
+        count: pages.reduce((total, page) => total + page.count, 0),
+        next: null,
+        previous: null,
+        results: pages.flatMap((page) => page.results),
+      })),
+    );
+  }
+
   ngOnInit(): void {
+    this.seasonId.set(currentSeason(this.competition())?.id ?? null);
+    this.started = true;
     this.filter.set(this.restingFilter());
     this.load();
 
@@ -669,7 +737,7 @@ export class CompetitionFixturesComponent implements OnInit {
     if (showSpinner) this.loading.set(true);
     this.error.set(null);
 
-    this.api.listFixtures(this.competition().id, { page_size: 200 }).subscribe({
+    this.fixturesForView().subscribe({
       next: (page) => {
         this.noteScoreChanges(page.results);
         this.fixtures.set(page.results);

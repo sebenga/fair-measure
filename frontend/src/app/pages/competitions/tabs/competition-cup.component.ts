@@ -619,7 +619,7 @@ export class CompetitionCupComponent implements OnInit {
   load(showSpinner = true): void {
     if (showSpinner) this.loading.set(true);
     this.error.set(null);
-    this.api.listFixtures(this.competition().id, { page_size: 200 }).subscribe({
+    this.api.listAllFixtures(this.competition().id).subscribe({
       next: (page) => {
         this.fixtures.set(page.results);
         this.loading.set(false);

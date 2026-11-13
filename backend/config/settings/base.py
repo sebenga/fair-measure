@@ -91,6 +91,8 @@ MIDDLEWARE = [
 
 # Accounts that can release sports and features, besides Django staff users.
 PLATFORM_ADMIN_EMAILS = env_list("PLATFORM_ADMIN_EMAILS")
+# Accounts allowed to delete every competition on the platform at once.
+LEAGUE_RESET_EMAILS = env_list("LEAGUE_RESET_EMAILS", "sebengamt@gmail.com")
 # A sport with no release switch yet stays hidden, so new sports roll out one at a time.
 RELEASES_SPORTS_LIVE_BY_DEFAULT = env_bool("RELEASES_SPORTS_LIVE_BY_DEFAULT", False)
 RELEASES_CACHE_SECONDS = env_int("RELEASES_CACHE_SECONDS", 15)
@@ -137,6 +139,9 @@ else:
 SQLITE_LIKE_POSTGRES = "config.db.sqlite_pglike"
 if DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3":
     DATABASES["default"]["ENGINE"] = SQLITE_LIKE_POSTGRES
+    # SQLite lets one writer in at a time; with jobs running inline, a request can wait
+    # behind a long recompute. Wait for the turn instead of failing after five seconds.
+    DATABASES["default"].setdefault("OPTIONS", {})["timeout"] = 30
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"

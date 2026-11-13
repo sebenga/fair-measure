@@ -4,10 +4,13 @@ import {
   DestroyRef,
   OnInit,
   computed,
+  effect,
   inject,
   input,
   signal,
+  untracked,
 } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { debounceTime } from 'rxjs';
@@ -34,11 +37,21 @@ import { KnockoutTreeComponent } from './knockout-tree.component';
 import { RealtimeService } from '../../../core/realtime.service';
 import type { CombinationStatRow } from '../../../core/results.models';
 import { ResultsService } from '../../../core/results.service';
+import { currentSeason, seasonsOf } from '../../../core/seasons';
+import { SeasonPickerComponent } from '../../../shared/season-picker.component';
 
 @Component({
   selector: 'fm-competition-standings',
   standalone: true,
-  imports: [IonIcon, IonButton, IonSelect, IonSelectOption, KnockoutTreeComponent],
+  imports: [
+    DatePipe,
+    IonIcon,
+    IonButton,
+    IonSelect,
+    IonSelectOption,
+    KnockoutTreeComponent,
+    SeasonPickerComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (pointsTable() && scoringGuide().length) {
@@ -57,7 +70,28 @@ import { ResultsService } from '../../../core/results.service';
       </section>
     }
 
-    @if (competition().format !== 'knockout' && competition().stages.length > 1) {
+    @if (seasons().length > 1) {
+      <fm-season-picker [seasons]="seasons()" [selected]="stageId()" [allowAll]="true" (choose)="selectStage($event)" />
+      @if (shownSeason(); as season) {
+        @if (season.champion) {
+          <p class="champions">
+            <span aria-hidden="true">🏆</span>
+            <span>
+              <strong>{{ season.name }} champions: {{ season.champion }}</strong>
+              @if (season.starts_on && season.ends_on) {
+                <small>
+                  {{ season.starts_on | date: 'd MMM y' }} – {{ season.ends_on | date: 'd MMM y' }} · final table
+                </small>
+              } @else {
+                <small>Final table</small>
+              }
+            </span>
+          </p>
+        }
+      } @else {
+        <p class="season-note">Every season added together.</p>
+      }
+    } @else if (competition().format !== 'knockout' && competition().stages.length > 1) {
       <div class="stage-picker">
         <ion-select
           label="Stage"
@@ -142,7 +176,7 @@ import { ResultsService } from '../../../core/results.service';
                 (click)="pointsTable() && toggle(row.participant.id)"
               >
                 <td class="pos">
-                  <span class="badge" [class]="'badge place-' + (row.position <= 3 ? row.position : 'n')">
+                  <span class="badge" [class]="'badge place-' + (row.position <= 3 && seasonStarted() ? row.position : 'n')">
                     {{ row.position }}
                   </span>
                   @if (changes()[row.participant.id]?.delta; as delta) {
@@ -361,6 +395,34 @@ import { ResultsService } from '../../../core/results.service';
 
       .stage-picker {
         margin: 12px 16px 0;
+      }
+
+      .champions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 10px 16px 0;
+        padding: 10px 14px;
+        border-radius: 14px;
+        background: color-mix(in srgb, #f59e0b 14%, var(--fm-surface, #fff));
+        font-size: 1.3rem;
+      }
+
+      .champions span:last-child {
+        display: grid;
+        gap: 1px;
+        font-size: 0.86rem;
+      }
+
+      .champions small {
+        color: var(--ion-color-medium);
+        font-size: 0.74rem;
+      }
+
+      .season-note {
+        margin: 8px 16px 0;
+        color: var(--ion-color-medium);
+        font-size: 0.8rem;
       }
 
       .centered {
@@ -698,6 +760,12 @@ export class CompetitionStandingsComponent implements OnInit {
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly stageId = signal<string | null>(null);
+  readonly seasons = computed(() => seasonsOf(this.competition()));
+  /** Medals wait for the first result, or a new season would crown the alphabet. */
+  readonly seasonStarted = computed(() => this.rows().some((row) => Number(row.played) > 0));
+  readonly shownSeason = computed(() => this.seasons().find((season) => season.id === this.stageId()) ?? null);
+  /** Once someone picks a season, a new one starting does not move them. */
+  private chosenSeason = false;
 
   /** Who just moved or scored, so the table can flash and show an arrow for a moment. */
   readonly changes = signal<Record<string, { delta: number; points: boolean }>>({});
@@ -709,7 +777,20 @@ export class CompetitionStandingsComponent implements OnInit {
     this.competition().scoring_categories.filter((category) => category.affects_score),
   );
 
+  constructor() {
+    effect(() => {
+      const current = currentSeason(this.competition())?.id ?? null;
+      untracked(() => {
+        if (this.chosenSeason || !current || current === this.stageId()) return;
+        this.stageId.set(current);
+        this.previous.clear();
+        this.load();
+      });
+    });
+  }
+
   ngOnInit(): void {
+    this.stageId.set(currentSeason(this.competition())?.id ?? null);
     this.load();
 
     // Standings are recomputed by a worker, so the table can lag a completed
@@ -725,7 +806,10 @@ export class CompetitionStandingsComponent implements OnInit {
     this.error.set(null);
 
     this.api
-      .getStandings(this.competition().id, { stage: this.stageId(), refresh: true })
+      .getStandings(this.competition().id, {
+        stage: this.stageId(),
+        refresh: !this.shownSeason()?.finished,
+      })
       .subscribe({
         next: (response) => {
           this.noteChanges(response.rows);
@@ -764,7 +848,9 @@ export class CompetitionStandingsComponent implements OnInit {
   }
 
   selectStage(value: string | null): void {
+    this.chosenSeason = true;
     this.stageId.set(value ?? null);
+    this.previous.clear();
     this.load();
   }
 

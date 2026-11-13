@@ -38,6 +38,8 @@ from apps.fixtures.services import (
 from apps.results.models import CompetitionOfficial
 from apps.standings.services import refresh_standings
 
+from .season import maybe_finish_competition
+
 User = get_user_model()
 
 DEMO_TTL = timedelta(hours=1)
@@ -203,7 +205,12 @@ def demo_participants(competition: Competition):
     return flagged
 
 
-def generate_demo_league(competition: Competition, actor) -> dict:
+def generate_demo_league(competition: Competition, actor, *, finished: bool = False) -> dict:
+    """Fill a competition with a playable demo.
+
+    `finished` builds a league whose season is already over: every match played, the
+    table final and nothing live, so the next step is starting a new season.
+    """
     real = competition.participants.filter(is_active=True).exclude(
         pk__in=demo_participants(competition).values("pk")
     )
@@ -227,15 +234,17 @@ def generate_demo_league(competition: Competition, actor) -> dict:
         picks = _pick_squads(competition, entrants, actor, users)
         officials = _appoint_officials(competition, actor, users)
         _open_team_entry(competition)
-        cup_stage = _prepare_cup(competition)
-        fixtures = _schedule(competition, entrants)
+        cup_stage = False if finished else _prepare_cup(competition)
+        fixtures = _schedule(competition, entrants, finished=finished)
         if cup_stage is not False:
             fixtures = _drop_generated_cup(competition, fixtures, cup_stage)
         # Every team's players, read once and shared by the steps below.
         rosters = _rosters(competition)
         _staff_fixtures(competition, fixtures, officials, actor, rosters)
         _ensure_stat_categories(competition)
-        played, live = _play_past_fixtures(competition, fixtures, actor, rosters)
+        played, live = _play_past_fixtures(
+            competition, fixtures, actor, rosters, keep_live=not finished
+        )
         cup = (
             _build_cup(competition, entrants, cup_stage, officials, actor, rosters)
             if cup_stage is not False
@@ -273,6 +282,7 @@ def generate_demo_league(competition: Competition, actor) -> dict:
             "live_cup_fixture": cup.get("live"),
             "penalty_fixture": cup.get("penalties"),
             "cup_stage": cup.get("stage"),
+            "season": "finished" if finished else "live",
         }
         competition.settings_json = settings
         fields = ["settings_json", "updated_at"]
@@ -283,6 +293,8 @@ def generate_demo_league(competition: Competition, actor) -> dict:
             competition.open_to_scouts = True
             fields.append("open_to_scouts")
         competition.save(update_fields=fields)
+        if finished:
+            maybe_finish_competition(competition)
         enqueue_job(
             Queues.SEARCH,
             "purge-demos",
@@ -647,19 +659,25 @@ def _appoint_officials(competition: Competition, actor, users: list) -> list:
     return appointed
 
 
-def _schedule(competition: Competition, teams: list[Participant]) -> list[Fixture]:
+def _schedule(
+    competition: Competition, teams: list[Participant], *, finished: bool = False
+) -> list[Fixture]:
     if _is_points_table(competition):
         return []
     weekdays = list(competition.match_weekdays or [5])
     every = int((competition.settings_json or {}).get("cup_every_league_rounds") or 3)
+    # A finished season starts far enough back that its last round is already played.
+    weeks_back = len(teams) + 2 if finished else 4
     options = ScheduleOptions(
-        starts_on=date.today() - timedelta(days=28),
+        starts_on=date.today() - timedelta(weeks=weeks_back),
         weekdays=weekdays,
         kickoff=time(hour=15),
         minutes_between_fixtures=0,
         location="Demo venue",
-        cup_every_league_rounds=every,
+        cup_every_league_rounds=0 if finished else every,
     )
+    if finished:
+        return generate_round_robin(competition, teams, options)
     if competition.format == Competition.Format.KNOCKOUT:
         return generate_knockout(competition, teams, options)
     if competition.format == Competition.Format.LEAGUE_KNOCKOUT:
@@ -863,7 +881,7 @@ def _live_candidate(fixtures: list[Fixture], now, sides: dict) -> Fixture | None
 
 
 def _play_past_fixtures(
-    competition: Competition, fixtures: list[Fixture], actor, rosters: dict
+    competition: Competition, fixtures: list[Fixture], actor, rosters: dict, *, keep_live: bool = True
 ) -> tuple[int, Fixture | None]:
     category = (
         competition.scoring_categories.filter(affects_score=True).order_by("display_order").first()
@@ -874,7 +892,7 @@ def _play_past_fixtures(
     now = timezone.now()
     rng = random.Random(str(competition.id))
     sides = _sides_by_fixture(fixtures)
-    live = _live_candidate(fixtures, now, sides)
+    live = _live_candidate(fixtures, now, sides) if keep_live else None
     finished, goals = [], []
     for fixture in fixtures:
         if fixture.status == Fixture.Status.COMPLETED or fixture is live:

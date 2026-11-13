@@ -274,6 +274,9 @@ class PointsPolicySerializer(serializers.ModelSerializer):
 
 
 class StageSerializer(serializers.ModelSerializer):
+    finished = serializers.SerializerMethodField()
+    champion = serializers.SerializerMethodField()
+
     class Meta:
         model = Stage
         fields = [
@@ -284,7 +287,34 @@ class StageSerializer(serializers.ModelSerializer):
             "starts_on",
             "ends_on",
             "advances_count",
+            "finished",
+            "champion",
         ]
+
+    def get_finished(self, obj: Stage) -> bool:
+        from .season import stage_is_finished
+
+        return stage_is_finished(obj)
+
+    def get_champion(self, obj: Stage) -> str | None:
+        """The team on top of a finished league season's table."""
+
+        if obj.kind != Stage.Kind.LEAGUE or not self.get_finished(obj):
+            return None
+        from apps.standings.models import StandingRow
+
+        top = (
+            StandingRow.objects.filter(stage=obj)
+            .order_by("position")
+            .values_list("participant__name", flat=True)
+            .first()
+        )
+        if top:
+            return top
+        from apps.standings.services import compute_standings
+
+        rows = compute_standings(obj.competition, obj)
+        return rows[0].name if rows else None
 
 
 class RosterMemberSerializer(serializers.ModelSerializer):
