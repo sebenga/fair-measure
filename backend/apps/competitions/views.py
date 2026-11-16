@@ -15,9 +15,11 @@ from rest_framework import generics, status, viewsets
 from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.request import Request
 from rest_framework.response import Response
+
+from apps.core.throttles import TryDemoRateThrottle
 
 from apps.core.bus import Queues, competition_room, enqueue_job, publish_event
 from apps.fixtures.models import Fixture, PlayerMatchRating, ScoreEvent
@@ -1204,5 +1206,51 @@ class TeamDraftView(APIView):
         pick = offer_team_pick(team, user, request.user)
         return Response(
             {"pick": TeamPickSerializer(pick).data, **draft_payload(competition)},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+@extend_schema(
+    tags=["Competitions"],
+    summary="Start a one-hour soccer or custom demo from the landing page",
+    request={"application/json": {"type": "object", "properties": {"kind": {"type": "string"}}}},
+    responses={201: dict},
+)
+class TryDemoView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [TryDemoRateThrottle]
+
+    def post(self, request: Request) -> Response:
+        from .demo import start_try_demo
+        from .serializers import CompetitionDetailSerializer
+
+        payload = start_try_demo(request.user, str(request.data.get("kind") or ""))
+        competition = (
+            Competition.objects.select_related("points_policy", "owner")
+            .prefetch_related(
+                "scoring_categories",
+                "rules",
+                "stages",
+                Prefetch("participants__roster", RosterMember.objects.select_related("user")),
+            )
+            .get(pk=payload["competition_id"])
+        )
+        publish_event(
+            "fixtures.generated",
+            {"competition_id": str(competition.id), "count": payload.get("fixtures", 0)},
+            [competition_room(competition.id)],
+        )
+        publish_event(
+            "competition.updated",
+            {"competition_id": str(competition.id)},
+            [competition_room(competition.id)],
+        )
+        return Response(
+            {
+                **payload,
+                "competition": CompetitionDetailSerializer(
+                    competition, context={"request": request}
+                ).data,
+            },
             status=status.HTTP_201_CREATED,
         )

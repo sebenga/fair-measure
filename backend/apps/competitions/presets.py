@@ -175,10 +175,24 @@ SOCCER: Preset = {
             "5-4-1",
         ],
     },
+    "discipline": {
+        "enabled": True,
+        "yellow_threshold": 5,
+        "yellow_ban_matches": 1,
+        "red_ban_matches": 1,
+    },
     "rules": [
         {
             "name": "League points",
             "description": "A win is 3 points, a draw is 1, a loss is 0.",
+        },
+        {
+            "name": "Discipline",
+            "description": (
+                "A red card bans a player for the next match. "
+                "Every five yellow cards in the season also bans a player for the next match. "
+                "Injured and suspended players cannot be named on a team sheet."
+            ),
         },
         {
             "name": "Team sheet",
@@ -383,6 +397,7 @@ def public_preset(key: str, preset: Preset) -> dict:
         "official_results": bool(preset.get("official_results")),
         "unit_count_options": dict(preset.get("unit_count_options") or {}),
         "team_sheet": _team_sheet_settings(preset),
+        "discipline": dict(preset.get("discipline") or {}),
         "category": preset.get("category") or "",
         "family": preset.get("family") or "",
         "variant": preset.get("variant") or "",
@@ -545,6 +560,7 @@ def apply_preset(competition, preset_key: str, *, unit_count: int | None = None)
             "player_stats": list(preset.get("player_stats") or []),
             "roster_numbers": list(preset.get("roster_numbers") or []),
             "team_sheet": _team_sheet_settings(preset),
+            "discipline": dict(preset.get("discipline") or {}),
             "unit_count": preset.get("unit_count"),
             "category": preset.get("category") or "",
             "family": preset.get("family") or "",

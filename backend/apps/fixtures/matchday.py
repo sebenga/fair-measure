@@ -310,19 +310,24 @@ def _side_payload(
     cards = card_counts(fixture)
     on, bench_left, off = _field_state(lineup, side_subs, dismissed)
     entries = list(lineup.entries.select_related("player").all()) if lineup else []
-    squad = [
-        {
-            "player_id": str(member.id),
-            "user_id": str(member.user_id) if member.user_id else None,
-            "name": member.name,
-            "number": member.number,
-            "position": member.position,
-            "availability": member.availability,
-            "availability_note": member.availability_note,
-            "available_from": member.available_from,
-        }
-        for member in side.participant.roster.filter(is_active=True).order_by("number", "name")
-    ]
+    from .discipline import discipline_config, effective_availability
+
+    rules = discipline_config(fixture.competition)
+    squad = []
+    for member in side.participant.roster.filter(is_active=True).order_by("number", "name"):
+        availability, note, back = effective_availability(member, fixture, config=rules)
+        squad.append(
+            {
+                "player_id": str(member.id),
+                "user_id": str(member.user_id) if member.user_id else None,
+                "name": member.name,
+                "number": member.number,
+                "position": member.position,
+                "availability": availability,
+                "availability_note": note,
+                "available_from": back,
+            }
+        )
 
     def entry_row(entry: LineupEntry) -> dict:
         return {
@@ -537,10 +542,14 @@ class TeamSheetView(_FixtureView):
                 raise ValidationError({role: "Pick players from this team's squad."})
             if player_id in seen:
                 raise ValidationError({role: f"{squad[player_id].name} is named twice."})
-            if not squad[player_id].is_available:
-                member = squad[player_id]
+            member = squad[player_id]
+            from .discipline import effective_availability
+
+            status, _, _ = effective_availability(member, fixture)
+            if status != RosterMember.Availability.AVAILABLE:
+                label = dict(RosterMember.Availability.choices).get(status, status)
                 raise ValidationError(
-                    {role: f"{member.name} is {member.get_availability_display().lower()} and cannot be named."}
+                    {role: f"{member.name} is {str(label).lower()} and cannot be named."}
                 )
             seen.add(player_id)
             number = (row or {}).get("number")

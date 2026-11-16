@@ -466,6 +466,10 @@ class FixtureViewSet(viewsets.ModelViewSet):
             from apps.social.live import publish_kickoff
 
             publish_kickoff(fixture)
+        if new_status in {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT} or reopening:
+            from .discipline import sync_roster_discipline
+
+            sync_roster_discipline(fixture)
         if new_status in {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT}:
             from apps.social.live import publish_full_time
 
@@ -583,6 +587,9 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
         fixture.refresh_from_db()
         if fixture.is_counted:
             _results_changed(fixture)
+            from .discipline import sync_roster_discipline
+
+            sync_roster_discipline(fixture)
         payload = {**_fixture_payload(fixture), **(extra or {})}
         publish_event(
             event_name,

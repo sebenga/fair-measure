@@ -1,6 +1,13 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 
 import type { Competition } from '../core/models';
+
+export type StripDemo = {
+  kind: 'soccer' | 'custom';
+  name: string;
+  sport: string;
+  blurb: string;
+};
 
 const TINTS = [
   'linear-gradient(135deg, #0f766e, #14b8a6)',
@@ -19,19 +26,31 @@ const TINTS = [
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (competitions().length) {
+    @if (hasRows()) {
       <section class="strip" [attr.aria-label]="title()">
         <div class="head">
           <h2>{{ title() }}</h2>
-          <span class="count">{{ competitions().length }}</span>
+          <span class="count">{{ rowCount() }}</span>
         </div>
         <div class="row">
+          @for (demo of demos(); track demo.kind; let i = $index) {
+            <button type="button" class="tile demo" (click)="tryDemo.emit(demo.kind)">
+              <span class="badge" [style.background]="tint(i)">{{ initials(demo.name) }}</span>
+              <span class="copy">
+                <strong>{{ demo.name }}</strong>
+                <small>{{ demo.sport }} · {{ demo.blurb }}</small>
+                <em class="try">1 hour demo</em>
+              </span>
+            </button>
+          }
           @for (competition of competitions(); track competition.id; let i = $index) {
             <button type="button" class="tile" (click)="open.emit(competition)">
               @if (competition.logo_url) {
                 <img class="badge" [src]="competition.logo_url" alt="" />
               } @else {
-                <span class="badge" [style.background]="tint(i)">{{ initials(competition.name) }}</span>
+                <span class="badge" [style.background]="tint(i + demos().length)">{{
+                  initials(competition.name)
+                }}</span>
               }
               <span class="copy">
                 <strong>{{ competition.name }}</strong>
@@ -171,13 +190,27 @@ const TINTS = [
         background: rgba(var(--ion-color-primary-rgb), 0.12);
         color: var(--ion-color-primary);
       }
+
+      em.try {
+        background: color-mix(in srgb, var(--ion-color-tertiary, #0ea5e9) 16%, transparent);
+        color: var(--ion-color-tertiary-shade, #0369a1);
+      }
+
+      .tile.demo {
+        border-color: color-mix(in srgb, var(--ion-color-primary) 35%, var(--ion-color-step-150, #e3e6eb));
+      }
     `,
   ],
 })
 export class CompetitionStripComponent {
   readonly competitions = input.required<Competition[]>();
+  readonly demos = input<StripDemo[]>([]);
   readonly title = input('Competitions');
   readonly open = output<Competition>();
+  readonly tryDemo = output<'soccer' | 'custom'>();
+
+  readonly hasRows = computed(() => this.competitions().length > 0 || this.demos().length > 0);
+  readonly rowCount = computed(() => this.competitions().length + this.demos().length);
 
   tint(index: number): string {
     return TINTS[index % TINTS.length];

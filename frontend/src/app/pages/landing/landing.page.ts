@@ -1,12 +1,13 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
-import { IonContent, IonSpinner } from '@ionic/angular/standalone';
+import { ActivatedRoute, Router } from '@angular/router';
+import { IonContent, IonSpinner, ToastController } from '@ionic/angular/standalone';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
+import { extractErrorMessage } from '../../core/error-message';
 import {
   FALLBACK_CORPORATE,
   FALLBACK_GOVERNMENT,
@@ -24,7 +25,10 @@ import {
 import { LandingEnquiryComponent } from './landing-enquiry.component';
 import { LegalFooterComponent } from '../../shared/legal-footer.component';
 import { SponsorShowcaseComponent } from './sponsor-showcase.component';
-import { CompetitionStripComponent } from '../../shared/competition-strip.component';
+import {
+  CompetitionStripComponent,
+  type StripDemo,
+} from '../../shared/competition-strip.component';
 
 const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
 
@@ -55,6 +59,7 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
             Fair Measure
           </button>
           <nav>
+            <button type="button" (click)="scrollTo('try')">Try demos</button>
             <button type="button" (click)="scrollTo('public')">Competitions</button>
             <button type="button" (click)="scrollTo('corporate')">Corporate</button>
             <button type="button" (click)="scrollTo('government')">Government</button>
@@ -74,7 +79,9 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
           class="top-competitions"
           title="Competitions on Fair Measure"
           [competitions]="competitions()"
+          [demos]="stripDemos()"
           (open)="openCompetition($event.id)"
+          (tryDemo)="startDemo($event)"
         />
 
         <section class="hero" id="top">
@@ -104,6 +111,64 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
 
         <fm-landing-moments />
 
+        <section class="try-demos" id="try">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Try before you build</p>
+              <h2>One-hour demos</h2>
+            </div>
+          </div>
+          <p class="lede try-lede">
+            Jump straight into a filled competition — teams, fixtures, a live match, tables and the
+            feed. It deletes itself after an hour.
+          </p>
+          <div class="demo-grid">
+            <article class="demo-card soccer">
+              <p class="demo-kind">Soccer</p>
+              <h3>Football league demo</h3>
+              <p>
+                16 teams, a season in play, a cup, team sheets and ratings — the full soccer look
+                and feel.
+              </p>
+              <button
+                type="button"
+                class="primary"
+                [disabled]="demoBusy() !== null"
+                (click)="startDemo('soccer')"
+              >
+                @if (demoBusy() === 'soccer') {
+                  <ion-spinner name="crescent" />
+                  Building…
+                } @else {
+                  Try soccer for 1 hour
+                }
+              </button>
+            </article>
+            <article class="demo-card custom">
+              <p class="demo-kind">Custom</p>
+              <h3>Your-rules VS demo</h3>
+              <p>
+                A head-to-head league with scoring you would define yourself — same boards, sheets
+                and live match centre.
+              </p>
+              <button
+                type="button"
+                class="primary"
+                [disabled]="demoBusy() !== null"
+                (click)="startDemo('custom')"
+              >
+                @if (demoBusy() === 'custom') {
+                  <ion-spinner name="crescent" />
+                  Building…
+                } @else {
+                  Try custom for 1 hour
+                }
+              </button>
+            </article>
+          </div>
+          <p class="hint try-hint">No account needed — each demo lasts one hour, then deletes itself.</p>
+        </section>
+
         <section class="public" id="public">
           <div class="section-head">
             <h2>Public competitions</h2>
@@ -115,15 +180,55 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
           } @else {
             <div class="board">
               <div class="cards">
-                @if (competitions().length === 0) {
-                  <p class="empty">
-                    No featured competitions yet. When you create one, choose to show it on the
-                    landing page so visitors can find it here.
+                <article class="comp demo-comp soccer">
+                  <div class="stripe" [style.background]="stripe(0)"></div>
+                  <p class="meta">Soccer · one-hour demo</p>
+                  <h3>Football league demo</h3>
+                  <p class="meta">
+                    16 teams, a live match, cup, sheets and ratings. Deletes after an hour.
                   </p>
-                } @else {
-                  @for (competition of competitions(); track competition.id; let i = $index) {
+                  <div class="card-foot">
+                    <span>Try the look and feel</span>
+                    <button
+                      type="button"
+                      class="text"
+                      [disabled]="demoBusy() !== null"
+                      (click)="startDemo('soccer')"
+                    >
+                      @if (demoBusy() === 'soccer') {
+                        Building…
+                      } @else {
+                        Try soccer →
+                      }
+                    </button>
+                  </div>
+                </article>
+                <article class="comp demo-comp custom">
+                  <div class="stripe" [style.background]="stripe(1)"></div>
+                  <p class="meta">Custom · one-hour demo</p>
+                  <h3>Your-rules VS demo</h3>
+                  <p class="meta">
+                    Head-to-head league with custom scoring — same boards and match centre.
+                  </p>
+                  <div class="card-foot">
+                    <span>Try the look and feel</span>
+                    <button
+                      type="button"
+                      class="text"
+                      [disabled]="demoBusy() !== null"
+                      (click)="startDemo('custom')"
+                    >
+                      @if (demoBusy() === 'custom') {
+                        Building…
+                      } @else {
+                        Try custom →
+                      }
+                    </button>
+                  </div>
+                </article>
+                @for (competition of competitions(); track competition.id; let i = $index) {
                     <article class="comp">
-                      <div class="stripe" [style.background]="stripe(i)"></div>
+                      <div class="stripe" [style.background]="stripe(i + 2)"></div>
                       <p class="meta">
                         {{ competition.sport || 'Multi-sport' }} ·
                         {{ formatLabel(competition.format) }}
@@ -145,7 +250,6 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
                         </button>
                       </div>
                     </article>
-                  }
                 }
               </div>
 
@@ -309,6 +413,8 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
 export class LandingPage {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly toasts = inject(ToastController);
   readonly auth = inject(AuthService);
 
   readonly corporateStories = CORPORATE_STORIES;
@@ -320,6 +426,22 @@ export class LandingPage {
   readonly previewPosts = signal<Post[]>([]);
   readonly liveCount = signal(0);
   readonly placements = signal<MarketingPlacement[]>([]);
+  readonly demoBusy = signal<'soccer' | 'custom' | null>(null);
+  /** Always offer the one-hour demos in the top strip, including when logged out. */
+  readonly stripDemos = computed<StripDemo[]>(() => [
+    {
+      kind: 'soccer',
+      name: 'Football league demo',
+      sport: 'Soccer',
+      blurb: '16 teams · live match',
+    },
+    {
+      kind: 'custom',
+      name: 'Custom VS demo',
+      sport: 'Custom',
+      blurb: 'Your rules · 1 hour',
+    },
+  ]);
 
   readonly banners = computed(() =>
     this.placements().filter((item) => item.slot === 'banner'),
@@ -346,6 +468,16 @@ export class LandingPage {
 
   constructor() {
     this.load();
+    const pending = this.route.snapshot.queryParamMap.get('demo');
+    if ((pending === 'soccer' || pending === 'custom') && this.auth.isAuthenticated()) {
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { demo: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+      this.startDemo(pending);
+    }
   }
 
   stripe(index: number): string {
@@ -368,6 +500,35 @@ export class LandingPage {
     void this.router.navigate(['/register'], {
       queryParams: { next: '/tabs/competitions/new' },
       replaceUrl: true,
+    });
+  }
+
+  startDemo(kind: 'soccer' | 'custom'): void {
+    if (this.demoBusy()) return;
+    this.demoBusy.set(kind);
+    this.api.tryDemo(kind).subscribe({
+      next: (payload) => {
+        if (payload.access && payload.refresh && payload.user) {
+          this.auth.acceptSession({
+            access: payload.access,
+            refresh: payload.refresh,
+            user: payload.user,
+          });
+        }
+        this.demoBusy.set(null);
+        void this.router.navigateByUrl(`/tabs/competitions/${payload.competition_id}/setup`, {
+          replaceUrl: true,
+        });
+      },
+      error: async (err: unknown) => {
+        this.demoBusy.set(null);
+        const toast = await this.toasts.create({
+          message: extractErrorMessage(err, 'Could not start that demo.'),
+          duration: 3200,
+          color: 'danger',
+        });
+        await toast.present();
+      },
     });
   }
 

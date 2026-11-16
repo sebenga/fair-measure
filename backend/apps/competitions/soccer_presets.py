@@ -79,15 +79,35 @@ FUTSAL_SCORES = [
 ]
 
 
+NORMAL_DISCIPLINE = {
+    "enabled": True,
+    "yellow_threshold": 5,
+    "yellow_ban_matches": 1,
+    "red_ban_matches": 1,
+}
+
+
 def _football(**overrides) -> dict:
     sheet = overrides.get("team_sheet") or {}
     rules = list(overrides.pop("rules", None) or [])
     if sheet and not any(rule.get("name") == "Players" for rule in rules):
         rules.insert(0, _numbers_rule(sheet))
+    if not any(rule.get("name") == "Discipline" for rule in rules):
+        rules.append(
+            {
+                "name": "Discipline",
+                "description": (
+                    "A red card bans a player for the next match. "
+                    "Every five yellow cards in the season also bans a player for the next match. "
+                    "Injured and suspended players cannot be named on a team sheet."
+                ),
+            }
+        )
     overrides.setdefault("score_types", GOAL_SCORES)
     overrides.setdefault("formats_allowed", ["league", "knockout", "groups_knockout", "round_robin"])
     overrides.setdefault("family", "football")
     overrides.setdefault("family_label", "Football")
+    overrides.setdefault("discipline", NORMAL_DISCIPLINE)
     locked = overrides.pop("locked", True)
     return _sport(
         icon="football-outline",

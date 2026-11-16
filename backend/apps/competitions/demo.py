@@ -324,6 +324,148 @@ def clear_demo_league(competition: Competition) -> dict:
     return _delete_demo_competition(competition)
 
 
+TRY_DEMO_KINDS = ("soccer", "custom")
+MAX_ACTIVE_TRY_DEMOS = 2
+
+
+def _guest_demo_owner():
+    """Throwaway account for a logged-out visitor's one-hour demo."""
+
+    short = timezone.now().strftime("%Y%m%d%H%M%S") + f"{timezone.now().microsecond:06d}"
+    email = f"guest.{short[-16:]}@{DEMO_EMAIL_DOMAIN}"
+    return User.objects.create_user(
+        email=email,
+        password=None,
+        display_name="Demo visitor",
+        given_name="Demo",
+        family_name="Visitor",
+        headline="One-hour demo session",
+    )
+
+
+def start_try_demo(user, kind: str) -> dict:
+    """One-tap landing demos: a soccer league or a custom VS league, live for one hour.
+
+    Logged-out visitors get a guest account and JWT pair so they can open the demo
+    immediately without registering.
+    """
+
+    choice = (kind or "").strip().lower()
+    if choice not in TRY_DEMO_KINDS:
+        raise ValidationError({"kind": "Choose soccer or custom."})
+
+    guest = not getattr(user, "is_authenticated", False)
+    if guest:
+        user = _guest_demo_owner()
+    else:
+        active = Competition.objects.filter(
+            owner=user, settings_json__demo_league__active=True
+        ).count()
+        if active >= MAX_ACTIVE_TRY_DEMOS:
+            raise ValidationError(
+                {
+                    "demo": (
+                        "You already have two active one-hour demos. "
+                        "Wait for one to expire, or delete it from My leagues."
+                    )
+                }
+            )
+
+    from .serializers import CompetitionWriteSerializer
+
+    class _Request:
+        def __init__(self, actor):
+            self.user = actor
+
+    if choice == "soccer":
+        body = {
+            "name": "Soccer demo",
+            "preset": "soccer",
+            "format": "league_knockout",
+            "is_private": False,
+            "show_on_landing": False,
+        }
+    else:
+        body = {
+            "name": "Custom demo",
+            "preset": "custom",
+            "format": "league",
+            "scoring_basis": "results",
+            "participant_type": "team",
+            "scoring_categories": [
+                {
+                    "name": "Goal",
+                    "points": "1",
+                    "affects_score": True,
+                    "code": "goal",
+                    "description": "A goal for this side.",
+                }
+            ],
+            "league_points": {"win": 3, "draw": 1, "loss": 0},
+            "is_private": False,
+            "show_on_landing": False,
+        }
+
+    serializer = CompetitionWriteSerializer(data=body, context={"request": _Request(user)})
+    serializer.is_valid(raise_exception=True)
+    competition = serializer.save()
+
+    if choice == "custom":
+        settings = dict(competition.settings_json or {})
+        settings["team_sheet"] = {
+            "starters": 11,
+            "min_on_field": 7,
+            "min_squad": 14,
+            "bench_max": 7,
+            "max_substitutions": 5,
+            "rolling_substitutions": False,
+            "keeper": "GK",
+            "lines": ["DEF", "MID", "FWD"],
+            "formations": ["4-4-2", "4-3-3", "3-5-2", "4-2-3-1"],
+        }
+        settings["discipline"] = {
+            "enabled": True,
+            "yellow_threshold": 5,
+            "yellow_ban_matches": 1,
+            "red_ban_matches": 1,
+        }
+        settings["match_structure"] = [
+            {"unit": "half", "count": 2, "minutes": 45, "affects_total": True}
+        ]
+        settings.setdefault("time_limit_minutes", 90)
+        competition.settings_json = settings
+        if not competition.match_weekdays:
+            competition.match_weekdays = [5]
+        competition.save(update_fields=["settings_json", "match_weekdays", "updated_at"])
+
+    payload = generate_demo_league(competition, user)
+    if guest:
+        settings = dict(competition.settings_json or {})
+        info = dict(settings.get("demo_league") or {})
+        owners = list(info.get("user_ids") or [])
+        owner_id = str(user.id)
+        if owner_id not in owners:
+            owners.append(owner_id)
+        info["user_ids"] = owners
+        info["guest"] = True
+        settings["demo_league"] = info
+        competition.settings_json = settings
+        competition.save(update_fields=["settings_json", "updated_at"])
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        from apps.accounts.serializers import UserSerializer
+
+        refresh = RefreshToken.for_user(user)
+        payload.update(
+            {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+                "user": UserSerializer(user).data,
+            }
+        )
+    return {**payload, "kind": choice, "competition_id": str(competition.id), "guest": guest}
+
+
 def purge_expired_demos() -> int:
     removed = 0
     for competition in Competition.objects.filter(settings_json__demo_league__active=True):

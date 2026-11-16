@@ -17,7 +17,7 @@ import { AlertController, ToastController } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
-import { availabilityText, isUnavailable } from '../../core/player-status';
+import { availabilityTag, availabilityText, isUnavailable } from '../../core/player-status';
 import type {
   FormationSlot,
   LineupPlayer,
@@ -394,11 +394,18 @@ interface Draft {
         </div>
 
         @if (unavailable().length) {
-          <p class="hint">Not available</p>
+          <p class="hint">Injured / suspended — cannot be named</p>
           <ul class="unavailable">
             @for (player of unavailable(); track player.player_id) {
-              <li [class.sus]="player.availability === 'suspended'">
-                <b>{{ label(player) }}</b> {{ statusOf(player) }}
+              <li
+                [class.inj]="player.availability === 'injured'"
+                [class.sus]="player.availability === 'suspended'"
+              >
+                <span class="out-tag" [attr.data-kind]="player.availability">{{
+                  statusTag(player) || (player.availability === 'injured' ? 'INJ' : 'SUS')
+                }}</span>
+                <b>{{ label(player) }}</b>
+                <span class="out-why">{{ statusOf(player) }}</span>
               </li>
             }
           </ul>
@@ -801,13 +808,44 @@ interface Draft {
         padding: 0;
         list-style: none;
         display: grid;
-        gap: 4px;
+        gap: 6px;
         font-size: 0.82rem;
-        color: var(--ion-color-danger);
       }
-
+      .unavailable li {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 6px 8px;
+        padding: 6px 8px;
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--ion-color-danger) 35%, transparent);
+        background: color-mix(in srgb, var(--ion-color-danger) 8%, transparent);
+        color: var(--ion-color-danger-shade, #b91c1c);
+      }
       .unavailable .sus {
-        color: #b45309;
+        border-color: color-mix(in srgb, #b45309 40%, transparent);
+        background: color-mix(in srgb, #b45309 10%, transparent);
+        color: #92400e;
+      }
+      .unavailable .out-tag {
+        flex: 0 0 auto;
+        min-width: 2.4rem;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-align: center;
+        color: #fff;
+        background: var(--ion-color-danger, #c0392b);
+      }
+      .unavailable .sus .out-tag {
+        background: #b45309;
+      }
+      .unavailable .out-why {
+        flex: 1 1 100%;
+        opacity: 0.9;
+        font-size: 0.78rem;
       }
 
       .chips {
@@ -1313,6 +1351,7 @@ export class MatchDayComponent implements OnInit {
   }
 
   readonly statusOf = availabilityText;
+  readonly statusTag = availabilityTag;
 
   private startingIds(draft: Draft): string[] {
     return this.draftSlots().length ? Object.values(draft.slots).filter(Boolean) : draft.starters;

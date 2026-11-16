@@ -22,6 +22,7 @@ from .views import (
     TeamPickDeclineView,
     TeamPickListCreateView,
     TeamDraftView,
+    TryDemoView,
 )
 
 # Trailing slashes are off everywhere so router-generated and hand-written
@@ -46,6 +47,7 @@ participant_router = routers.NestedSimpleRouter(
 participant_router.register("roster", RosterMemberViewSet, basename="roster-member")
 
 urlpatterns = [
+    path("demos/try", TryDemoView.as_view(), name="try-demo"),
     path("me/invites", MyInviteListView.as_view(), name="my-invites"),
     path("invites/<uuid:invite_pk>/accept", InviteAcceptView.as_view(), name="invite-accept"),
     path("invites/<uuid:invite_pk>/decline", InviteDeclineView.as_view(), name="invite-decline"),

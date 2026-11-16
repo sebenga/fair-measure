@@ -46,6 +46,7 @@ import type {
   UploadTarget,
   MarketingEnquiry,
   MarketingPlacement,
+  User,
 } from './models';
 
 type Query = Record<string, string | number | boolean | undefined | null>;
@@ -519,6 +520,24 @@ export class ApiService {
       round_number?: number;
       fixtures?: string[];
     }>(`${this.base}/competitions/${competitionId}/advance`, {});
+  }
+
+  /** One-tap landing demos: soccer league or custom VS league, live for one hour. */
+  tryDemo(kind: 'soccer' | 'custom') {
+    return this.http.post<{
+      active: boolean;
+      kind: 'soccer' | 'custom';
+      competition_id: string;
+      expires_at?: string;
+      teams: number;
+      fixtures: number;
+      played: number;
+      guest?: boolean;
+      access?: string;
+      refresh?: string;
+      user?: User;
+      competition: CompetitionDetail;
+    }>(`${this.base}/demos/try`, { kind });
   }
 
   /** `finished` builds a league whose season is already over, ready for a new season. */

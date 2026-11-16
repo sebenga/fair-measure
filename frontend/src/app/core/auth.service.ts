@@ -114,6 +114,11 @@ export class AuthService {
     }
   }
 
+  /** Adopt a session returned by a guest one-hour demo. */
+  acceptSession(response: AuthResponse): void {
+    this.persist(response);
+  }
+
   private persist(response: AuthResponse): void {
     if (!response?.access || !response?.refresh) {
       throw new Error('The server created the account but did not return a session. Sign in.');

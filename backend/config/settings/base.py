@@ -198,6 +198,7 @@ REST_FRAMEWORK = {
         "anon": "60/min",
         "user": "1000/hour",
         "auth": "5/min",
+        "try_demo": "3/hour",
         "client_errors": "30/min",
     },
     "EXCEPTION_HANDLER": "apps.core.exceptions.api_exception_handler",
