@@ -165,7 +165,12 @@ class CompetitionViewSet(viewsets.ModelViewSet):
             participant_count=Coalesce(Subquery(entrants), 0)
         )
         if self.request.query_params.get("mine") in {"1", "true", "yes"}:
-            queryset = queryset.filter(member_of(self.request.user))
+            # Anonymous callers hit Discover with mine=true; never pass AnonymousUser
+            # into a UUID FK filter (that raises and surfaces as Search unavailable).
+            if not self.request.user or not self.request.user.is_authenticated:
+                queryset = queryset.none()
+            else:
+                queryset = queryset.filter(member_of(self.request.user))
         if self.action == "retrieve":
             # Each roster row names its account and each entrant lists its stages: fetch
             # those alongside, or a 16-team league costs one query per player.

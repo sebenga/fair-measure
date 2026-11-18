@@ -14,6 +14,16 @@ pytestmark = pytest.mark.django_db
 User = get_user_model()
 
 
+def test_anonymous_mine_list_is_empty_not_500():
+    """Discover calls mine=true even before sign-in; that must not 400/500."""
+
+    from rest_framework.test import APIClient
+
+    response = APIClient().get("/api/v1/competitions", {"mine": "true", "page_size": 20})
+    assert response.status_code == 200, response.data
+    assert response.data["results"] == []
+
+
 def test_a_big_league_is_listed_once_with_its_team_count(api, user):
     league = Competition.objects.create(
         name="Big demo",

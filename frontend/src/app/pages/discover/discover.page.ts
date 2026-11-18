@@ -23,6 +23,7 @@ import {
 } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
 import {
   FALLBACK_CAMPAIGN,
@@ -149,7 +150,7 @@ import { CompetitionStripComponent } from '../../shared/competition-strip.compon
 
       @if (loading()) {
         <div class="centered"><ion-spinner name="crescent" /></div>
-      } @else if (error()) {
+      } @else if (error() && !results().length && !landing().length) {
         <div class="fm-empty">
           <ion-icon name="alert-circle-outline" aria-hidden="true" />
           <h3>Search unavailable</h3>
@@ -348,6 +349,7 @@ import { CompetitionStripComponent } from '../../shared/competition-strip.compon
 })
 export class DiscoverPage implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly queries = new Subject<string>();
 
@@ -481,7 +483,14 @@ export class DiscoverPage implements OnInit {
         switchMap((query) => {
           this.loading.set(true);
           this.query.set(query);
-          return this.api.listCompetitions({ search: query, page_size: 30 });
+          return this.api.listCompetitions({ search: query, page_size: 30 }).pipe(
+            catchError((err: unknown) => {
+              // Keep the stream alive: one failed keystroke must not kill Discover.
+              this.error.set(extractErrorMessage(err));
+              this.loading.set(false);
+              return of({ ...EMPTY_PAGE, results: [] as Competition[] });
+            }),
+          );
         }),
         takeUntilDestroyed(),
       )
@@ -489,10 +498,7 @@ export class DiscoverPage implements OnInit {
         next: (page) => {
           this.results.set(page.results);
           this.noteSports(page.results);
-          this.loading.set(false);
-        },
-        error: (err: unknown) => {
-          this.error.set(extractErrorMessage(err));
+          if (page.results.length) this.error.set(null);
           this.loading.set(false);
         },
       });
@@ -513,13 +519,20 @@ export class DiscoverPage implements OnInit {
     this.error.set(null);
 
     forkJoin({
-      competitions: this.api.listCompetitions({ search: this.query(), page_size: 30 }),
+      competitions: this.api.listCompetitions({ search: this.query(), page_size: 30 }).pipe(
+        catchError((err: unknown) => {
+          this.error.set(extractErrorMessage(err));
+          return of({ ...EMPTY_PAGE, results: [] as Competition[] });
+        }),
+      ),
       posts: this.api.listDiscoverPosts({ page_size: 20 }).pipe(
         catchError(() => of({ next: null, previous: null, results: [] as Post[] })),
       ),
-      mine: this.api.listCompetitions({ mine: true, page_size: 20 }).pipe(
-        catchError(() => of({ ...EMPTY_PAGE, results: [] as Competition[] })),
-      ),
+      mine: this.auth.isAuthenticated()
+        ? this.api.listCompetitions({ mine: true, page_size: 20 }).pipe(
+            catchError(() => of({ ...EMPTY_PAGE, results: [] as Competition[] })),
+          )
+        : of({ ...EMPTY_PAGE, results: [] as Competition[] }),
       placements: this.api.listPlacements().pipe(catchError(() => of([] as MarketingPlacement[]))),
       landing: this.api.listCompetitions({ show_on_landing: true, page_size: 8 }).pipe(
         catchError(() => of({ ...EMPTY_PAGE, results: [] as Competition[] })),
@@ -535,10 +548,9 @@ export class DiscoverPage implements OnInit {
         if (!this.composerLeagueId() && mine.results[0]) {
           this.composerLeagueId.set(mine.results[0].id);
         }
-        this.loading.set(false);
-      },
-      error: (err: unknown) => {
-        this.error.set(extractErrorMessage(err));
+        if (competitions.results.length || landing.results.length) {
+          this.error.set(null);
+        }
         this.loading.set(false);
       },
     });

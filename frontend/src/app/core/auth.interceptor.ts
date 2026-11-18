@@ -80,12 +80,26 @@ function retryWithFreshToken(
       refreshed.next(response.access);
       return next(withToken(request, response.access));
     }),
-    catchError((error: unknown) => {
+    catchError(() => {
       refreshing = false;
       refreshed.next(false);
       // The refresh token is expired or revoked; there is nothing left to try.
-      auth.logout();
-      return throwError(() => error);
+      // Always surface 401 (never a refresh 500) so Discover can recover cleanly.
+      auth.logout(false);
+      return throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 401,
+            statusText: 'Unauthorized',
+            url: request.url,
+            error: {
+              error: {
+                code: 'token_not_valid',
+                message: 'Please sign in again.',
+              },
+            },
+          }),
+      );
     }),
   );
 }

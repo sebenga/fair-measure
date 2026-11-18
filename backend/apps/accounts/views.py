@@ -10,7 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from apps.core.throttles import AuthRateThrottle
 
@@ -45,6 +45,32 @@ class LoginView(TokenObtainPairView):
     serializer_class = FairMeasureTokenObtainPairSerializer
     permission_classes = [AllowAny]
     throttle_classes = [AuthRateThrottle]
+
+
+@extend_schema(
+    tags=["Auth"],
+    summary="Refresh an access token",
+    description="Returns a new access token. Missing or deleted users get 401, not 500.",
+)
+class SafeTokenRefreshView(TokenRefreshView):
+    """Stale refresh tokens for deleted accounts must not blank Discover with a 500."""
+
+    permission_classes = [AllowAny]
+    throttle_classes = [AuthRateThrottle]
+
+    def post(self, request: Request, *args, **kwargs) -> Response:
+        try:
+            return super().post(request, *args, **kwargs)
+        except User.DoesNotExist:
+            return Response(
+                {
+                    "error": {
+                        "code": "token_not_valid",
+                        "message": "Token is invalid or expired.",
+                    }
+                },
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
 
 
 @extend_schema_view(
