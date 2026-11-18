@@ -40,17 +40,11 @@ from .serializers import (
 
 
 def user_can_score_fixture(fixture: Fixture, user) -> bool:
-    """Owners and admins can score any game. A named referee scores that game.
+    """Live scoring is referee-only; after full time admins may file corrections."""
 
-    Until a game has a referee, a league scorer can still record it.
-    """
-    if has_at_least(fixture.competition, user, Role.ADMIN):
-        return True
-    if fixture.referees.filter(user=user).exists():
-        return True
-    if fixture.referees.exists():
-        return False
-    return has_at_least(fixture.competition, user, Role.SCORER)
+    from .officials import user_can_score_fixture as _can
+
+    return _can(fixture, user)
 
 
 def _assert_can_finalise(fixture: Fixture, user) -> None:
@@ -215,7 +209,9 @@ class FixtureViewSet(viewsets.ModelViewSet):
 
     def _assert_can_score(self) -> None:
         if not user_can_score_fixture(self.get_object(), self.request.user):
-            raise PermissionDenied("You need to be an admin or this game's referee to score it.")
+            raise PermissionDenied(
+                "Only the appointed referee (or a delegated official) can run this match."
+            )
 
     def _assert_is_admin(self) -> None:
         if not has_at_least(self.get_competition(), self.request.user, Role.ADMIN):
@@ -227,9 +223,11 @@ class FixtureViewSet(viewsets.ModelViewSet):
         self._broadcast(serializer.instance, "fixture.created")
 
     def perform_update(self, serializer) -> None:
-        self._assert_can_score()
+        # Match clock / duration stays an admin setup concern; live scoring is referee-only.
         if {"duration_minutes", "overtime_minutes"} & set(serializer.validated_data):
             self._assert_is_admin()
+        else:
+            self._assert_can_score()
         serializer.save()
         self._broadcast(serializer.instance, "fixture.updated")
 
@@ -582,6 +580,128 @@ class FixtureViewSet(viewsets.ModelViewSet):
         fixture.refresh_from_db()
         return Response(FixtureDetailSerializer(fixture).data)
 
+    @extend_schema(
+        tags=["Fixtures"],
+        summary="Referee signs the digital match card and confirms the result",
+        request=dict,
+        responses={200: FixtureDetailSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="confirm")
+    def confirm(self, request: Request, **kwargs) -> Response:
+        from .officials import accepted_referee, log_match_action
+
+        fixture = self.get_object()
+        referee = accepted_referee(fixture)
+        is_ref = referee is not None and referee.user_id == request.user.id
+        if not is_ref and not has_at_least(fixture.competition, request.user, Role.ADMIN):
+            raise PermissionDenied("Only the accepted referee (or an admin stand-in) can sign the match card.")
+        notes = str(request.data.get("notes") or "").strip()
+        with transaction.atomic():
+            fixture = Fixture.objects.select_for_update().get(pk=fixture.pk)
+            if fixture.status not in {
+                Fixture.Status.COMPLETED,
+                Fixture.Status.LIVE,
+                Fixture.Status.CONFIRMED,
+            }:
+                raise ValidationError({"status": "Confirm the match after full time."})
+            if fixture.status == Fixture.Status.LIVE:
+                fixture.phase = "full_time"
+                fixture.completed_at = timezone.now()
+            fixture.mark_confirmed(user=request.user, notes=notes)
+            log_match_action(
+                fixture=fixture,
+                user=request.user,
+                action="match.confirmed",
+                detail=notes,
+                source="referee" if is_ref else "admin",
+            )
+        from apps.competitions.season import maybe_finish_competition
+
+        maybe_finish_competition(fixture.competition)
+        enqueue_job(
+            Queues.STANDINGS,
+            "recompute",
+            {"competition_id": str(fixture.competition_id)},
+        )
+        self._broadcast(fixture, "fixture.confirmed")
+        fixture.refresh_from_db()
+        return Response(FixtureDetailSerializer(fixture).data)
+
+    @extend_schema(
+        tags=["Fixtures"],
+        summary="Raise or resolve a dispute on a confirmed match",
+        request=dict,
+        responses={200: dict},
+    )
+    @action(detail=True, methods=["post"], url_path="dispute")
+    def dispute(self, request: Request, **kwargs) -> Response:
+        from datetime import timedelta
+
+        from .models import MatchDispute
+        from .officials import log_match_action
+
+        fixture = self.get_object()
+        action_name = str(request.data.get("action") or "raise")
+        if action_name == "raise":
+            if fixture.status not in {Fixture.Status.CONFIRMED, Fixture.Status.COMPLETED}:
+                raise ValidationError({"status": "Only a finished match can be disputed."})
+            window_hours = int(
+                (fixture.competition.settings_json or {}).get("dispute_window_hours") or 24
+            )
+            signed = fixture.confirmed_at or fixture.completed_at or fixture.updated_at
+            if signed and timezone.now() - signed > timedelta(hours=window_hours):
+                raise ValidationError({"reason": f"The {window_hours}h dispute window has closed."})
+            reason = str(request.data.get("reason") or "").strip()
+            if len(reason) < 8:
+                raise ValidationError({"reason": "Explain why you are disputing the result."})
+            if not has_at_least(fixture.competition, request.user, Role.MEMBER):
+                raise PermissionDenied("Only competition members can raise a dispute.")
+            row = MatchDispute.objects.create(
+                fixture=fixture, raised_by=request.user, reason=reason[:4000]
+            )
+            fixture.status = Fixture.Status.DISPUTED
+            fixture.save(update_fields=["status", "updated_at"])
+            log_match_action(
+                fixture=fixture,
+                user=request.user,
+                action="match.disputed",
+                detail=reason,
+                payload={"dispute_id": str(row.id)},
+            )
+            return Response({"id": str(row.id), "status": row.status}, status=status.HTTP_201_CREATED)
+
+        if action_name == "resolve":
+            if not has_at_least(fixture.competition, request.user, Role.ADMIN):
+                raise PermissionDenied("Only an admin can resolve a dispute.")
+            dispute_id = request.data.get("dispute_id")
+            row = get_object_or_404(MatchDispute, pk=dispute_id, fixture=fixture)
+            decision = str(request.data.get("decision") or "").strip()
+            if decision not in {MatchDispute.Status.UPHELD, MatchDispute.Status.REJECTED}:
+                raise ValidationError({"decision": "Choose upheld or rejected."})
+            row.status = decision
+            row.resolved_by = request.user
+            row.resolution_note = str(request.data.get("note") or "")[:4000]
+            row.resolved_at = timezone.now()
+            row.save()
+            fixture.status = (
+                Fixture.Status.SCHEDULED
+                if decision == MatchDispute.Status.UPHELD
+                else Fixture.Status.CONFIRMED
+            )
+            if fixture.status == Fixture.Status.CONFIRMED and fixture.confirmed_at is None:
+                fixture.confirmed_at = timezone.now()
+            fixture.save(update_fields=["status", "confirmed_at", "updated_at"])
+            log_match_action(
+                fixture=fixture,
+                user=request.user,
+                action="match.dispute_resolved",
+                detail=decision,
+                payload={"dispute_id": str(row.id)},
+            )
+            return Response({"id": str(row.id), "status": row.status})
+
+        raise ValidationError({"action": "Use raise or resolve."})
+
 
 @extend_schema_view(
     list=extend_schema(tags=["Scoring"], summary="List a fixture's score events"),
@@ -613,7 +733,9 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
 
     def _assert_can_score(self) -> None:
         if not user_can_score_fixture(self.get_fixture(), self.request.user):
-            raise PermissionDenied("You need to be an admin or this game's referee to score it.")
+            raise PermissionDenied(
+                "Only the appointed referee (or a delegated official) can record live events."
+            )
 
     def _after_change(self, event_name: str, extra: dict | None = None) -> None:
         fixture = self.get_fixture()
@@ -637,20 +759,39 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
             )
 
     def perform_create(self, serializer) -> None:
+        from .officials import LIVE_STATUSES, assert_can_live_score, log_match_action
+
         fixture = self.get_fixture()
         reason = _official_reason(fixture, self.request)
-        if reason is None:
+        source = str(self.request.data.get("source") or "").strip()
+        if fixture.status in LIVE_STATUSES or fixture.status == Fixture.Status.POSTPONED:
+            assert_can_live_score(fixture, self.request.user)
+            if not source:
+                source = ScoreEvent.Source.REFEREE
+        elif reason is None:
             self._assert_can_score()
+            if has_at_least(fixture.competition, self.request.user, Role.ADMIN) and not fixture.referees.filter(
+                user=self.request.user, status=FixtureReferee.Status.ACCEPTED
+            ).exists():
+                source = ScoreEvent.Source.ADMIN_CORRECTION
+                if not reason and not str(self.request.data.get("note") or "").strip():
+                    raise ValidationError(
+                        {"note": "Admin corrections need a short reason in the note."}
+                    )
         before = _scores(fixture) if reason else {}
         went_live = fixture.status == Fixture.Status.SCHEDULED
-        if fixture.status == Fixture.Status.SCHEDULED:
+        if went_live:
             _assert_ready_for_kickoff(fixture)
         with transaction.atomic():
-            serializer.save(fixture=fixture, recorded_by=self.request.user)
+            event = serializer.save(
+                fixture=fixture,
+                recorded_by=self.request.user,
+                source=source or ScoreEvent.Source.REFEREE,
+            )
             from .cards import reconcile_cards
 
-            reconcile_cards(fixture, serializer.instance.player_id)
-            if fixture.status == Fixture.Status.SCHEDULED:
+            reconcile_cards(fixture, event.player_id)
+            if went_live:
                 fixture.status = Fixture.Status.LIVE
                 if fixture.started_at is None:
                     fixture.started_at = timezone.now()
@@ -658,6 +799,14 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
             fixture.recalculate_scores()
             if reason:
                 _log_amendment(fixture, self.request, reason, before)
+            log_match_action(
+                fixture=fixture,
+                user=self.request.user,
+                action="event.recorded",
+                detail=str(event.scoring_category_id),
+                source=event.source,
+                payload={"event_id": str(event.id)},
+            )
         self._after_change("score.recorded", {"event_id": str(serializer.instance.id)})
         if went_live:
             from apps.social.live import publish_kickoff
@@ -877,6 +1026,8 @@ class FixtureRefereeView(APIView):
         )
 
     def post(self, request: Request, competition_pk, fixture_pk):
+        from .officials import appoint_official, log_match_action
+
         fixture = self._fixture(request, competition_pk, fixture_pk)
         if not has_at_least(fixture.competition, request.user, Role.ADMIN):
             raise PermissionDenied("Only an admin can choose the referee.")
@@ -891,7 +1042,32 @@ class FixtureRefereeView(APIView):
                 role=Role.MEMBER,
                 invited_by=request.user,
             )
-        FixtureReferee.objects.get_or_create(fixture=fixture, user=user)
+        role = str(request.data.get("role") or FixtureReferee.Role.REFEREE)
+        stand_in = bool(request.data.get("stand_in"))
+        note = str(request.data.get("note") or "")
+        if stand_in and not note.strip():
+            note = "Admin stand-in appointment."
+        official = appoint_official(
+            fixture=fixture,
+            user=user,
+            role=role,
+            appointed_by=request.user,
+            stand_in=stand_in,
+            note=note,
+        )
+        # Stand-ins appointed by admin are accepted immediately so the match can start.
+        if stand_in and official.status != FixtureReferee.Status.ACCEPTED:
+            official.status = FixtureReferee.Status.ACCEPTED
+            official.responded_at = timezone.now()
+            official.save(update_fields=["status", "responded_at", "updated_at"])
+        log_match_action(
+            fixture=fixture,
+            user=request.user,
+            action="official.appointed",
+            detail=f"{role} → {user.get_full_name() or user.email}",
+            source="admin",
+            payload={"official_id": str(official.id), "stand_in": stand_in},
+        )
         fixture = Fixture.objects.prefetch_related("referees__user").get(pk=fixture.pk)
         return Response(FixtureDetailSerializer(fixture).data, status=status.HTTP_201_CREATED)
 
@@ -905,3 +1081,88 @@ class FixtureRefereeView(APIView):
         FixtureReferee.objects.filter(fixture=fixture, user_id=user_id).delete()
         fixture = Fixture.objects.prefetch_related("referees__user").get(pk=fixture.pk)
         return Response(FixtureDetailSerializer(fixture).data)
+
+
+class RefereeAppointmentRespondView(APIView):
+    """Accept or decline an appointment as the appointed official."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request, appointment_pk) -> Response:
+        from .officials import log_match_action, respond_to_appointment
+
+        official = get_object_or_404(
+            FixtureReferee.objects.select_related("fixture", "user"), pk=appointment_pk
+        )
+        accept = bool(request.data.get("accept", True))
+        respond_to_appointment(official, user=request.user, accept=accept)
+        log_match_action(
+            fixture=official.fixture,
+            user=request.user,
+            action="official.accepted" if accept else "official.declined",
+            detail=official.role,
+            source="referee",
+        )
+        return Response(
+            {
+                "id": str(official.id),
+                "status": official.status,
+                "fixture_id": str(official.fixture_id),
+                "role": official.role,
+            }
+        )
+
+
+class RefereeDashboardView(APIView):
+    """Upcoming appointments, today's matches, and reports waiting for sign-off."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        from django.utils.timezone import localdate
+
+        today = localdate()
+        rows = (
+            FixtureReferee.objects.filter(user=request.user)
+            .select_related("fixture", "fixture__competition")
+            .order_by("fixture__scheduled_at", "created_at")
+        )
+        pending = []
+        upcoming = []
+        today_matches = []
+        to_sign = []
+        for row in rows:
+            fixture = row.fixture
+            item = {
+                "appointment_id": str(row.id),
+                "fixture_id": str(fixture.id),
+                "competition_id": str(fixture.competition_id),
+                "competition": fixture.competition.name,
+                "label": fixture.label or str(fixture),
+                "role": row.role,
+                "status": row.status,
+                "scheduled_at": fixture.scheduled_at,
+                "fixture_status": fixture.status,
+            }
+            if row.status == FixtureReferee.Status.INVITED:
+                pending.append(item)
+            if row.status != FixtureReferee.Status.ACCEPTED:
+                continue
+            if fixture.status in {Fixture.Status.SCHEDULED, Fixture.Status.LIVE}:
+                upcoming.append(item)
+                if fixture.scheduled_at and fixture.scheduled_at.date() == today:
+                    today_matches.append(item)
+            if fixture.status == Fixture.Status.COMPLETED and fixture.confirmed_at is None:
+                to_sign.append(item)
+            elif fixture.status == Fixture.Status.COMPLETED and row.role == FixtureReferee.Role.REFEREE:
+                # Phase 1 auto-confirms; still list recent completed for the report.
+                if fixture.confirmed_by_id == request.user.id or fixture.confirmed_at:
+                    to_sign.append({**item, "signed": True})
+        return Response(
+            {
+                "pending": pending,
+                "upcoming": upcoming,
+                "today": today_matches,
+                "reports": to_sign[:40],
+            }
+        )

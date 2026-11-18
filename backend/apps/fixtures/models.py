@@ -113,8 +113,14 @@ class Fixture(BaseModel):
         problems = []
         if not self.duration_minutes:
             problems.append("Set this game's time limit before kickoff.")
-        if not self.referees.exists():
-            problems.append("Pick the match officials before kickoff.")
+        accepted_ref = self.referees.filter(
+            role="referee", status="accepted"
+        ).exists()
+        if not accepted_ref:
+            if self.referees.filter(role="referee").exists():
+                problems.append("The appointed referee must accept before kickoff.")
+            else:
+                problems.append("Pick the match officials before kickoff.")
         problems.extend(team_sheet_kickoff_problems(self))
         return problems
 
@@ -422,11 +428,49 @@ class PlayerAppearance(BaseModel):
 
 
 class FixtureReferee(BaseModel):
-    """A person allowed to run scoring for one fixture."""
+    """An appointed match official (MatchOfficial) for one fixture."""
+
+    class Role(models.TextChoices):
+        REFEREE = "referee", _("Referee")
+        ASSISTANT_1 = "assistant_referee_1", _("Assistant referee 1")
+        ASSISTANT_2 = "assistant_referee_2", _("Assistant referee 2")
+        FOURTH_OFFICIAL = "fourth_official", _("Fourth official")
+        TMO = "tmo", _("TMO")
+        MATCH_COMMISSIONER = "match_commissioner", _("Match commissioner")
+
+    class Status(models.TextChoices):
+        INVITED = "invited", _("Invited")
+        ACCEPTED = "accepted", _("Accepted")
+        DECLINED = "declined", _("Declined")
 
     fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="referees")
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="referee_assignments"
+    )
+    role = models.CharField(max_length=32, choices=Role.choices, default=Role.REFEREE)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.ACCEPTED, db_index=True
+    )
+    appointed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="official_appointments_made",
+    )
+    responded_at = models.DateTimeField(null=True, blank=True)
+    stand_in = models.BooleanField(
+        default=False,
+        help_text=_("Admin appointed a stand-in referee; logged for the audit trail."),
+    )
+    appointment_note = models.CharField(max_length=400, blank=True)
+    # When set, this official was delegated live duties by the referee or an admin.
+    delegated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="official_delegations_made",
     )
 
     class Meta:
@@ -435,7 +479,81 @@ class FixtureReferee(BaseModel):
         ]
 
     def __str__(self) -> str:
-        return f"{self.user_id} referees {self.fixture_id}"
+        return f"{self.user_id} {self.role} {self.fixture_id}"
+
+
+class RefereeProfile(BaseModel):
+    """Qualification and availability for users who officiate matches."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="referee_profile"
+    )
+    qualification_level = models.CharField(max_length=80, blank=True)
+    federation_number = models.CharField(max_length=80, blank=True)
+    sports = models.JSONField(default=list, blank=True)
+    verified = models.BooleanField(default=False)
+    photo_url = models.URLField(blank=True)
+    availability = models.TextField(blank=True)
+    bio = models.TextField(blank=True)
+
+    def __str__(self) -> str:
+        return f"RefereeProfile({self.user_id})"
+
+
+class MatchAuditLog(BaseModel):
+    """Append-only trail of match actions (who, when, device, source)."""
+
+    fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="audit_log")
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="match_audit_actions",
+    )
+    action = models.CharField(max_length=80)
+    detail = models.TextField(blank=True)
+    source = models.CharField(max_length=40, blank=True)
+    device = models.CharField(max_length=120, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["fixture", "created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.action} @ {self.fixture_id}"
+
+
+class MatchDispute(BaseModel):
+    """Team manager challenge of a confirmed result (default window: 24h)."""
+
+    class Status(models.TextChoices):
+        OPEN = "open", _("Open")
+        UPHELD = "upheld", _("Upheld")
+        REJECTED = "rejected", _("Rejected")
+
+    fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="disputes")
+    raised_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="match_disputes_raised"
+    )
+    reason = models.TextField()
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.OPEN)
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="match_disputes_resolved",
+    )
+    resolution_note = models.TextField(blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Dispute {self.status} @ {self.fixture_id}"
 
 
 class FixtureRater(BaseModel):

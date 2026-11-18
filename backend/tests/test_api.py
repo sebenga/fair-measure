@@ -1424,44 +1424,73 @@ def test_an_admin_can_appoint_another_admin_and_a_referee_scores_one_game(
     )
     assert assigned.status_code == 201
     assert assigned.data["referees"][0]["email"] == "referee@example.com"
+    from apps.fixtures.models import FixtureReferee
+
+    appointment = FixtureReferee.objects.get(fixture=fixture, user=referee)
+    official = APIClient()
+    official.force_authenticate(user=referee)
+    assert official.post(
+        f"/api/v1/referees/appointments/{appointment.id}/respond",
+        {"accept": True},
+        format="json",
+    ).status_code == 200
 
     scorer = APIClient()
     scorer.force_authenticate(user=other_user)
     Membership.objects.filter(competition=competition, user=other_user).update(role=Role.SCORER)
-    denied = scorer.post(
-        f"/api/v1/fixtures/{fixture.id}/events",
-        {"side": str(side.id), "scoring_category": str(rugby_scoring["try"].id), "quantity": "1"},
-        format="json",
-    )
-    assert denied.status_code == 403
+    from apps.fixtures.officials import user_can_live_score
 
-    official = APIClient()
-    official.force_authenticate(user=referee)
+    assert user_can_live_score(fixture, other_user) is False
+    assert user_can_live_score(fixture, competition.owner) is False
+
+    from apps.competitions.models import RosterMember
+
+    scorer_player = RosterMember.objects.create(
+        participant=participants[0], name="No. 8", number=8
+    )
     recorded = official.post(
         f"/api/v1/fixtures/{fixture.id}/events",
-        {"side": str(side.id), "scoring_category": str(rugby_scoring["try"].id), "quantity": "1"},
+        {
+            "side": str(side.id),
+            "scoring_category": str(rugby_scoring["try"].id),
+            "quantity": "1",
+            "player": str(scorer_player.id),
+        },
         format="json",
     )
-    assert recorded.status_code == 201
+    assert recorded.status_code == 201, recorded.data
 
 
-def test_score_event_updates_the_fixture_score(api, competition, rugby_scoring, participants):
-    from apps.fixtures.models import FixtureSide
+def test_score_event_updates_the_fixture_score(api, competition, rugby_scoring, participants, user):
+    from apps.fixtures.models import FixtureReferee, FixtureSide
 
     fixture = Fixture.objects.create(competition=competition, status=Fixture.Status.LIVE)
     side = FixtureSide.objects.create(fixture=fixture, participant=participants[0], position=0)
     FixtureSide.objects.create(fixture=fixture, participant=participants[1], position=1)
+    FixtureReferee.objects.create(
+        fixture=fixture,
+        user=user,
+        role=FixtureReferee.Role.REFEREE,
+        status=FixtureReferee.Status.ACCEPTED,
+    )
+    from apps.competitions.models import RosterMember
 
-    api.post(
+    scorer = RosterMember.objects.create(
+        participant=participants[0], name="Try scorer", number=8
+    )
+
+    recorded = api.post(
         f"/api/v1/fixtures/{fixture.id}/events",
         {
             "side": str(side.id),
             "scoring_category": str(rugby_scoring["try"].id),
             "quantity": "1",
             "minute": 12,
+            "player": str(scorer.id),
         },
         format="json",
     )
+    assert recorded.status_code == 201, recorded.data
 
     detail = api.get(f"/api/v1/competitions/{competition.id}/fixtures/{fixture.id}")
     scores = {item["participant"]["name"]: item["score"] for item in detail.data["sides"]}
@@ -1684,8 +1713,9 @@ def test_a_game_needs_a_time_limit_and_a_referee_before_kickoff(api, other_user)
         "Submit Home's team sheet before kickoff.",
         "Submit Away's team sheet before kickoff.",
     ]
+    # Admins cannot take the match live — only the appointed referee can.
     blocked = api.post(f"{detail_url}/set-status", {"status": "live"}, format="json")
-    assert blocked.status_code == 400
+    assert blocked.status_code == 403
 
     cleared = api.patch(detail_url, {"duration_minutes": None}, format="json")
     assert cleared.status_code == 400
@@ -1705,7 +1735,16 @@ def test_a_game_needs_a_time_limit_and_a_referee_before_kickoff(api, other_user)
     assert denied.status_code == 403
 
     assigned = api.post(f"{detail_url}/referees", {"user": str(other_user.id)}, format="json")
-    assert assigned.data["kickoff_problems"] == [
+    assert "The appointed referee must accept before kickoff." in assigned.data["kickoff_problems"]
+    from apps.fixtures.models import FixtureReferee
+
+    appointment = FixtureReferee.objects.get(fixture=fixture, user=other_user)
+    assert scorer.post(
+        f"/api/v1/referees/appointments/{appointment.id}/respond",
+        {"accept": True},
+        format="json",
+    ).status_code == 200
+    assert api.get(detail_url).data["kickoff_problems"] == [
         "Submit Home's team sheet before kickoff.",
         "Submit Away's team sheet before kickoff.",
     ]
@@ -1713,14 +1752,18 @@ def test_a_game_needs_a_time_limit_and_a_referee_before_kickoff(api, other_user)
     def sheet(team):
         members = [
             RosterMember.objects.create(participant=team, name=f"{team.name} {index}", number=index)
-            for index in range(1, 12)
+            for index in range(1, 15)
         ]
         return {
             "formation": "4-4-2",
             "captain": str(members[0].id),
             "starters": [
                 {"player": str(member.id), "slot": index, "number": member.number}
-                for index, member in enumerate(members)
+                for index, member in enumerate(members[:11])
+            ],
+            "bench": [
+                {"player": str(member.id), "number": member.number}
+                for member in members[11:]
             ],
         }
 

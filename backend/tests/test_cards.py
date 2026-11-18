@@ -9,6 +9,7 @@ from apps.fixtures.models import (
     Fixture,
     FixtureLineup,
     FixtureRater,
+    FixtureReferee,
     FixtureSide,
     LineupEntry,
     ScoreEvent,
@@ -33,6 +34,14 @@ def match(api):
     )
     home_side = FixtureSide.objects.create(fixture=fixture, participant=home, position=0)
     FixtureSide.objects.create(fixture=fixture, participant=away, position=1)
+    from apps.fixtures.models import FixtureReferee
+
+    FixtureReferee.objects.create(
+        fixture=fixture,
+        user=competition.owner,
+        role=FixtureReferee.Role.REFEREE,
+        status=FixtureReferee.Status.ACCEPTED,
+    )
     return competition, fixture, home_side, player
 
 
@@ -156,6 +165,12 @@ def rugby_match(api):
     lineup = FixtureLineup.objects.create(fixture=fixture, side=home_side)
     LineupEntry.objects.create(
         lineup=lineup, player=player, role=LineupEntry.Role.STARTER, slot=0, position="FL", order=0
+    )
+    FixtureReferee.objects.create(
+        fixture=fixture,
+        user=competition.owner,
+        role=FixtureReferee.Role.REFEREE,
+        status=FixtureReferee.Status.ACCEPTED,
     )
     return competition, fixture, home_side, player
 

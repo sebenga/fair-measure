@@ -16,7 +16,14 @@ from .scrabble import (
     ScrabblePreviewView,
     ScrabbleRacksView,
 )
-from .views import FixtureRefereeView, FixtureViewSet, ScoreAssistView, ScoreEventViewSet
+from .views import (
+    FixtureRefereeView,
+    FixtureViewSet,
+    RefereeAppointmentRespondView,
+    RefereeDashboardView,
+    ScoreAssistView,
+    ScoreEventViewSet,
+)
 
 fixture_list = FixtureViewSet.as_view({"get": "list", "post": "create"})
 fixture_detail = FixtureViewSet.as_view(
@@ -26,6 +33,8 @@ fixture_generate = FixtureViewSet.as_view({"post": "generate"})
 fixture_set_status = FixtureViewSet.as_view({"post": "set_status"})
 fixture_phase = FixtureViewSet.as_view({"post": "phase"})
 fixture_shootout = FixtureViewSet.as_view({"post": "shootout", "delete": "shootout"})
+fixture_confirm = FixtureViewSet.as_view({"post": "confirm"})
+fixture_dispute = FixtureViewSet.as_view({"post": "dispute"})
 
 event_list = ScoreEventViewSet.as_view({"get": "list", "post": "create"})
 event_detail = ScoreEventViewSet.as_view(
@@ -63,6 +72,16 @@ urlpatterns = [
         "competitions/<uuid:competition_pk>/fixtures/<uuid:pk>/shootout",
         fixture_shootout,
         name="fixture-shootout",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:pk>/confirm",
+        fixture_confirm,
+        name="fixture-confirm",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:pk>/dispute",
+        fixture_dispute,
+        name="fixture-dispute",
     ),
     path(
         "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/referees",
@@ -155,5 +174,11 @@ urlpatterns = [
         "fixtures/<uuid:fixture_pk>/events/<uuid:pk>",
         event_detail,
         name="score-event-detail",
+    ),
+    path("referees/me", RefereeDashboardView.as_view(), name="referee-dashboard"),
+    path(
+        "referees/appointments/<uuid:appointment_pk>/respond",
+        RefereeAppointmentRespondView.as_view(),
+        name="referee-appointment-respond",
     ),
 ]

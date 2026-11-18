@@ -18,6 +18,8 @@ def goal(competition) -> ScoringCategory:
 
 
 def _live_game(competition, participants, *, overtime=30, knockout=False) -> Fixture:
+    from apps.fixtures.models import FixtureReferee
+
     stage = None
     if knockout:
         competition.format = Competition.Format.KNOCKOUT
@@ -36,6 +38,12 @@ def _live_game(competition, participants, *, overtime=30, knockout=False) -> Fix
             RosterMember.objects.create(
                 participant=participant, name=f"{participant.name} {number}", number=number
             )
+    FixtureReferee.objects.create(
+        fixture=fixture,
+        user=competition.owner,
+        role=FixtureReferee.Role.REFEREE,
+        status=FixtureReferee.Status.ACCEPTED,
+    )
     return fixture
 
 
