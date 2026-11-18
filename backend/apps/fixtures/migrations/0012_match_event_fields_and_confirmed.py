@@ -5,71 +5,154 @@ from django.conf import settings
 from django.db import migrations, models
 
 
+def _ensure_confirmation_notes(apps, schema_editor):
+    """Prod already had this column from a partial/earlier change."""
+
+    Fixture = apps.get_model("fixtures", "Fixture")
+    table = Fixture._meta.db_table
+    with schema_editor.connection.cursor() as cursor:
+        columns = {
+            column.name
+            for column in schema_editor.connection.introspection.get_table_description(cursor, table)
+        }
+    if "confirmation_notes" in columns:
+        return
+    field = models.TextField(blank=True)
+    field.set_attributes_from_name("confirmation_notes")
+    schema_editor.add_field(Fixture, field)
+
+
+def noop_reverse(apps, schema_editor):
+    pass
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('competitions', '0013_name_first_seasons'),
-        ('fixtures', '0011_fixture_phase_shootout'),
+        ("competitions", "0013_name_first_seasons"),
+        ("fixtures", "0011_fixture_phase_shootout"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='scoreevent',
-            options={'ordering': ['minute', 'second', 'created_at']},
+            name="scoreevent",
+            options={"ordering": ["minute", "second", "created_at"]},
+        ),
+        migrations.SeparateDatabaseAndState(
+            state_operations=[
+                migrations.AddField(
+                    model_name="fixture",
+                    name="confirmation_notes",
+                    field=models.TextField(blank=True),
+                ),
+            ],
+            database_operations=[
+                migrations.RunPython(_ensure_confirmation_notes, noop_reverse),
+            ],
         ),
         migrations.AddField(
-            model_name='fixture',
-            name='confirmation_notes',
-            field=models.TextField(blank=True),
-        ),
-        migrations.AddField(
-            model_name='fixture',
-            name='confirmed_at',
+            model_name="fixture",
+            name="confirmed_at",
             field=models.DateTimeField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='fixture',
-            name='confirmed_by',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='confirmed_fixtures', to=settings.AUTH_USER_MODEL),
+            model_name="fixture",
+            name="confirmed_by",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="confirmed_fixtures",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AddField(
-            model_name='scoreevent',
-            name='client_uuid',
-            field=models.UUIDField(blank=True, help_text='Client-generated id so offline watch events can be deduped.', null=True, unique=True),
+            model_name="scoreevent",
+            name="client_uuid",
+            field=models.UUIDField(
+                blank=True,
+                help_text="Client-generated id so offline watch events can be deduped.",
+                null=True,
+                unique=True,
+            ),
         ),
         migrations.AddField(
-            model_name='scoreevent',
-            name='confidence',
-            field=models.DecimalField(blank=True, decimal_places=3, help_text='0–1 confidence for AI-suggested events; null for human entries.', max_digits=4, null=True),
+            model_name="scoreevent",
+            name="confidence",
+            field=models.DecimalField(
+                blank=True,
+                decimal_places=3,
+                help_text="0–1 confidence for AI-suggested events; null for human entries.",
+                max_digits=4,
+                null=True,
+            ),
         ),
         migrations.AddField(
-            model_name='scoreevent',
-            name='second',
+            model_name="scoreevent",
+            name="second",
             field=models.PositiveSmallIntegerField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='scoreevent',
-            name='secondary_player',
-            field=models.ForeignKey(blank=True, help_text='Assist provider, player replaced, or other linked profile.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='secondary_score_events', to='competitions.rostermember'),
+            model_name="scoreevent",
+            name="secondary_player",
+            field=models.ForeignKey(
+                blank=True,
+                help_text="Assist provider, player replaced, or other linked profile.",
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="secondary_score_events",
+                to="competitions.rostermember",
+            ),
         ),
         migrations.AddField(
-            model_name='scoreevent',
-            name='source',
-            field=models.CharField(choices=[('referee', 'Referee'), ('watch', 'Watch'), ('assistant', 'Assistant'), ('ai_camera', 'AI camera'), ('admin_correction', 'Admin correction')], db_index=True, default='referee', max_length=24),
+            model_name="scoreevent",
+            name="source",
+            field=models.CharField(
+                choices=[
+                    ("referee", "Referee"),
+                    ("watch", "Watch"),
+                    ("assistant", "Assistant"),
+                    ("ai_camera", "AI camera"),
+                    ("admin_correction", "Admin correction"),
+                ],
+                db_index=True,
+                default="referee",
+                max_length=24,
+            ),
         ),
         migrations.AddField(
-            model_name='scoreevent',
-            name='supersedes_event',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='superseded_by', to='fixtures.scoreevent'),
+            model_name="scoreevent",
+            name="supersedes_event",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="superseded_by",
+                to="fixtures.scoreevent",
+            ),
         ),
         migrations.AlterField(
-            model_name='fixture',
-            name='status',
-            field=models.CharField(choices=[('scheduled', 'Scheduled'), ('live', 'Live'), ('completed', 'Completed'), ('confirmed', 'Confirmed'), ('disputed', 'Disputed'), ('postponed', 'Postponed'), ('cancelled', 'Cancelled'), ('forfeit', 'Forfeit')], db_index=True, default='scheduled', max_length=16),
+            model_name="fixture",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("scheduled", "Scheduled"),
+                    ("live", "Live"),
+                    ("completed", "Completed"),
+                    ("confirmed", "Confirmed"),
+                    ("disputed", "Disputed"),
+                    ("postponed", "Postponed"),
+                    ("cancelled", "Cancelled"),
+                    ("forfeit", "Forfeit"),
+                ],
+                db_index=True,
+                default="scheduled",
+                max_length=16,
+            ),
         ),
         migrations.AddIndex(
-            model_name='scoreevent',
-            index=models.Index(fields=['fixture', 'minute', 'second'], name='fixtures_sc_fixture_5b0aa5_idx'),
+            model_name="scoreevent",
+            index=models.Index(fields=["fixture", "minute", "second"], name="fixtures_sc_fixture_5b0aa5_idx"),
         ),
     ]
