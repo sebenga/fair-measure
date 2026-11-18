@@ -373,6 +373,8 @@ export interface FormationSlot {
   column: number;
   columns: number;
   label: string;
+  /** Rugby number layouts pin a jersey to the pitch place. */
+  number?: number;
 }
 
 export interface MatchPlayer {
@@ -388,8 +390,16 @@ export interface LineupPlayer extends MatchPlayer {
   on_field: boolean;
   subbed_off: boolean;
   sent_off?: boolean;
+  /** Rugby: temporarily off for a yellow / upgraded yellow. */
+  sin_binned?: boolean;
+  sin_bin?: {
+    kind: 'yellow' | 'upgraded_yellow';
+    minutes: number;
+    from_minute: number;
+    until_minute: number;
+  } | null;
   /** Cards shown to the player in this match. */
-  cards?: { yellow: number; red: number };
+  cards?: { yellow: number; upgraded_yellow?: number; red: number };
   minutes?: number | null;
   rating?: string | null;
   stats?: Array<{ code: string; label: string; count: string }>;
@@ -438,9 +448,14 @@ export interface MatchDay {
     keeper: string;
     lines: string[];
     formations: string[];
+    number_layout?: string;
+    starter_numbers?: number[];
+    bench_numbers?: number[];
   };
   formations?: Array<{ key: string; slots: FormationSlot[] }>;
   status?: string;
+  /** Rugby uses timed sin bins; association football does not. */
+  discipline_style?: 'rugby' | 'association' | string;
   sides?: TeamSheetSide[];
   substitutions?: SubstitutionRecord[];
   can_substitute?: boolean;

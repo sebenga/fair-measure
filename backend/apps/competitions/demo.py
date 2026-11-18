@@ -938,6 +938,8 @@ def _staff_fixtures(
 
 
 def _demo_formation(starters_needed: int, sheet: dict | None, fixture: Fixture) -> str:
+    if (sheet or {}).get("number_layout"):
+        return "numbers"
     formations = list((sheet or {}).get("formations") or [])
     if starters_needed >= 11:
         formations = formations or ["4-3-3", "4-4-2", "3-5-2"]
@@ -957,19 +959,25 @@ def _submit_team_sheets(
 ) -> None:
     """Name every side's team for these fixtures: a handful of queries, not one per side."""
 
-    from apps.fixtures.matchday import formation_slots
+    from apps.fixtures.matchday import formation_slots, number_layout_slots
 
     if not fixtures:
         return
     submitted_by = actor if getattr(actor, "is_authenticated", False) else None
     sides = _sides_by_fixture(fixtures)
+    config = dict(sheet or {})
+    numbered = number_layout_slots(config)
+    starter_numbers = list(config.get("starter_numbers") or [])
+    bench_numbers = list(config.get("bench_numbers") or [])
     slot_cache: dict[str, list] = {}
 
     def slots_for(formation: str) -> list:
+        if numbered:
+            return numbered
         if formation not in slot_cache:
             try:
                 slot_cache[formation] = (
-                    formation_slots(formation, {**(sheet or {}), "starters": None})
+                    formation_slots(formation, {**config, "starters": None})
                     if formation
                     else []
                 )
@@ -995,6 +1003,38 @@ def _submit_team_sheets(
             lineups.append(lineup)
             for index, member in enumerate(members):
                 starter = index < starters_needed
+                if numbered and starter and index < len(slots):
+                    place = slots[index]
+                    shirt_number = int(place.get("number") or place.get("label") or index + 1)
+                    entries.append(
+                        LineupEntry(
+                            lineup=lineup,
+                            player=member,
+                            role=LineupEntry.Role.STARTER,
+                            slot=place["index"],
+                            position=str(shirt_number),
+                            number=shirt_number,
+                            order=index,
+                        )
+                    )
+                    continue
+                if numbered and not starter:
+                    bench_index = index - starters_needed
+                    shirt_number = (
+                        bench_numbers[bench_index]
+                        if bench_index < len(bench_numbers)
+                        else starters_needed + bench_index + 1
+                    )
+                    entries.append(
+                        LineupEntry(
+                            lineup=lineup,
+                            player=member,
+                            role=LineupEntry.Role.BENCH,
+                            number=shirt_number,
+                            order=index,
+                        )
+                    )
+                    continue
                 shirt = ""
                 if starter and slots and index < len(slots):
                     shirt = slots[index].get("label") or ""
@@ -1005,7 +1045,12 @@ def _submit_team_sheets(
                         role=LineupEntry.Role.STARTER if starter else LineupEntry.Role.BENCH,
                         slot=index if starter else None,
                         position=(shirt or member.position or "")[:20],
-                        number=member.number or (index + 1),
+                        number=member.number
+                        or (
+                            starter_numbers[index]
+                            if starter and index < len(starter_numbers)
+                            else index + 1
+                        ),
                         order=index,
                     )
                 )

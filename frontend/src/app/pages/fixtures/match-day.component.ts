@@ -81,7 +81,8 @@ interface Draft {
                         type="button"
                         class="shirt tappable"
                         [class.captain]="lineup.captain_id === player.player_id"
-                        [class.off]="player.subbed_off || player.sent_off"
+                        [class.off]="player.subbed_off || player.sent_off || player.sin_binned"
+                        [class.sin-bin]="!!player.sin_binned"
                         [class.rated]="marked().has(player.player_id)"
                         [style.--kit]="kit(side.participant_id)[0]"
                         [style.--kit-ink]="kit(side.participant_id)[1]"
@@ -96,7 +97,8 @@ interface Draft {
                       <div
                         class="shirt"
                         [class.captain]="lineup.captain_id === player.player_id"
-                        [class.off]="player.subbed_off || player.sent_off"
+                        [class.off]="player.subbed_off || player.sent_off || player.sin_binned"
+                        [class.sin-bin]="!!player.sin_binned"
                         [style.--kit]="kit(side.participant_id)[0]"
                         [style.--kit-ink]="kit(side.participant_id)[1]"
                         [attr.aria-label]="replaced ? player.name + ' came on for ' + replaced.name : null"
@@ -121,7 +123,11 @@ interface Draft {
             @for (starter of lineup.starters; track starter.player_id) {
               @let player = onPitch(side, starter);
               @let replaced = player.player_id !== starter.player_id ? starter : null;
-              <li [class.off]="player.subbed_off || player.sent_off" [class.rated]="marked().has(player.player_id)">
+              <li
+                [class.off]="player.subbed_off || player.sent_off || player.sin_binned"
+                [class.sin-bin]="!!player.sin_binned"
+                [class.rated]="marked().has(player.player_id)"
+              >
                 @if (canRecord() || rating()) {
                   <button
                     type="button"
@@ -257,6 +263,9 @@ interface Draft {
           @if (player.cards?.yellow) {
             <i class="card yellow"></i>
           }
+          @if (player.cards?.upgraded_yellow) {
+            <i class="card upgraded"></i>
+          }
           @if (player.cards?.red) {
             <i class="card red"></i>
           }
@@ -267,6 +276,14 @@ interface Draft {
     <ng-template #shirtBody let-player let-lineup="lineup" let-replaced="replaced">
       @if (lineup.captain_id === player.player_id) {
         <i class="badge" aria-label="Captain">C</i>
+      }
+      @if (player.sin_binned) {
+        <i
+          class="badge sin-bin"
+          [attr.aria-label]="cardLabel(player) || 'Sin bin'"
+        >
+          {{ player.sin_bin?.minutes || 10 }}′
+        </i>
       }
       @if (replaced) {
         <i class="badge came-on" [attr.aria-label]="'Came on for ' + replaced.name">↑</i>
@@ -295,9 +312,16 @@ interface Draft {
       }
       @if (canRecord() && !rating()) {
         <p class="hint">
-          Tap a player to record a yellow card, red card, goal or own goal{{
-            day()?.can_substitute ? ', or to take them off. Tap a substitute to bring them on' : ''
-          }}.
+          @if (isRugby()) {
+            Tap a player to record a try, kick, yellow (10′ sin bin), upgraded yellow (20′), or red
+            card{{
+              day()?.can_substitute ? ', or to take them off. Tap a substitute to bring them on' : ''
+            }}.
+          } @else {
+            Tap a player to record a yellow card, red card, goal or own goal{{
+              day()?.can_substitute ? ', or to take them off. Tap a substitute to bring them on' : ''
+            }}.
+          }
         </p>
       }
       <div class="lineup-stack" [class.editing]="!!draft()">
@@ -305,27 +329,35 @@ interface Draft {
           <div class="fm-card sheet" [class.edit]="draft()?.sideId === side.side_id">
             <span class="fm-team-head">
               {{ side.name }}
-              @if (side.lineup?.formation) {
+              @if (usesNumberLayout()) {
+                <small>Nos. {{ starterNumberRange() }}</small>
+              } @else if (side.lineup?.formation && side.lineup?.formation !== 'numbers') {
                 <small>{{ side.lineup?.formation }}</small>
               }
             </span>
             @if (draft(); as d) {
               @if (d.sideId === side.side_id) {
       <div class="editor">
-        @if (formationKeys().length) {
-          <label class="field">
-            Formation
-            <select [value]="d.formation" (change)="setFormation(value($event))">
-              @for (key of formationKeys(); track key) {
-                <option [value]="key" [selected]="key === d.formation">{{ key }}</option>
-              }
-            </select>
-          </label>
+        @if (!usesNumberLayout()) {
+          @if (formationKeys().length) {
+            <label class="field">
+              Formation
+              <select [value]="d.formation" (change)="setFormation(value($event))">
+                @for (key of formationKeys(); track key) {
+                  <option [value]="key" [selected]="key === d.formation">{{ key }}</option>
+                }
+              </select>
+            </label>
+          } @else {
+            <label class="field">
+              Formation (optional)
+              <input [value]="d.formation" placeholder="e.g. 3-2-1" (change)="setFreeFormation(value($event))" />
+            </label>
+          }
         } @else {
-          <label class="field">
-            Formation (optional)
-            <input [value]="d.formation" placeholder="e.g. 3-2-1" (change)="setFreeFormation(value($event))" />
-          </label>
+          <p class="hint">
+            Starters wear {{ starterNumberRange() }}. Substitutes wear {{ benchNumberRange() }}.
+          </p>
         }
 
         @if (draftSlots().length) {
@@ -334,9 +366,9 @@ interface Draft {
               <div class="pitch-row">
                 @for (slot of row; track slot.index) {
                   <label class="slot" [class.empty]="!d.slots[slot.index]">
-                    <span class="pos">{{ slot.label || 'Pos ' + (slot.index + 1) }}</span>
+                    <span class="pos">{{ slotLabel(slot) }}</span>
                     <select
-                      [attr.aria-label]="(slot.label || 'Position') + ' ' + (slot.index + 1)"
+                      [attr.aria-label]="slotLabel(slot)"
                       (change)="assignSlot(slot.index, value($event))"
                     >
                       <option value="" [selected]="!d.slots[slot.index]">Pick</option>
@@ -423,7 +455,7 @@ interface Draft {
           </select>
         </label>
 
-        @if (draftNamed().length) {
+        @if (draftNamed().length && !usesNumberLayout()) {
           <div class="numbers">
             <p class="hint">Shirt numbers (required)</p>
             @for (player of draftNamed(); track player.player_id) {
@@ -437,6 +469,26 @@ interface Draft {
                   [value]="numberFor(player.player_id)"
                   (input)="setNumber(player.player_id, value($event))"
                 />
+              </label>
+            }
+          </div>
+        } @else if (usesNumberLayout() && draftBench().length) {
+          <div class="numbers">
+            <p class="hint">Bench shirts ({{ benchNumberRange() }})</p>
+            @for (player of draftBench(); track player.player_id) {
+              <label [class.missing]="!numberFor(player.player_id)">
+                <span>{{ player.name }}</span>
+                <select
+                  [value]="numberFor(player.player_id)"
+                  (change)="setNumber(player.player_id, value($event))"
+                >
+                  <option value="">Pick</option>
+                  @for (num of freeBenchNumbers(player.player_id); track num) {
+                    <option [value]="num" [selected]="numberFor(player.player_id) === '' + num">
+                      {{ num }}
+                    </option>
+                  }
+                </select>
               </label>
             }
           </div>
@@ -684,8 +736,19 @@ interface Draft {
       .card.yellow {
         background: #facc15;
       }
+      .card.upgraded {
+        background: linear-gradient(135deg, #facc15 50%, #dc2626 50%);
+      }
       .card.red {
         background: #dc2626;
+      }
+      .shirt.sin-bin .kit,
+      .shirt.sin-bin .who {
+        opacity: 0.7;
+      }
+      .badge.sin-bin {
+        background: #ca8a04;
+        color: #fff;
       }
       .card + .card {
         margin-left: -7px;
@@ -1010,16 +1073,25 @@ export class MatchDayComponent implements OnInit {
     () => this.config()?.min_personnel ?? this.config()?.starters ?? 11,
   );
   readonly subs = computed(() => this.day()?.substitutions ?? []);
-  readonly formationKeys = computed(() => this.config()?.formations ?? []);
+  readonly formationKeys = computed(() => {
+    if (this.config()?.number_layout) return ['numbers'];
+    return this.config()?.formations ?? [];
+  });
   readonly draftSlots = computed<FormationSlot[]>(() => {
     const draft = this.draft();
     if (!draft) return [];
-    return this.day()?.formations?.find((item) => item.key === draft.formation)?.slots ?? [];
+    const rows = this.day()?.formations ?? [];
+    return (
+      rows.find((item) => item.key === draft.formation)?.slots ??
+      rows.find((item) => item.key === 'numbers')?.slots ??
+      []
+    );
   });
 
   constructor() {
     effect(() => {
       this.status();
+      this.minute();
       if (untracked(() => this.day())) this.load();
     });
   }
@@ -1131,6 +1203,8 @@ export class MatchDayComponent implements OnInit {
   }
 
   private guessShape(count: number): number[] {
+    if (count === 15) return [1, 4, 2, 3, 2, 3];
+    if (count === 13) return [1, 4, 2, 3, 3];
     if (count >= 11) return [4, 3, 3];
     if (count === 10) return [4, 3, 2];
     if (count === 8) return [3, 3, 1];
@@ -1146,6 +1220,52 @@ export class MatchDayComponent implements OnInit {
     return [...byRow.entries()].sort((a, b) => b[0] - a[0]).map(([, row]) => row);
   }
 
+  isRugby(): boolean {
+    return this.day()?.discipline_style === 'rugby';
+  }
+
+  usesNumberLayout(): boolean {
+    return !!this.config()?.number_layout || (this.day()?.formations ?? []).some((row) => row.key === 'numbers');
+  }
+
+  starterNumberRange(): string {
+    const nums = this.config()?.starter_numbers ?? [];
+    if (!nums.length) return '1–15';
+    return `${Math.min(...nums)}–${Math.max(...nums)}`;
+  }
+
+  benchNumberRange(): string {
+    const nums = this.config()?.bench_numbers ?? [];
+    if (!nums.length) return '16–23';
+    return `${Math.min(...nums)}–${Math.max(...nums)}`;
+  }
+
+  slotLabel(slot: FormationSlot): string {
+    if (slot.number != null) return `#${slot.number}`;
+    if (slot.label) return slot.label;
+    return `Pos ${slot.index + 1}`;
+  }
+
+  draftBench(): MatchPlayer[] {
+    const draft = this.draft();
+    if (!draft) return [];
+    const ids = new Set(draft.bench);
+    return this.squad().filter((player) => ids.has(player.player_id));
+  }
+
+  freeBenchNumbers(playerId: string): number[] {
+    const draft = this.draft();
+    const allowed = this.config()?.bench_numbers ?? [];
+    if (!draft || !allowed.length) return allowed;
+    const taken = new Set(
+      Object.entries(draft.numbers)
+        .filter(([id, value]) => id !== playerId && value.trim())
+        .map(([, value]) => Number(value)),
+    );
+    const current = Number(draft.numbers[playerId] || 0);
+    return allowed.filter((num) => !taken.has(num) || num === current);
+  }
+
   pressPlayer(side: TeamSheetSide, player: LineupPlayer): void {
     if (this.rating()) {
       this.picked.emit({ sideId: side.side_id, playerId: player.player_id, name: player.name });
@@ -1154,6 +1274,15 @@ export class MatchDayComponent implements OnInit {
     if (!this.canRecord()) return;
     if (player.sent_off) {
       void this.toast(`${player.name} is already sent off.`);
+      return;
+    }
+    if (player.sin_binned) {
+      const until = player.sin_bin?.until_minute;
+      void this.toast(
+        until != null
+          ? `${player.name} is in the sin bin until ${until}'.`
+          : `${player.name} is in the sin bin.`,
+      );
       return;
     }
     if (player.subbed_off) {
@@ -1172,6 +1301,12 @@ export class MatchDayComponent implements OnInit {
     const booked = this.cardLabel(player);
     const notes = `${replaced ? `, on for ${replaced.name}` : ''}${booked ? `, ${booked.toLowerCase()}` : ''}`;
     if (this.rating()) return `Stats and rating for ${player.name}${notes}`;
+    if (this.isRugby()) {
+      const action = this.day()?.can_substitute
+        ? 'Try, kick, card or substitution'
+        : 'Record a try, kick or card';
+      return `${action} for ${player.name}${notes}`;
+    }
     const action = this.day()?.can_substitute ? 'Goal, card or substitution' : 'Record a goal or card';
     return `${action} for ${player.name}${notes}`;
   }
@@ -1179,11 +1314,20 @@ export class MatchDayComponent implements OnInit {
   /** Words for the cards a player has been shown, or '' when they have none. */
   cardLabel(player: LineupPlayer): string {
     const yellow = player.cards?.yellow ?? 0;
+    const upgraded = player.cards?.upgraded_yellow ?? 0;
     const red = player.cards?.red ?? 0;
+    if (player.sin_binned && player.sin_bin) {
+      const label =
+        player.sin_bin.kind === 'upgraded_yellow'
+          ? 'Upgraded yellow'
+          : 'Yellow card';
+      return `${label}: sin bin until ${player.sin_bin.until_minute}'`;
+    }
     if (red && yellow >= 2) return 'Sent off: second yellow card';
-    if (red) return yellow ? 'Yellow card, then sent off' : 'Red card: sent off';
+    if (red) return yellow || upgraded ? 'Yellow card, then sent off' : 'Red card: sent off';
+    if (upgraded) return 'Upgraded yellow: 20 minutes';
     if (yellow > 1) return `${yellow} yellow cards`;
-    return yellow ? 'Yellow card' : '';
+    return yellow ? (this.isRugby() ? 'Yellow card: 10-minute sin bin' : 'Yellow card') : '';
   }
 
   /** Who is in a starter's position now: the last player to come on for them, or the starter. */
@@ -1293,6 +1437,11 @@ export class MatchDayComponent implements OnInit {
     const starters = side.lineup?.starters ?? [];
     const bySlot = starters.find((player) => player.slot === slot);
     if (bySlot) return bySlot;
+    const place = this.pitchSlots(side).find((item) => item.index === slot);
+    if (place?.number != null) {
+      const byNumber = starters.find((player) => player.number === place.number);
+      if (byNumber) return byNumber;
+    }
     const unslotted = starters.every((player) => player.slot === null);
     return unslotted ? (starters[slot] ?? null) : null;
   }
@@ -1302,12 +1451,23 @@ export class MatchDayComponent implements OnInit {
   edit(side: TeamSheetSide): void {
     const lineup = side.lineup;
     const out = new Set(side.squad.filter(isUnavailable).map((player) => player.player_id));
-    const formation = lineup?.formation || this.formationKeys()[0] || '';
+    const numbered = this.usesNumberLayout();
+    const formation = numbered ? 'numbers' : lineup?.formation || this.formationKeys()[0] || '';
+    const layout =
+      this.day()?.formations?.find((item) => item.key === (numbered ? 'numbers' : formation))?.slots ??
+      [];
     const slots: Record<number, string> = {};
     const starters: string[] = [];
     for (const player of lineup?.starters ?? []) {
       if (out.has(player.player_id)) continue;
-      if (player.slot !== null && this.formationKeys().length) slots[player.slot] = player.player_id;
+      if (numbered && player.number != null) {
+        const place = layout.find((item) => item.number === player.number);
+        if (place) {
+          slots[place.index] = player.player_id;
+          continue;
+        }
+      }
+      if (player.slot !== null && layout.length) slots[player.slot] = player.player_id;
       else starters.push(player.player_id);
     }
     const numbers: Record<string, string> = {};
@@ -1417,13 +1577,24 @@ export class MatchDayComponent implements OnInit {
     const draft = this.draft();
     if (!draft) return;
     const slots = { ...draft.slots };
+    const previous = slots[slot];
     if (playerId) slots[slot] = playerId;
     else delete slots[slot];
+    let numbers = { ...draft.numbers };
+    const place = this.draftSlots().find((item) => item.index === slot);
+    if (playerId && place?.number != null) {
+      numbers[playerId] = String(place.number);
+    } else if (playerId) {
+      numbers = this.withNumber(numbers, playerId);
+    }
+    if (previous && previous !== playerId) {
+      delete numbers[previous];
+    }
     this.patch({
       slots,
       bench: draft.bench.filter((id) => id !== playerId),
       captain: Object.values(slots).includes(draft.captain) ? draft.captain : '',
-      numbers: playerId ? this.withNumber(draft.numbers, playerId) : draft.numbers,
+      numbers,
     });
   }
 
@@ -1453,7 +1624,9 @@ export class MatchDayComponent implements OnInit {
     const draft = this.draft();
     if (!draft) return;
     if (draft.bench.includes(playerId)) {
-      this.patch({ bench: draft.bench.filter((id) => id !== playerId) });
+      const numbers = { ...draft.numbers };
+      delete numbers[playerId];
+      this.patch({ bench: draft.bench.filter((id) => id !== playerId), numbers });
       return;
     }
     const limit = this.config()?.bench_max;
@@ -1461,7 +1634,10 @@ export class MatchDayComponent implements OnInit {
       void this.toast(`Name at most ${limit} substitutes.`);
       return;
     }
-    this.patch({ bench: [...draft.bench, playerId], numbers: this.withNumber(draft.numbers, playerId) });
+    const numbers = this.usesNumberLayout()
+      ? this.withBenchNumber(draft.numbers, playerId)
+      : this.withNumber(draft.numbers, playerId);
+    this.patch({ bench: [...draft.bench, playerId], numbers });
   }
 
   setCaptain(playerId: string): void {
@@ -1489,6 +1665,23 @@ export class MatchDayComponent implements OnInit {
     return { ...numbers, [playerId]: String(this.nextFreeNumber(numbers)) };
   }
 
+  private withBenchNumber(numbers: Record<string, string>, playerId: string): Record<string, string> {
+    if ((numbers[playerId] ?? '').trim()) return numbers;
+    const allowed = this.config()?.bench_numbers ?? [];
+    const taken = this.takenNumbers(numbers);
+    const player = this.squad().find((item) => item.player_id === playerId);
+    if (
+      player?.number != null &&
+      allowed.includes(player.number) &&
+      !taken.has(player.number)
+    ) {
+      return { ...numbers, [playerId]: String(player.number) };
+    }
+    const next = allowed.find((num) => !taken.has(num));
+    if (next == null) return numbers;
+    return { ...numbers, [playerId]: String(next) };
+  }
+
   private takenNumbers(numbers: Record<string, string>): Set<number> {
     return new Set(
       Object.values(numbers)
@@ -1511,23 +1704,34 @@ export class MatchDayComponent implements OnInit {
     const starters = [...draft.starters];
     const used = new Set([...Object.values(slots), ...starters]);
     const free = this.squad().filter((player) => !used.has(player.player_id)).map((player) => player.player_id);
+    let numbers = { ...draft.numbers };
     if (this.draftSlots().length) {
       for (const slot of this.draftSlots()) {
-        if (!slots[slot.index] && free.length) slots[slot.index] = free.shift() as string;
+        if (!slots[slot.index] && free.length) {
+          const id = free.shift() as string;
+          slots[slot.index] = id;
+          if (slot.number != null) numbers[id] = String(slot.number);
+        }
       }
     } else {
       const limit = this.config()?.starters ?? free.length;
       while (starters.length < limit && free.length) starters.push(free.shift() as string);
     }
     const benchMax = this.config()?.bench_max ?? free.length;
-    const bench = [...draft.bench.filter((id) => free.includes(id))];
+    const bench = [...draft.bench.filter((id) => free.includes(id) || draft.bench.includes(id))];
     for (const id of free) {
       if (bench.length >= benchMax) break;
       if (!bench.includes(id)) bench.push(id);
     }
-    let numbers = { ...draft.numbers };
-    for (const id of [...Object.values(slots), ...starters, ...bench]) {
-      if (id) numbers = this.withNumber(numbers, id);
+    for (const id of [...Object.values(slots), ...starters]) {
+      if (id && !(numbers[id] ?? '').trim()) numbers = this.withNumber(numbers, id);
+    }
+    for (const id of bench) {
+      if (!(numbers[id] ?? '').trim()) {
+        numbers = this.usesNumberLayout()
+          ? this.withBenchNumber(numbers, id)
+          : this.withNumber(numbers, id);
+      }
     }
     this.patch({ slots, starters, bench, numbers });
   }
@@ -1541,9 +1745,14 @@ export class MatchDayComponent implements OnInit {
           .filter(([, id]) => id)
           .map(([slot, id]) => ({ player: id, slot: Number(slot), number: number(id) }))
       : draft.starters.map((id) => ({ player: id, number: number(id) }));
-    const needed = this.sheetMinimum();
-    if (starters.length < needed) {
-      void this.toast(`Name at least ${needed} players on the team sheet.`);
+    const startersNeeded = this.config()?.starters ?? this.sheetMinimum();
+    if (starters.length < startersNeeded) {
+      void this.toast(`Name at least ${startersNeeded} starters on the team sheet.`);
+      return;
+    }
+    const namedMin = this.sheetMinimum();
+    if (starters.length + draft.bench.length < namedMin) {
+      void this.toast(`Name at least ${namedMin} players on the team sheet.`);
       return;
     }
     const named = [...starters, ...draft.bench.map((id) => ({ player: id, number: number(id) }))];
@@ -1658,7 +1867,7 @@ export class MatchDayComponent implements OnInit {
   }
 
   private load(): void {
-    this.api.teamSheets(this.competitionId(), this.fixtureId()).subscribe({
+    this.api.teamSheets(this.competitionId(), this.fixtureId(), this.minute()).subscribe({
       next: (day) => {
         this.day.set(day);
         const sides = day.sides ?? [];

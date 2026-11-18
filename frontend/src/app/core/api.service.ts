@@ -235,9 +235,10 @@ export class ApiService {
     );
   }
 
-  teamSheets(competitionId: string, fixtureId: string) {
+  teamSheets(competitionId: string, fixtureId: string, minute: number | null = null) {
+    const query = minute === null || minute === undefined ? '' : `?minute=${minute}`;
     return this.http.get<MatchDay>(
-      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/team-sheets`,
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/team-sheets${query}`,
     );
   }
 

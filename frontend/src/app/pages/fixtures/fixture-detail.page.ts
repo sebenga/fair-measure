@@ -59,12 +59,29 @@ import { ScrabbleScorerComponent } from './scrabble-scorer.component';
 
 type FixtureTab = 'overview' | 'lineups' | 'live' | 'stats' | 'raters' | 'setup';
 
-/** What tapping a player on the line-up pitch can record. */
+/** What tapping a player on the line-up pitch can record (association football). */
 const PITCH_CONTRIBUTIONS = [
   { code: 'yellow-card', name: 'yellow card', label: 'Yellow card' },
   { code: 'red-card', name: 'red card', label: 'Red card' },
   { code: 'goal', name: 'goal', label: 'Goal' },
   { code: 'own-goal', name: 'own goal', label: 'Own goal' },
+];
+
+/** Rugby: scoring codes first, then timed cards. */
+const RUGBY_PITCH_CONTRIBUTIONS = [
+  { code: 'try', name: 'try', label: 'Try' },
+  { code: 'conversion', name: 'conversion', label: 'Conversion' },
+  { code: 'penalty-goal', name: 'penalty goal', label: 'Penalty goal' },
+  { code: 'drop-goal', name: 'drop goal', label: 'Drop goal' },
+  { code: 'penalty-try', name: 'penalty try', label: 'Penalty try' },
+  { code: 'field-goal', name: 'field goal', label: 'Field goal' },
+  { code: 'yellow-card', name: 'yellow card', label: 'Yellow card (10′ sin bin)' },
+  {
+    code: 'upgraded-yellow-card',
+    name: 'upgraded yellow (20 min)',
+    label: 'Upgraded yellow (20′)',
+  },
+  { code: 'red-card', name: 'red card', label: 'Red card (sent off)' },
 ];
 const FIXTURE_TABS: FixtureTab[] = ['overview', 'lineups', 'live', 'stats', 'raters', 'setup'];
 
@@ -1295,12 +1312,31 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     return this.scoreCategories().filter((category) => this.noPlayer(category));
   }
 
-  /** Team-sheet football: every player score is a goal or card, recorded by tapping the pitch. */
+  isRugby(): boolean {
+    const settings = this.competition()?.settings_json ?? {};
+    const family = String(settings['family'] ?? '');
+    const preset = String(settings['preset'] ?? '');
+    const sport = String(this.competition()?.sport ?? '').toLowerCase();
+    const style = String((settings['discipline'] as { style?: string } | undefined)?.style ?? '');
+    return (
+      style === 'rugby' ||
+      family.startsWith('rugby') ||
+      preset.startsWith('rugby') ||
+      sport.includes('rugby')
+    );
+  }
+
+  private pitchContributionOptions(): Array<{ code: string; name: string; label: string }> {
+    return this.isRugby() ? RUGBY_PITCH_CONTRIBUTIONS : PITCH_CONTRIBUTIONS;
+  }
+
+  /** Team-sheet sports: player scores/cards are recorded by tapping the pitch. */
   scoredOnPitch(): boolean {
     const competition = this.competition();
     if (!competition) return false;
     const teams = (competition.settings_json?.['participant_type'] ?? 'team') === 'team';
     if (!teams || !teamSheetOf(competition)) return false;
+    if (this.isRugby()) return true;
     const players = this.playerScoreCategories();
     return (
       players.length > 0 &&
@@ -1614,7 +1650,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     if (!fixture || fixture.status !== 'live' || !this.canScore()) return;
     const side = fixture.sides.find((item) => item.id === pick.sideId);
     if (!side) return;
-    const options = PITCH_CONTRIBUTIONS
+    const options = this.pitchContributionOptions()
       .map((option) => ({
         ...option,
         category: this.categories().find((category) => {
@@ -1625,12 +1661,23 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       }))
       .filter((option) => option.category);
     if (!options.length && !pick.canSubstitute) {
-      await this.showToast('This competition has no goal or card categories.', 'danger');
+      await this.showToast(
+        this.isRugby()
+          ? 'This competition has no try or card categories.'
+          : 'This competition has no goal or card categories.',
+        'danger',
+      );
       return;
     }
     const sheet = await this.actionSheets.create({
       header: pick.name,
-      subHeader: pick.canSubstitute ? 'Record a contribution or substitute' : 'Record a contribution',
+      subHeader: pick.canSubstitute
+        ? this.isRugby()
+          ? 'Record a score, card or substitution'
+          : 'Record a contribution or substitute'
+        : this.isRugby()
+          ? 'Record a score or card'
+          : 'Record a contribution',
       buttons: [
         ...options.map((option) => ({
           text: option.label,

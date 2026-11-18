@@ -36,7 +36,48 @@ TENNIS_STRUCTURE = [
 ]
 
 YELLOW_CARD = {"key": "yellow-card", "label": "Yellow card", "value": 0, "affects_score": False}
+UPGRADED_YELLOW_CARD = {
+    "key": "upgraded-yellow-card",
+    "label": "Upgraded yellow (20 min)",
+    "value": 0,
+    "affects_score": False,
+    "description": "Player leaves the field for 20 minutes (upgraded yellow).",
+}
 RED_CARD = {"key": "red-card", "label": "Red card", "value": 0, "affects_score": False}
+RUGBY_DISCIPLINE = {
+    "enabled": True,
+    "style": "rugby",
+    "yellow_sin_bin_minutes": 10,
+    "upgraded_yellow_minutes": 20,
+    "yellow_threshold": 3,
+    "yellow_ban_matches": 1,
+    "red_ban_matches": 1,
+}
+# Classic rugby union match-day numbers: 1–15 start, 16–23 on the bench.
+RUGBY_15_SHEET = {
+    "starters": 15,
+    "min_on_field": 11,
+    "min_squad": 17,
+    "bench_max": 8,
+    "max_substitutions": 8,
+    "rolling_substitutions": False,
+    "formations": [],
+    "number_layout": "rugby_15",
+    "starter_numbers": list(range(1, 16)),
+    "bench_numbers": list(range(16, 24)),
+}
+RUGBY_13_SHEET = {
+    "starters": 13,
+    "min_on_field": 9,
+    "min_squad": 17,
+    "bench_max": 4,
+    "max_substitutions": 8,
+    "rolling_substitutions": True,
+    "formations": [],
+    "number_layout": "rugby_13",
+    "starter_numbers": list(range(1, 14)),
+    "bench_numbers": list(range(14, 18)),
+}
 OWN_GOAL = {
     "key": "own-goal",
     "label": "Own goal",
@@ -82,8 +123,9 @@ CATALOG: dict[str, dict] = {
             {"key": "penalty-goal", "label": "Penalty goal", "value": 3, "affects_score": True},
             {"key": "drop-goal", "label": "Drop goal", "value": 3, "affects_score": True},
             {"key": "penalty-try", "label": "Penalty try", "value": 7, "affects_score": True},
-            {"key": "yellow-card", "label": "Yellow card", "value": 0, "affects_score": False},
-            {"key": "red-card", "label": "Red card", "value": 0, "affects_score": False},
+            YELLOW_CARD,
+            UPGRADED_YELLOW_CARD,
+            RED_CARD,
         ],
         match_structure=[
             {"unit": "half", "count": 2, "minutes": 40, "clock": "running"},
@@ -104,14 +146,9 @@ CATALOG: dict[str, dict] = {
         },
         formats_allowed=["league", "knockout", "groups_knockout", "round_robin"],
         tiebreakers=["points", "score_difference", "category:try", "head_to_head"],
-        team_sheet={
-            "starters": 15,
-            "min_on_field": 11,
-            "min_squad": 15,
-            "bench_max": 8,
-            "max_substitutions": 8,
-            "rolling_substitutions": False,
-        },
+        team_sheet=RUGBY_15_SHEET,
+        roster_numbers=list(range(1, 24)),
+        discipline=RUGBY_DISCIPLINE,
         rules=[
             {
                 "name": "League points",
@@ -122,7 +159,18 @@ CATALOG: dict[str, dict] = {
             },
             {
                 "name": "Players",
-                "description": "15 start, with up to 8 on the bench.",
+                "description": (
+                    "Shirt numbers are fixed: 1–15 start, 16–23 on the bench. "
+                    "Name at least 17 players. Up to 8 substitutions. No formations."
+                ),
+            },
+            {
+                "name": "Cards",
+                "description": (
+                    "A yellow card is a 10-minute sin bin. An upgraded yellow is 20 minutes. "
+                    "A straight red, or two yellows in the same match, sends the player off "
+                    "for the rest of the match."
+                ),
             },
             {
                 "name": "Knockout",
@@ -162,6 +210,7 @@ CATALOG: dict[str, dict] = {
                 "description": "Used when the competition awards 2 for a drop from beyond 40 m.",
             },
             YELLOW_CARD,
+            UPGRADED_YELLOW_CARD,
             RED_CARD,
         ],
         match_structure=[
@@ -172,14 +221,9 @@ CATALOG: dict[str, dict] = {
         league_points={"win": 2, "draw": 1, "loss": 0},
         formats_allowed=["league", "knockout", "groups_knockout", "round_robin"],
         tiebreakers=["points", "score_difference", "score_for"],
-        team_sheet={
-            "starters": 13,
-            "min_on_field": 9,
-            "min_squad": 13,
-            "bench_max": 4,
-            "max_substitutions": 10,
-            "rolling_substitutions": True,
-        },
+        team_sheet=RUGBY_13_SHEET,
+        roster_numbers=list(range(1, 18)),
+        discipline=RUGBY_DISCIPLINE,
         rules=[
             {
                 "name": "League points",
@@ -187,7 +231,18 @@ CATALOG: dict[str, dict] = {
             },
             {
                 "name": "Players",
-                "description": "13 start, with 4 on the bench. Substitutions are rolling.",
+                "description": (
+                    "Shirt numbers are fixed: 1–13 start, 14–17 on the bench. "
+                    "Up to 8 substitutions; rolling replacements. No formations."
+                ),
+            },
+            {
+                "name": "Cards",
+                "description": (
+                    "A yellow card is a 10-minute sin bin. An upgraded yellow is 20 minutes. "
+                    "A straight red, or two yellows in the same match, sends the player off "
+                    "for the rest of the match."
+                ),
             },
             {
                 "name": "Tackle set",

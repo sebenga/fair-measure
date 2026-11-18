@@ -55,6 +55,7 @@ BEFORE_KICKOFF = {Fixture.Status.SCHEDULED, Fixture.Status.POSTPONED}
 def team_sheet_config(competition) -> dict | None:
     """Team-sheet rules for every team competition. None only when entrants are not teams."""
 
+    from apps.competitions.catalog import RUGBY_13_SHEET, RUGBY_15_SHEET
     from apps.competitions.presets import PRESETS
 
     settings = competition.settings_json or {}
@@ -65,20 +66,47 @@ def team_sheet_config(competition) -> dict | None:
         raw = (PRESETS.get(settings.get("preset") or "") or {}).get("team_sheet") or {}
     if not isinstance(raw, dict):
         raw = {}
-    return {**FREE_FORM, **raw}
+    config = {**FREE_FORM, **raw}
+    if not config.get("number_layout"):
+        family = str(settings.get("family") or "")
+        preset = str(settings.get("preset") or "")
+        if family == "rugby_union" or preset == "rugby_union":
+            config = {**config, **RUGBY_15_SHEET}
+        elif family == "rugby_league" or preset == "rugby_league":
+            config = {**config, **RUGBY_13_SHEET}
+    return config
 
 
 DEFAULT_SHEET_MINIMUM = 11
 
 
 def team_sheet_minimum(config: dict) -> int:
-    """How many named starters a side must list before the game can start."""
+    """How many named players a side must list before the game can start.
 
-    starters = config.get("starters")
+    Rugby uses ``min_squad`` (for example 17). Association football uses the
+    starter count when no squad minimum is set.
+    """
+
+    for key in ("min_squad", "starters"):
+        raw = config.get(key)
+        try:
+            value = int(raw) if raw else 0
+        except (TypeError, ValueError):
+            value = 0
+        if value > 0:
+            return value
+    return DEFAULT_SHEET_MINIMUM
+
+
+def team_sheet_starters_required(config: dict) -> int:
+    """How many starters must be named when the squad minimum is larger."""
+
+    raw = config.get("starters")
     try:
-        return int(starters) if starters else DEFAULT_SHEET_MINIMUM
+        value = int(raw) if raw else 0
     except (TypeError, ValueError):
-        return DEFAULT_SHEET_MINIMUM
+        value = 0
+    return value if value > 0 else team_sheet_minimum(config)
 
 
 def team_sheet_kickoff_problems(fixture) -> list[str]:
@@ -88,6 +116,7 @@ def team_sheet_kickoff_problems(fixture) -> list[str]:
     if config is None:
         return []
     needed = team_sheet_minimum(config)
+    starters_needed = team_sheet_starters_required(config)
     problems = []
     for side in fixture.sides.all():
         name = side.participant.name
@@ -98,8 +127,13 @@ def team_sheet_kickoff_problems(fixture) -> list[str]:
             continue
         entries = list(lineup.entries.all())
         starters = sum(1 for entry in entries if entry.role == LineupEntry.Role.STARTER)
-        if starters < needed:
+        named = len(entries)
+        if named < needed:
             problems.append(f"{name}'s team sheet needs at least {needed} named players.")
+        elif starters < starters_needed:
+            problems.append(
+                f"{name}'s team sheet needs at least {starters_needed} starters."
+            )
         if entries and any(entry.number is None for entry in entries):
             problems.append(f"Give every player on {name}'s team sheet a shirt number.")
     return problems
@@ -108,8 +142,8 @@ def team_sheet_kickoff_problems(fixture) -> list[str]:
 def formation_slots(formation: str, config: dict) -> list[dict]:
     """Starting positions for a formation such as "4-3-3", keeper first, back to front."""
 
-    if not formation:
-        return []
+    if not formation or formation == "numbers":
+        return number_layout_slots(config)
     try:
         rows = [int(part) for part in formation.split("-") if part.strip()]
     except ValueError as exc:
@@ -149,9 +183,66 @@ def formation_slots(formation: str, config: dict) -> list[dict]:
     return slots
 
 
-def _display_slots(formation: str, starter_count: int, config: dict) -> list[dict]:
-    """Slots for the pitch graphic. A missing formation still gets a shape."""
+def number_layout_slots(config: dict) -> list[dict]:
+    """Fixed rugby shirt positions: numbers on the pitch, not a soccer formation."""
 
+    layout = str(config.get("number_layout") or "")
+    # (jersey, row, column, columns_in_row) — higher rows render toward the far try-line.
+    if layout == "rugby_15":
+        places = [
+            (15, 5, 0, 1),
+            (14, 4, 0, 4),
+            (13, 4, 1, 4),
+            (12, 4, 2, 4),
+            (11, 4, 3, 4),
+            (10, 3, 0, 2),
+            (9, 3, 1, 2),
+            (8, 2, 0, 3),
+            (7, 2, 1, 3),
+            (6, 2, 2, 3),
+            (5, 1, 0, 2),
+            (4, 1, 1, 2),
+            (1, 0, 0, 3),
+            (2, 0, 1, 3),
+            (3, 0, 2, 3),
+        ]
+    elif layout == "rugby_13":
+        places = [
+            (1, 5, 0, 1),
+            (5, 4, 0, 4),
+            (4, 4, 1, 4),
+            (3, 4, 2, 4),
+            (2, 4, 3, 4),
+            (6, 3, 0, 2),
+            (7, 3, 1, 2),
+            (13, 2, 0, 3),
+            (12, 2, 1, 3),
+            (11, 2, 2, 3),
+            (10, 1, 0, 2),
+            (8, 1, 1, 2),
+            (9, 0, 0, 1),
+        ]
+    else:
+        return []
+    return [
+        {
+            "index": index,
+            "row": row,
+            "column": column,
+            "columns": columns,
+            "label": str(number),
+            "number": number,
+        }
+        for index, (number, row, column, columns) in enumerate(places)
+    ]
+
+
+def _display_slots(formation: str, starter_count: int, config: dict) -> list[dict]:
+    """Slots for the pitch graphic. Rugby uses fixed shirt numbers; soccer uses formations."""
+
+    numbered = number_layout_slots(config)
+    if numbered:
+        return numbered
     relaxed = {**config, "starters": None}
     for candidate in (formation, _shape_for(starter_count)):
         if not candidate:
@@ -225,7 +316,10 @@ def _member(member: RosterMember | None, number=None) -> dict | None:
 
 
 def _field_state(
-    lineup: FixtureLineup | None, subs: list[Substitution], sent_off: set | None = None
+    lineup: FixtureLineup | None,
+    subs: list[Substitution],
+    sent_off: set | None = None,
+    sin_binned: set | None = None,
 ) -> tuple[set, set, set]:
     """Who is on, who can still come on, and who has gone off, after these substitutions."""
 
@@ -240,7 +334,7 @@ def _field_state(
         off.add(sub.player_off_id)
         bench.discard(sub.player_on_id)
         on.add(sub.player_on_id)
-    for player_id in sent_off or ():
+    for player_id in set(sent_off or ()) | set(sin_binned or ()):
         if player_id in on or player_id in bench:
             on.discard(player_id)
             bench.discard(player_id)
@@ -301,14 +395,17 @@ def _side_payload(
     minutes: dict,
     ratings: dict,
     stats: dict,
+    *,
+    as_of_minute: int | None = None,
 ) -> dict:
     lineup = getattr(side, "lineup", None)
     side_subs = [sub for sub in subs if sub.side_id == side.id]
-    from .cards import card_counts, sent_off_ids
+    from .cards import card_counts, sent_off_ids, sin_bins
 
     dismissed = sent_off_ids(fixture)
+    bins = sin_bins(fixture, as_of_minute=as_of_minute)
     cards = card_counts(fixture)
-    on, bench_left, off = _field_state(lineup, side_subs, dismissed)
+    on, bench_left, off = _field_state(lineup, side_subs, dismissed, set(bins))
     entries = list(lineup.entries.select_related("player").all()) if lineup else []
     from .discipline import discipline_config, effective_availability
 
@@ -330,14 +427,19 @@ def _side_payload(
         )
 
     def entry_row(entry: LineupEntry) -> dict:
+        bin_info = bins.get(entry.player_id)
         return {
             **_member(entry.player, entry.number),
             "slot": entry.slot,
             "position": entry.position,
             "on_field": entry.player_id in on,
-            "subbed_off": entry.player_id in off,
+            "subbed_off": entry.player_id in off and entry.player_id not in bins,
             "sent_off": entry.player_id in dismissed,
-            "cards": cards.get(entry.player_id, {"yellow": 0, "red": 0}),
+            "sin_binned": bin_info is not None,
+            "sin_bin": bin_info,
+            "cards": cards.get(
+                entry.player_id, {"yellow": 0, "upgraded_yellow": 0, "red": 0}
+            ),
             "minutes": minutes.get(entry.player_id),
             "rating": ratings.get(entry.player_id),
             "stats": stats.get(entry.player_id, []),
@@ -394,10 +496,12 @@ def _subs(fixture: Fixture) -> list[Substitution]:
     )
 
 
-def match_day(fixture: Fixture, user) -> dict:
+def match_day(fixture: Fixture, user, *, as_of_minute: int | None = None) -> dict:
     config = team_sheet_config(fixture.competition)
     if config is None:
         return {"enabled": False}
+    from .cards import is_rugby_competition
+
     subs = _subs(fixture)
     sides = list(
         fixture.sides.select_related("participant", "lineup", "lineup__captain").order_by(
@@ -407,16 +511,39 @@ def match_day(fixture: Fixture, user) -> dict:
     minutes = _minutes_map(fixture)
     ratings = _ratings_map(fixture)
     stats = _stats_map(fixture)
-    return {
-        "enabled": True,
-        "config": {**config, "min_personnel": team_sheet_minimum(config)},
-        "formations": [
+    numbered = number_layout_slots(config)
+    formation_rows = (
+        [{"key": "numbers", "slots": numbered}]
+        if numbered
+        else [
             {"key": key, "slots": formation_slots(key, config)}
             for key in config.get("formations") or []
-        ],
+        ]
+    )
+    return {
+        "enabled": True,
+        "config": {
+            **config,
+            "min_personnel": team_sheet_minimum(config),
+            "number_layout": config.get("number_layout") or "",
+            "starter_numbers": list(config.get("starter_numbers") or []),
+            "bench_numbers": list(config.get("bench_numbers") or []),
+        },
+        "formations": formation_rows,
         "status": fixture.status,
+        "discipline_style": "rugby" if is_rugby_competition(fixture.competition) else "association",
         "sides": [
-            _side_payload(fixture, side, config, user, subs, minutes, ratings, stats)
+            _side_payload(
+                fixture,
+                side,
+                config,
+                user,
+                subs,
+                minutes,
+                ratings,
+                stats,
+                as_of_minute=as_of_minute,
+            )
             for side in sides
         ],
         "substitutions": [_sub_row(sub) for sub in subs],
@@ -492,11 +619,23 @@ class _FixtureView(APIView):
         )
 
 
+def _as_of_minute(request: Request) -> int | None:
+    raw = request.query_params.get("minute")
+    if raw in (None, ""):
+        return None
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return None
+
+
 class TeamSheetsView(_FixtureView):
     @extend_schema(tags=TAG, summary="Both team sheets and the substitutions", responses=dict)
     def get(self, request: Request, competition_pk, fixture_pk) -> Response:
         fixture = self._fixture(request, competition_pk, fixture_pk)
-        return Response(match_day(fixture, request.user))
+        return Response(
+            match_day(fixture, request.user, as_of_minute=_as_of_minute(request))
+        )
 
 
 class TeamSheetView(_FixtureView):
@@ -524,9 +663,12 @@ class TeamSheetView(_FixtureView):
             raise PermissionDenied("The team sheet is locked after kickoff. Record substitutions instead.")
 
         formation = str(request.data.get("formation") or "").strip()[:40]
-        if config.get("formations") and formation and formation not in config["formations"]:
+        numbered = number_layout_slots(config)
+        if numbered:
+            formation = "numbers"
+        elif config.get("formations") and formation and formation not in config["formations"]:
             raise ValidationError({"formation": "Choose one of this competition's formations."})
-        slots = formation_slots(formation, config)
+        slots = numbered or formation_slots(formation, config)
         starters = list(request.data.get("starters") or [])
         bench = list(request.data.get("bench") or [])
 
@@ -566,9 +708,16 @@ class TeamSheetView(_FixtureView):
         starting = [clean(row, "starters") for row in starters]
         benched = [clean(row, "bench") for row in bench]
 
-        needed = team_sheet_minimum(config)
-        if len(starting) < needed:
-            raise ValidationError({"starters": f"Name at least {needed} players on the team sheet."})
+        starters_needed = team_sheet_starters_required(config)
+        if len(starting) < starters_needed:
+            raise ValidationError(
+                {"starters": f"Name at least {starters_needed} starters on the team sheet."}
+            )
+        named_min = team_sheet_minimum(config)
+        if len(starting) + len(benched) < named_min:
+            raise ValidationError(
+                {"starters": f"Name at least {named_min} players on the team sheet."}
+            )
         limit = config.get("starters")
         if limit and len(starting) > limit:
             raise ValidationError({"starters": f"Name at most {limit} starters."})
@@ -579,9 +728,31 @@ class TeamSheetView(_FixtureView):
         if len(numbers) != len(set(numbers)):
             raise ValidationError({"starters": "Two players have the same shirt number."})
 
+        starter_numbers = {int(n) for n in (config.get("starter_numbers") or [])}
+        bench_numbers = {int(n) for n in (config.get("bench_numbers") or [])}
+        if starter_numbers:
+            bad = [row["number"] for row in starting if row["number"] not in starter_numbers]
+            if bad:
+                low, high = min(starter_numbers), max(starter_numbers)
+                raise ValidationError(
+                    {"starters": f"Starting shirt numbers are {low}–{high}."}
+                )
+        if bench_numbers:
+            bad = [row["number"] for row in benched if row["number"] not in bench_numbers]
+            if bad:
+                low, high = min(bench_numbers), max(bench_numbers)
+                raise ValidationError({"bench": f"Substitute shirt numbers are {low}–{high}."})
+
+        by_number = {
+            int(slot.get("number") or slot["label"]): slot["index"]
+            for slot in slots
+            if str(slot.get("label") or "").isdigit() or slot.get("number") is not None
+        }
         taken: set[int] = set()
         for row in starting:
             slot = row["slot"]
+            if (slot in ("", None)) and numbered and row["number"] in by_number:
+                slot = by_number[row["number"]]
             if slot in ("", None):
                 row["slot"] = None
                 continue
@@ -590,9 +761,19 @@ class TeamSheetView(_FixtureView):
             except (TypeError, ValueError) as exc:
                 raise ValidationError({"starters": "Unknown position."}) from exc
             if slots and not 0 <= slot < len(slots):
-                raise ValidationError({"starters": "That position is not in the formation."})
+                raise ValidationError({"starters": "That position is not on the team sheet."})
             if slot in taken:
                 raise ValidationError({"starters": "Two players are in the same position."})
+            expected = slots[slot].get("number")
+            if expected is not None and row["number"] != int(expected):
+                raise ValidationError(
+                    {
+                        "starters": (
+                            f"{row['player'].name} is in shirt {expected}'s place "
+                            f"but wears {row['number']}."
+                        )
+                    }
+                )
             taken.add(slot)
             row["slot"] = slot
 

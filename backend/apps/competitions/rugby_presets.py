@@ -4,7 +4,7 @@ so existing competitions keep their preset keys. These add the other locked code
 
 from __future__ import annotations
 
-from .catalog import RED_CARD, YELLOW_CARD, _sport
+from .catalog import RED_CARD, RUGBY_DISCIPLINE, UPGRADED_YELLOW_CARD, YELLOW_CARD, _sport
 
 UNION_SCORES = [
     {"key": "try", "label": "Try", "value": 5, "affects_score": True},
@@ -13,6 +13,7 @@ UNION_SCORES = [
     {"key": "drop-goal", "label": "Drop goal", "value": 3, "affects_score": True},
     {"key": "penalty-try", "label": "Penalty try", "value": 7, "affects_score": True},
     YELLOW_CARD,
+    UPGRADED_YELLOW_CARD,
     RED_CARD,
 ]
 
@@ -22,6 +23,7 @@ LEAGUE_SCORES = [
     {"key": "penalty-goal", "label": "Penalty goal", "value": 2, "affects_score": True},
     {"key": "field-goal", "label": "Field goal", "value": 1, "affects_score": True},
     YELLOW_CARD,
+    UPGRADED_YELLOW_CARD,
     RED_CARD,
 ]
 
@@ -53,6 +55,7 @@ def _sheet(
 
 
 def _union(**overrides) -> dict:
+    overrides.setdefault("discipline", RUGBY_DISCIPLINE)
     return _sport(
         icon="american-football-outline",
         locked=True,
@@ -65,6 +68,7 @@ def _union(**overrides) -> dict:
 
 
 def _league(**overrides) -> dict:
+    overrides.setdefault("discipline", RUGBY_DISCIPLINE)
     return _sport(
         icon="american-football-outline",
         locked=True,
@@ -115,6 +119,7 @@ RUGBY_VARIANTS: dict[str, dict] = {
         score_types=[
             {"key": "try", "label": "Try", "value": 1, "affects_score": True},
             YELLOW_CARD,
+            UPGRADED_YELLOW_CARD,
             RED_CARD,
         ],
         match_structure=[
@@ -259,6 +264,7 @@ RUGBY_VARIANTS: dict[str, dict] = {
             },
             {"key": "conversion", "label": "Conversion", "value": 2, "affects_score": True},
             YELLOW_CARD,
+            UPGRADED_YELLOW_CARD,
             RED_CARD,
         ],
         match_structure=[
