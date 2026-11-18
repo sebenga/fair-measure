@@ -42,6 +42,17 @@ export function authInterceptor(
         auth.getRefreshToken() !== null;
 
       if (!shouldRefresh) {
+        const deadSession =
+          error instanceof HttpErrorResponse &&
+          error.status === 401 &&
+          isOurApi &&
+          !isPublic &&
+          !!token;
+        if (deadSession) {
+          // Access token rejected and no refresh token to try: drop the session.
+          auth.logout(false);
+          return retryAnonymously(request, next);
+        }
         return throwError(() => error);
       }
       return retryWithFreshToken(request, next, auth);
@@ -66,7 +77,7 @@ function retryWithFreshToken(
       switchMap((token) =>
         token
           ? next(withToken(request, token))
-          : throwError(() => new HttpErrorResponse({ status: 401, url: request.url })),
+          : retryAnonymously(request, next),
       ),
     );
   }
@@ -86,20 +97,29 @@ function retryWithFreshToken(
       // The refresh token is expired or revoked; there is nothing left to try.
       // Always surface 401 (never a refresh 500) so Discover can recover cleanly.
       auth.logout(false);
-      return throwError(
-        () =>
-          new HttpErrorResponse({
-            status: 401,
-            statusText: 'Unauthorized',
-            url: request.url,
-            error: {
-              error: {
-                code: 'token_not_valid',
-                message: 'Please sign in again.',
-              },
-            },
-          }),
-      );
+      return retryAnonymously(request, next);
     }),
+  );
+}
+
+/**
+ * A dead session must not break public pages. Reads (Discover, landing, league
+ * pages) are retried without a token; anything else surfaces a clean 401.
+ */
+function retryAnonymously(
+  request: HttpRequest<unknown>,
+  next: HttpHandlerFn,
+): Observable<HttpEvent<unknown>> {
+  if (request.method === 'GET' || request.method === 'HEAD') {
+    return next(request);
+  }
+  return throwError(
+    () =>
+      new HttpErrorResponse({
+        status: 401,
+        statusText: 'Unauthorized',
+        url: request.url,
+        error: { error: { code: 'token_not_valid', message: 'Please sign in again.' } },
+      }),
   );
 }
