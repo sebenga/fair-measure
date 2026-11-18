@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     "apps.fantasy",
     "apps.marketing",
     "apps.releases",
+    "apps.ai_camera",
 ]
 
 MIDDLEWARE = [
@@ -325,6 +326,19 @@ JOBS_INLINE_SYNC = env_bool("JOBS_INLINE_SYNC", False)
 REALTIME_POLLING = env_bool("REALTIME_POLLING", False)
 REALTIME_RECENT_KEY = env("REALTIME_RECENT_KEY", "fm:events:recent")
 HEALTH_KEY = env("HEALTH_KEY")
+
+# --- AI camera / object storage --------------------------------------------
+# Videos never land on Render disks. Inference runs on an external GPU host.
+
+AI_CAMERA_ENABLED = env_bool("AI_CAMERA_ENABLED", False)
+AI_VISION_PROVIDER = env("AI_VISION_PROVIDER", "stub")
+AI_VISION_ENDPOINT = env("AI_VISION_ENDPOINT")
+AI_API_KEY = env("AI_API_KEY")
+RAW_VIDEO_RETENTION_DAYS = env_int("RAW_VIDEO_RETENTION_DAYS", 30)
+STORAGE_BUCKET = env("STORAGE_BUCKET")
+STORAGE_ENDPOINT = env("STORAGE_ENDPOINT")
+STORAGE_KEY = env("STORAGE_KEY")
+STORAGE_SECRET = env("STORAGE_SECRET")
 
 # Angular ships hashed JS. Styles stay 'unsafe-inline' because Ionic sets
 # element styles. {{CSP_NONCE}} is replaced when we serve index.html.

@@ -29,6 +29,7 @@ api_v1 = [
     path("", include("apps.fantasy.urls")),
     path("", include("apps.marketing.urls")),
     path("", include("apps.releases.urls")),
+    path("", include("apps.ai_camera.urls")),
 ]
 
 urlpatterns = [

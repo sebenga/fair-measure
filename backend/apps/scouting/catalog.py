@@ -459,8 +459,21 @@ CONSENT_SECTIONS = [
     {"key": "sports", "label": "Sports and positions", "required": True},
     {"key": "physical", "label": "Height, weight and other measurements", "required": False},
     {"key": "videos", "label": "Highlight videos", "required": False},
+    {
+        "key": "match_recording",
+        "label": "Match video recording for AI-assisted stats (no facial recognition)",
+        "required": False,
+    },
+    {
+        "key": "match_clips",
+        "label": "Keep confirmed match clips on my profile",
+        "required": False,
+    },
     {"key": "availability", "label": "Availability", "required": False},
 ]
+
+# Bump when consent wording or sections change so users re-confirm.
+CONSENT_VERSION = "2026-11-18-matchday-ai"
 
 
 def sport(key: str) -> dict | None:

@@ -9,7 +9,7 @@ export const LEGAL = {
   owner: 'Keneths House',
   product: 'Fair Measure',
   website: 'https://fairmeasure-v2.onrender.com',
-  lastUpdated: '11 November 2026',
+  lastUpdated: '18 November 2026',
   year: 2026,
 };
 
@@ -86,11 +86,15 @@ export const LEGAL_SECTIONS: LegalSection[] = [
         { label: 'Why', text: 'to provide the Service, run competitions, secure accounts and improve features.' },
         {
           label: 'Children',
-          text: 'profiles of persons under 18 may only be created with consent of a parent or guardian (POPIA s35). Organisers (schools, clubs) are responsible for obtaining this consent.',
+          text: 'profiles of persons under 18 may only be created with consent of a parent or guardian (POPIA s35). Organisers (schools, clubs) are responsible for obtaining this consent. Match video, AI shirt-number identification and public clips for minors require guardian consent; without it we blur or exclude that player and do not create AI stats for them.',
+        },
+        {
+          label: 'Match video & AI camera',
+          text: 'Recording is off by default and needs an organiser recording policy plus player/guardian acceptance (or refusal) on the profile. Identification is by shirt number and submitted lineup only — we do not use facial recognition. Raw video is deleted after a configurable retention period (default 30 days). Confirmed clips are kept only with consent. Players may request deletion.',
         },
         {
           label: 'Sharing',
-          text: 'only with service providers who host and run the Service (e.g. Render, hosted in Frankfurt, Germany), under appropriate safeguards (POPIA s72 cross-border transfers). We do not sell personal information.',
+          text: 'only with service providers who host and run the Service (e.g. Render, hosted in Frankfurt, Germany; optional external GPU providers for AI), under appropriate safeguards (POPIA s72 cross-border transfers). We do not sell personal information.',
         },
         {
           label: 'Your rights',
@@ -100,7 +104,7 @@ export const LEGAL_SECTIONS: LegalSection[] = [
           label: 'Security',
           text: 'we take reasonable technical and organisational measures (POPIA s19) but no system is fully secure.',
         },
-        { label: 'Retention', text: 'kept only as long as needed for the purpose or as required by law.' },
+        { label: 'Retention', text: 'kept only as long as needed for the purpose or as required by law. Raw match video defaults to 30 days unless configured otherwise.' },
         {
           label: 'Cookies',
           text: 'we use essential cookies/local storage for login and settings. [List analytics cookies if any.]',
