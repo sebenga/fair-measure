@@ -1934,9 +1934,23 @@ def test_a_league_runs_named_cups_one_at_a_time(api):
 
 
 def _finish_all(competition):
-    for fixture in competition.fixtures.exclude(status=Fixture.Status.COMPLETED):
+    from django.utils import timezone
+
+    now = timezone.now()
+    open_statuses = {
+        Fixture.Status.SCHEDULED,
+        Fixture.Status.LIVE,
+        Fixture.Status.POSTPONED,
+        Fixture.Status.COMPLETED,
+        Fixture.Status.DISPUTED,
+    }
+    for fixture in competition.fixtures.filter(status__in=open_statuses):
         fixture.status = Fixture.Status.COMPLETED
-        fixture.save(update_fields=["status", "updated_at"])
+        fixture.completed_at = fixture.completed_at or now
+        fixture.confirmed_at = now
+        fixture.save(
+            update_fields=["status", "completed_at", "confirmed_at", "updated_at"]
+        )
         for side in fixture.sides.all():
             if side.outcome == "pending":
                 side.outcome = "win" if side.is_home else "loss"

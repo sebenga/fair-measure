@@ -117,7 +117,7 @@ def _policy(preset: Preset) -> dict:
 
 
 SOCCER: Preset = {
-    "label": "Soccer",
+    "label": "Football (Soccer)",
     "icon": "football-outline",
     "description": (
         "Each goal is worth 1. An own goal scores 1 for the other side. "
@@ -133,11 +133,25 @@ SOCCER: Preset = {
     "contest_type": "head_to_head",
     "participant_type": "team",
     "formats_allowed": ["league", "knockout", "groups_knockout", "round_robin"],
+    "search_aliases": ["soccer", "football", "association football", "11-a-side"],
     "score_types": [
         {"key": "goal", "label": "Goal", "value": 1, "affects_score": True},
         OWN_GOAL,
+        {"key": "penalty-goal", "label": "Penalty goal", "value": 1, "affects_score": True},
+        {"key": "penalty-missed", "label": "Penalty missed", "value": 0, "affects_score": False},
+        {"key": "assist", "label": "Assist", "value": 0, "affects_score": False},
         YELLOW_CARD,
+        {"key": "second-yellow", "label": "Second yellow", "value": 0, "affects_score": False},
         RED_CARD,
+        {"key": "substitution", "label": "Substitution", "value": 0, "affects_score": False},
+        {"key": "offside", "label": "Offside", "value": 0, "affects_score": False},
+        {"key": "foul", "label": "Foul", "value": 0, "affects_score": False},
+        {"key": "shot", "label": "Shot", "value": 0, "affects_score": False},
+        {"key": "shot-on-target", "label": "Shot on target", "value": 0, "affects_score": False},
+        {"key": "save", "label": "Save", "value": 0, "affects_score": False},
+        {"key": "corner", "label": "Corner", "value": 0, "affects_score": False},
+        {"key": "injury", "label": "Injury", "value": 0, "affects_score": False},
+        {"key": "var-note", "label": "VAR review note", "value": 0, "affects_score": False},
     ],
     "match_structure": [
         {"unit": "half", "count": 2, "minutes": 45, "affects_total": True},
@@ -152,7 +166,7 @@ SOCCER: Preset = {
     "locked": True,
         "family": "football",
         "variant": "association",
-        "family_label": "Football",
+        "family_label": "Football (Soccer)",
         "variant_label": "11-a-side",
         "team_sheet": {
             "starters": 11,
@@ -403,6 +417,7 @@ def public_preset(key: str, preset: Preset) -> dict:
         "variant": preset.get("variant") or "",
         "family_label": preset.get("family_label") or "",
         "variant_label": preset.get("variant_label") or "",
+        "search_aliases": list(preset.get("search_aliases") or []),
         "table_bonus": dict(preset.get("table_bonus") or {}),
         "tile_set": preset.get("tile_set") or "",
         **governance(preset),

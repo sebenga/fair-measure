@@ -446,10 +446,15 @@ interface Celebration {
           canScore() &&
           !wordScorer() &&
           fx.status !== 'completed' &&
+          fx.status !== 'confirmed' &&
           fx.status !== 'cancelled' &&
           phase() !== 'penalties'
         ) {
           <h3 class="fm-section-title">Record a score</h3>
+          <p class="hint">
+            Match score comes from events (goals, tries, kicks). League points for the table are
+            separate — a win, draw or loss after full time, plus any bonus the competition awards.
+          </p>
 
           @if (units().length) {
             <div class="units">

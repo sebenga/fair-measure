@@ -196,7 +196,7 @@ def _attach_unit_tiebreakers(rows: dict[str, Row], competition: Competition) -> 
     events = list(
         ScoreEvent.objects.filter(
             fixture__competition=competition,
-            fixture__status__in=[Fixture.Status.COMPLETED, Fixture.Status.FORFEIT],
+            fixture__status__in=[Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED, Fixture.Status.FORFEIT],
         ).select_related("side", "scoring_category", "fixture")
     )
     by_fixture: dict[str, list] = defaultdict(list)
@@ -510,7 +510,7 @@ def criteria_breakdown(competition: Competition) -> dict[str, list[dict]]:
     events = (
         ScoreEvent.objects.filter(
             fixture__competition=competition,
-            fixture__status__in=[Fixture.Status.COMPLETED, Fixture.Status.FORFEIT],
+            fixture__status__in=[Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED, Fixture.Status.FORFEIT],
             scoring_category__affects_score=True,
         )
         .select_related("scoring_category", "side__participant")
@@ -632,7 +632,7 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
     fixtures = (
         Fixture.objects.filter(
             competition=competition,
-            status__in=[Fixture.Status.COMPLETED, Fixture.Status.FORFEIT],
+            status__in=[Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED, Fixture.Status.FORFEIT],
         )
         .prefetch_related("sides__participant", "events__scoring_category")
         .order_by("scheduled_at", "created_at")

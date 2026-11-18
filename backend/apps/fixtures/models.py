@@ -28,6 +28,8 @@ class Fixture(BaseModel):
         SCHEDULED = "scheduled", _("Scheduled")
         LIVE = "live", _("Live")
         COMPLETED = "completed", _("Completed")
+        CONFIRMED = "confirmed", _("Confirmed")
+        DISPUTED = "disputed", _("Disputed")
         POSTPONED = "postponed", _("Postponed")
         CANCELLED = "cancelled", _("Cancelled")
         FORFEIT = "forfeit", _("Forfeit")
@@ -63,6 +65,16 @@ class Fixture(BaseModel):
     phase = models.CharField(max_length=20, blank=True, default="")
     # Penalty shootout kicks in order: {"side", "player", "name", "scored"}.
     shootout = models.JSONField(default=list, blank=True)
+    # Match-card sign-off (Phase 1 auto-confirms on full time; Phase 2 requires referee).
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="confirmed_fixtures",
+    )
+    confirmation_notes = models.TextField(blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -108,9 +120,42 @@ class Fixture(BaseModel):
 
     @property
     def is_counted(self) -> bool:
-        """Whether this fixture should affect the league table."""
+        """Whether this fixture should affect the league table.
 
-        return self.status in {self.Status.COMPLETED, self.Status.FORFEIT}
+        Confirmed match cards and forfeits count. Completed-but-unsigned results
+        still count in Phase 1 (auto-confirm on full time); disputed ones do not
+        until the dispute is resolved back to confirmed.
+        """
+
+        return self.status in {
+            self.Status.COMPLETED,
+            self.Status.CONFIRMED,
+            self.Status.FORFEIT,
+        }
+
+    def mark_confirmed(self, *, user=None, notes: str = "") -> None:
+        """Sign off the digital match card and freeze the result for the table."""
+
+        from django.utils import timezone
+
+        self.status = self.Status.CONFIRMED
+        self.confirmed_at = timezone.now()
+        if user is not None:
+            self.confirmed_by = user
+        if notes:
+            self.confirmation_notes = notes[:4000]
+        if self.completed_at is None:
+            self.completed_at = self.confirmed_at
+        self.save(
+            update_fields=[
+                "status",
+                "confirmed_at",
+                "confirmed_by",
+                "confirmation_notes",
+                "completed_at",
+                "updated_at",
+            ]
+        )
 
     def recalculate_scores(self) -> None:
         """Recompute each side's cached score from its events, then resolve winners."""
@@ -127,6 +172,7 @@ class Fixture(BaseModel):
 
         totals = (
             ScoreEvent.objects.filter(fixture=self, scoring_category__affects_score=True)
+            .exclude(id__in=ScoreEvent.objects.filter(fixture=self, supersedes_event__isnull=False).values("supersedes_event_id"))
             .values("side_id")
             .annotate(
                 total=Sum(F("quantity") * F("scoring_category__points"), default=Decimal("0"))
@@ -231,7 +277,19 @@ FIXTURE_OUTCOME_CHOICES = FixtureSide.Outcome.choices
 
 
 class ScoreEvent(BaseModel):
-    """A single scoring occurrence, e.g. "Try, 62nd minute, scored by number 8"."""
+    """A single match occurrence (goal, card, try, tackle, …).
+
+    The fixture score is always the sum of events whose category affects the
+    score. Corrections append a new event that supersedes an earlier one rather
+    than rewriting history. Alias: MatchEvent.
+    """
+
+    class Source(models.TextChoices):
+        REFEREE = "referee", _("Referee")
+        WATCH = "watch", _("Watch")
+        ASSISTANT = "assistant", _("Assistant")
+        AI_CAMERA = "ai_camera", _("AI camera")
+        ADMIN_CORRECTION = "admin_correction", _("Admin correction")
 
     fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="events")
     side = models.ForeignKey(FixtureSide, on_delete=models.CASCADE, related_name="events")
@@ -240,6 +298,7 @@ class ScoreEvent(BaseModel):
     )
     quantity = models.DecimalField(max_digits=8, decimal_places=2, default=1)
     minute = models.PositiveIntegerField(null=True, blank=True)
+    second = models.PositiveSmallIntegerField(null=True, blank=True)
     period = models.CharField(max_length=40, blank=True)
     # Which expanded match unit this event belongs to (0 = first half, first hole, …).
     unit_index = models.PositiveIntegerField(null=True, blank=True)
@@ -250,6 +309,14 @@ class ScoreEvent(BaseModel):
         blank=True,
         related_name="score_events",
     )
+    secondary_player = models.ForeignKey(
+        RosterMember,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="secondary_score_events",
+        help_text=_("Assist provider, player replaced, or other linked profile."),
+    )
     player_name = models.CharField(
         max_length=160,
         blank=True,
@@ -257,6 +324,32 @@ class ScoreEvent(BaseModel):
     )
     note = models.CharField(max_length=280, blank=True)
     occurred_at = models.DateTimeField(null=True, blank=True)
+    source = models.CharField(
+        max_length=24,
+        choices=Source.choices,
+        default=Source.REFEREE,
+        db_index=True,
+    )
+    confidence = models.DecimalField(
+        max_digits=4,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text=_("0–1 confidence for AI-suggested events; null for human entries."),
+    )
+    client_uuid = models.UUIDField(
+        null=True,
+        blank=True,
+        unique=True,
+        help_text=_("Client-generated id so offline watch events can be deduped."),
+    )
+    supersedes_event = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="superseded_by",
+    )
     recorded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -266,8 +359,11 @@ class ScoreEvent(BaseModel):
     )
 
     class Meta:
-        ordering = ["minute", "created_at"]
-        indexes = [models.Index(fields=["fixture", "created_at"])]
+        ordering = ["minute", "second", "created_at"]
+        indexes = [
+            models.Index(fields=["fixture", "created_at"]),
+            models.Index(fields=["fixture", "minute", "second"]),
+        ]
 
     def __str__(self) -> str:
         return f"{self.scoring_category.name} x{self.quantity}"
@@ -277,6 +373,10 @@ class ScoreEvent(BaseModel):
         if not self.scoring_category.affects_score:
             return Decimal("0")
         return self.quantity * self.scoring_category.points
+
+
+# Public name used by matchday / referee / AI docs. Same table as ScoreEvent.
+MatchEvent = ScoreEvent
 
 
 class PlayerMatchRating(BaseModel):

@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import date, time
 
 from django.db import transaction
-from django.db.models import F, Max, Min
+from django.db.models import F, Max, Min, Q
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from apps.competitions.models import Competition, Stage
@@ -13,8 +14,14 @@ from apps.competitions.presets import format_allowed
 from apps.fixtures.models import Fixture, FixtureSide
 from apps.fixtures.services import ScheduleOptions, generate_knockout, generate_round_robin
 
-OPEN = {Fixture.Status.SCHEDULED, Fixture.Status.LIVE, Fixture.Status.POSTPONED}
-COUNTED = {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT}
+OPEN = {
+    Fixture.Status.SCHEDULED,
+    Fixture.Status.LIVE,
+    Fixture.Status.POSTPONED,
+    Fixture.Status.DISPUTED,
+}
+COUNTED = {Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED, Fixture.Status.FORFEIT}
+SIGNED_OFF = {Fixture.Status.CONFIRMED, Fixture.Status.FORFEIT}
 
 
 def uses_match_seasons(competition: Competition) -> bool:
@@ -23,22 +30,44 @@ def uses_match_seasons(competition: Competition) -> bool:
     settings = competition.settings_json or {}
     if settings.get("table_mode") == "points" or settings.get("result_type"):
         return False
+    if settings.get("scoring_basis") == "criteria":
+        return False
     return competition.format != Competition.Format.FREEFORM
 
 
+def scheduled_fixture_q() -> Q:
+    """Fixtures from a real schedule (not a synthetic score-assist row)."""
+
+    return Q(scheduled_at__isnull=False) | Q(round_number__isnull=False) | Q(stage__isnull=False)
+
+
 def season_is_finished(competition: Competition) -> bool:
-    """True when every remaining fixture is done and at least one result exists."""
+    """True when every remaining fixture is signed off and at least one counted result exists.
+
+    Synthetic score-assist rows alone never finish a results season.
+    """
 
     if not uses_match_seasons(competition):
         return False
     fixtures = competition.fixtures.exclude(status=Fixture.Status.CANCELLED)
-    if not fixtures.filter(status__in=COUNTED).exists():
+    scheduled = fixtures.filter(scheduled_fixture_q())
+    if not scheduled.exists():
         return False
-    return not fixtures.filter(status__in=OPEN).exists()
+    if fixtures.filter(status__in=OPEN).exists():
+        return False
+    # Unsigned full-time results still block the close (Phase 1 sets confirmed_at
+    # automatically when a fixture is completed).
+    unsigned = fixtures.filter(status=Fixture.Status.COMPLETED, confirmed_at__isnull=True)
+    if unsigned.exists():
+        return False
+    return scheduled.filter(
+        Q(status__in=SIGNED_OFF)
+        | Q(status=Fixture.Status.COMPLETED, confirmed_at__isnull=False)
+    ).exists()
 
 
 def maybe_finish_competition(competition: Competition) -> bool:
-    """Mark an active competition completed once its last fixture is done."""
+    """Mark an active competition completed once its last fixture is confirmed."""
 
     if competition.status != Competition.Status.ACTIVE:
         return False
@@ -47,6 +76,24 @@ def maybe_finish_competition(competition: Competition) -> bool:
     competition.status = Competition.Status.COMPLETED
     competition.save(update_fields=["status", "updated_at"])
     return True
+
+
+def admin_close_competition(competition: Competition, *, user, reason: str) -> Competition:
+    """Explicitly close a season before every fixture is confirmed."""
+
+    reason = (reason or "").strip()
+    if len(reason) < 8:
+        raise ValidationError({"reason": "Give a short reason for closing the season early."})
+    settings = dict(competition.settings_json or {})
+    settings["closed_early"] = {
+        "reason": reason[:1000],
+        "by": str(getattr(user, "id", "") or ""),
+        "at": timezone.now().isoformat(),
+    }
+    competition.settings_json = settings
+    competition.status = Competition.Status.COMPLETED
+    competition.save(update_fields=["settings_json", "status", "updated_at"])
+    return competition
 
 
 def stage_is_finished(stage: Stage) -> bool:

@@ -872,6 +872,8 @@ export interface Preset {
   variant?: string;
   family_label?: string;
   variant_label?: string;
+  /** Extra tokens the create-page search matches, e.g. soccer + football. */
+  search_aliases?: string[];
   league_points?: Record<string, number>;
   table_bonus?: TableBonus;
   tile_set?: string;
@@ -902,9 +904,9 @@ export function squadSizeOf(competition: {
   const minimum = Number(sheet?.min_squad);
   if (minimum > 0) return minimum;
   const starters = Number(sheet?.starters);
-  if (starters >= 11) return 14;
   if (starters > 0) return starters;
-  return 14;
+  // Custom / non-sport boards have no team sheet — do not invent a sport squad size.
+  return 0;
 }
 
 /** Ranked by accumulated score, not head-to-head match results. */

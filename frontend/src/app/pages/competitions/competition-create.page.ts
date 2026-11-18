@@ -1356,12 +1356,14 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
     const query = this.sportQuery().trim().toLowerCase();
     const sports = this.sportPresets().filter((preset) => {
       if (!query) return true;
+      const aliases = (preset.search_aliases ?? []).map((alias) => alias.toLowerCase()).join(' ');
       return (
         preset.label.toLowerCase().includes(query) ||
         preset.sport.toLowerCase().includes(query) ||
         (preset.group_label ?? '').toLowerCase().includes(query) ||
         (preset.family_label ?? '').toLowerCase().includes(query) ||
-        (preset.variant_label ?? '').toLowerCase().includes(query)
+        (preset.variant_label ?? '').toLowerCase().includes(query) ||
+        aliases.includes(query)
       );
     });
     const order = ['ball', 'racket', 'golf', 'target', 'board', 'equestrian', 'olympic', 'winter'];

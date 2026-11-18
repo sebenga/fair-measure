@@ -68,6 +68,21 @@ import { SeasonPickerComponent } from '../../../shared/season-picker.component';
           }
         </ul>
       </section>
+    } @else if (!pointsTable() && !seriesTable() && (leagueGuide() || bonusGuide())) {
+      <section class="scoring-guide fm-card">
+        <h3>How points work</h3>
+        <p>
+          Match score is goals, tries and other scoring actions in the game. League points
+          are what the table uses
+          @if (leagueGuide(); as league) {
+            ({{ league }})
+          }
+          .
+          @if (bonusGuide(); as bonus) {
+            Bonus: {{ bonus }}.
+          }
+        </p>
+      </section>
     }
 
     @if (seasons().length > 1) {

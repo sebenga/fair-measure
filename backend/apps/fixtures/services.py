@@ -402,6 +402,17 @@ def generate_knockout(
     return created
 
 
+def _is_results_competition(competition) -> bool:
+    """Head-to-head results sports must score on a scheduled fixture, not invent one."""
+
+    settings = competition.settings_json or {}
+    if settings.get("scoring_basis") == "criteria" or settings.get("table_mode") == "points":
+        return False
+    if settings.get("result_type"):
+        return False
+    return True
+
+
 def award_criterion(*, competition, participant, category, quantity, note, user):
     """Log one scoring criterion against one participant and refresh the table."""
 
@@ -410,6 +421,11 @@ def award_criterion(*, competition, participant, category, quantity, note, user)
     from apps.standings.services import refresh_standings
 
     from .models import FixtureSide, ScoreEvent
+
+    if _is_results_competition(competition):
+        raise ValueError(
+            "Record match events on a scheduled fixture. Criteria awards are for points boards."
+        )
 
     fixture = Fixture.objects.create(
         competition=competition,
@@ -492,6 +508,11 @@ def record_result(*, competition, home, away, outcome, note, user):
     from apps.standings.services import refresh_standings
 
     from .models import FixtureSide, ScoreEvent
+
+    if _is_results_competition(competition):
+        raise ValueError(
+            "Record the score on a scheduled fixture. Results sports cannot invent a match."
+        )
 
     category = (
         competition.scoring_categories.filter(affects_score=True)

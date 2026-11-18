@@ -183,9 +183,11 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
             @if (entrantKind() === 'team' && !isCombination()) {
               @if (!teamEntry()) {
                 <p class="hint">
-                  Choose how teams are filled. A team needs at least {{ squadSize() }} players, and you
-                  can pick or draft more than that. A competition uses one method — pick teams, or draft.
-                  You cannot switch later.
+                  Choose how teams are filled.
+                  @if (squadSize() > 0) {
+                    A team needs at least {{ squadSize() }} players, and you can pick or draft more than that.
+                  }
+                  A competition uses one method — pick teams, or draft. You cannot switch later.
                 </p>
                 <div class="entry-modes">
                   <button type="button" (click)="setTeamEntry('pick')" [disabled]="busy()">
@@ -201,11 +203,21 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                     Name every team first. When the list is complete, start
                     {{ teamEntry() === 'pick' ? 'picking' : 'the draft' }}.
                   } @else if (teamEntry() === 'pick') {
-                    Teams are set. Open a team and pick at least {{ squadSize() }} profiles. You can pick
-                    more than that. They accept before they count.
+                    Teams are set. Open a team and pick
+                    @if (squadSize() > 0) {
+                      at least {{ squadSize() }} profiles. You can pick more than that.
+                    } @else {
+                      players.
+                    }
+                    They accept before they count.
                   } @else {
-                    Teams are set. Draft at least {{ squadSize() }} players onto each team. You can keep
-                    drafting after that. They join when they are drafted.
+                    Teams are set. Draft
+                    @if (squadSize() > 0) {
+                      at least {{ squadSize() }} players onto each team. You can keep drafting after that.
+                    } @else {
+                      players onto each team.
+                    }
+                    They join when they are drafted.
                   }
                 </p>
               }
@@ -1299,7 +1311,7 @@ export class CompetitionSetupPage implements OnInit {
 
   squadSize(): number {
     const competition = this.competition();
-    return competition ? squadSizeOf(competition) : 14;
+    return competition ? squadSizeOf(competition) : 0;
   }
 
   readonly scoringLocked = computed(() => {

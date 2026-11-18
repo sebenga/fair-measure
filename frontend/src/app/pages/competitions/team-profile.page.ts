@@ -353,7 +353,7 @@ export class TeamProfilePage implements OnInit {
 
   squadSize(): number {
     const competition = this.competition();
-    return competition ? squadSizeOf(competition) : 14;
+    return competition ? squadSizeOf(competition) : 0;
   }
 
   teamEntry(): 'pick' | 'draft' | null {

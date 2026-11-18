@@ -418,11 +418,14 @@ class FixtureViewSet(viewsets.ModelViewSet):
         official = officials_required(fixture.competition)
         reopening = fixture.is_counted and new_status not in {
             Fixture.Status.COMPLETED,
+            Fixture.Status.CONFIRMED,
             Fixture.Status.FORFEIT,
         }
         reason = ""
         if official and (
-            new_status in {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT} or reopening
+            new_status
+            in {Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED, Fixture.Status.FORFEIT}
+            or reopening
         ):
             # Only the officials finalise or reopen a result.
             assert_can_decide(fixture.competition, request.user)
@@ -439,20 +442,41 @@ class FixtureViewSet(viewsets.ModelViewSet):
             if reopening:
                 # A reopened result is corrected by hand, outside the half-by-half flow.
                 fixture.phase = ""
+                fixture.confirmed_at = None
+                fixture.confirmed_by = None
             if new_status == Fixture.Status.LIVE and fixture.started_at is None:
                 fixture.started_at = timezone.now()
             if new_status in {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT}:
                 fixture.completed_at = timezone.now()
                 fixture.recalculate_scores()
+                # Phase 1: auto sign-off so standings and season close keep working.
+                # Phase 2 replaces this with an explicit referee match-card action
+                # that moves status to confirmed.
+                fixture.confirmed_at = timezone.now()
+                fixture.confirmed_by = request.user
             fixture.save(
-                update_fields=["status", "phase", "started_at", "completed_at", "updated_at"]
+                update_fields=[
+                    "status",
+                    "phase",
+                    "started_at",
+                    "completed_at",
+                    "confirmed_at",
+                    "confirmed_by",
+                    "updated_at",
+                ]
             )
-            if new_status in {Fixture.Status.LIVE, Fixture.Status.COMPLETED}:
+            if new_status in {
+                Fixture.Status.LIVE,
+                Fixture.Status.COMPLETED,
+                Fixture.Status.CONFIRMED,
+            }:
                 from .matchday import sync_minutes
 
                 sync_minutes(fixture)
             if official and (
-                new_status in {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT} or reopening
+                new_status
+                in {Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED, Fixture.Status.FORFEIT}
+                or reopening
             ):
                 _log_amendment(
                     fixture,
@@ -467,11 +491,19 @@ class FixtureViewSet(viewsets.ModelViewSet):
             from apps.social.live import publish_kickoff
 
             publish_kickoff(fixture)
-        if new_status in {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT} or reopening:
+        if (
+            new_status
+            in {Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED, Fixture.Status.FORFEIT}
+            or reopening
+        ):
             from .discipline import sync_roster_discipline
 
             sync_roster_discipline(fixture)
-        if new_status in {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT}:
+        if new_status in {
+            Fixture.Status.COMPLETED,
+            Fixture.Status.CONFIRMED,
+            Fixture.Status.FORFEIT,
+        }:
             from apps.social.live import publish_full_time
 
             publish_full_time(fixture)
