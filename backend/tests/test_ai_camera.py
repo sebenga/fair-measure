@@ -75,3 +75,36 @@ def test_ai_pipeline_accept_creates_event_cards_not_auto(api, user):
     # Yellow remains pending — never auto-applied.
     yellow.refresh_from_db()
     assert yellow.status == AiEventSuggestion.Status.PENDING
+
+
+@override_settings(AI_CAMERA_ENABLED=True, AI_VISION_PROVIDER="stub")
+def test_stub_demo_endpoint_returns_suggestions(api, user):
+    created = api.post(
+        "/api/v1/competitions",
+        {"name": "AI stub demo", "preset": "soccer", "format": "league"},
+        format="json",
+    )
+    competition = Competition.objects.get(pk=created.data["id"])
+    home = Participant.objects.create(competition=competition, name="Home", kind="team")
+    away = Participant.objects.create(competition=competition, name="Away", kind="team")
+    fixture = Fixture.objects.create(
+        competition=competition, status=Fixture.Status.LIVE, duration_minutes=90
+    )
+    FixtureSide.objects.create(fixture=fixture, participant=home, position=0, is_home=True)
+    FixtureSide.objects.create(fixture=fixture, participant=away, position=1)
+
+    demo = api.post(f"/api/v1/fixtures/{fixture.id}/ai/demo-stub", {}, format="json")
+    assert demo.status_code == 201, demo.data
+    assert demo.data["provider"] == "stub"
+    assert len(demo.data["suggestions"]) == 2
+    competition.refresh_from_db()
+    assert competition.settings_json.get("ai_camera_enabled") is True
+
+    listed = api.get(f"/api/v1/fixtures/{fixture.id}/ai/suggestions")
+    assert listed.status_code == 200
+    assert len(listed.data) == 2
+
+    yellow = next(row for row in listed.data if row["event_type"] == "yellow")
+    accept = api.post(f"/api/v1/ai/suggestions/{yellow['id']}/accept", {}, format="json")
+    assert accept.status_code == 200, accept.data
+    assert ScoreEvent.objects.filter(fixture=fixture, source=ScoreEvent.Source.AI_CAMERA).count() == 1

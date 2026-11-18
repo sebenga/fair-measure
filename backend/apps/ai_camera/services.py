@@ -99,8 +99,11 @@ def accept_suggestion(
         raise PermissionDenied("Only the referee or an appointed stats operator can accept AI events.")
     if suggestion.status == AiEventSuggestion.Status.ACCEPTED and suggestion.match_event_id:
         return suggestion.match_event
-    if suggestion.is_disciplinary and not user_can_live_score(fixture, user):
-        raise PermissionDenied("Disciplinary and score events need the referee.")
+    if suggestion.is_disciplinary and not (
+        user_can_live_score(fixture, user)
+        or has_at_least(fixture.competition, user, Role.ADMIN)
+    ):
+        raise PermissionDenied("Disciplinary events need the referee or an admin.")
     event = ScoreEvent.objects.create(
         fixture=fixture,
         side_id=side_id,

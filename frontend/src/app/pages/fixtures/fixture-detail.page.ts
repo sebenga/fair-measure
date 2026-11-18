@@ -26,6 +26,7 @@ import {
   IonLabel,
   IonSegment,
   IonSegmentButton,
+  IonSpinner,
   IonTitle,
   IonToolbar,
   ToastController,
@@ -36,6 +37,7 @@ import { isCupFixture } from '../competitions/tabs/cup';
 import { AuthService } from '../../core/auth.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type {
+  AiEventSuggestion,
   CompetitionDetail,
   FixtureDetail,
   FixtureSide,
@@ -116,6 +118,7 @@ interface Celebration {
     IonBackButton,
     IonButton,
     IonIcon,
+    IonSpinner,
     IonContent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -417,6 +420,72 @@ interface Celebration {
               <p class="hint">Watch code <strong>{{ pair.code }}</strong> · open {{ pair.watch_path }}</p>
             }
           }
+
+          @if (canManage()) {
+            <section class="ai-panel fm-card">
+              <div class="ai-head">
+                <div>
+                  <p class="eyebrow">AI camera</p>
+                  <h3>Suggestions</h3>
+                </div>
+                <ion-button
+                  size="small"
+                  [disabled]="aiBusy()"
+                  (click)="runAiStubDemo()"
+                >
+                  @if (aiBusy()) {
+                    <ion-spinner name="crescent" />
+                  } @else {
+                    Run stub demo
+                  }
+                </ion-button>
+              </div>
+              <p class="hint">
+                Emulation only — no live camera. The stub invents sample events; cards never
+                apply until you accept them.
+              </p>
+              @if (aiError()) {
+                <p class="hint" role="alert">{{ aiError() }}</p>
+              }
+              @if (!aiSuggestions().length) {
+                <p class="hint">No suggestions yet. Run the stub demo to see tackle and yellow samples.</p>
+              } @else {
+                <ul class="ai-list">
+                  @for (row of aiSuggestions(); track row.id) {
+                    <li>
+                      <div class="grow">
+                        <strong>{{ aiLabel(row) }}</strong>
+                        <small>
+                          {{ aiClock(row) }} · {{ aiConfidencePct(row) }}% confidence · {{ row.status }}
+                          @if (row.is_disciplinary) {
+                            · needs referee
+                          }
+                        </small>
+                      </div>
+                      @if (row.status === 'pending') {
+                        <ion-button
+                          size="small"
+                          [disabled]="aiBusy()"
+                          (click)="acceptAi(row)"
+                        >
+                          Accept
+                        </ion-button>
+                        <ion-button
+                          size="small"
+                          fill="outline"
+                          color="medium"
+                          [disabled]="aiBusy()"
+                          (click)="rejectAi(row)"
+                        >
+                          Reject
+                        </ion-button>
+                      }
+                    </li>
+                  }
+                </ul>
+              }
+            </section>
+          }
           <div class="referees">
             @for (referee of fx.referees; track referee.id) {
               <div class="referee">
@@ -683,6 +752,9 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   readonly fixture = signal<FixtureDetail | null>(null);
   readonly competition = signal<CompetitionDetail | null>(null);
   readonly watchPair = signal<{ code: string; watch_path: string } | null>(null);
+  readonly aiSuggestions = signal<AiEventSuggestion[]>([]);
+  readonly aiBusy = signal(false);
+  readonly aiError = signal<string | null>(null);
   readonly loading = signal(true);
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
@@ -1200,7 +1272,10 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       next: (competition) => {
         this.competition.set(competition);
         this.syncUnitIndex();
-        if (this.canManage()) this.ensureProfiles();
+        if (this.canManage()) {
+          this.ensureProfiles();
+          this.loadAiSuggestions();
+        }
       },
       error: () => undefined,
     });
@@ -1214,6 +1289,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
         }
         this.applyFixture(fixture);
         this.loading.set(false);
+        this.loadAiSuggestions();
       },
       error: (err: unknown) => {
         this.gone.set(err instanceof HttpErrorResponse && err.status === 404);
@@ -1455,6 +1531,104 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
         this.saving.set(false);
       },
     });
+  }
+
+  loadAiSuggestions(): void {
+    if (!this.fixtureId || !this.canManage()) return;
+    this.api.listAiSuggestions(this.fixtureId).subscribe({
+      next: (rows) => this.aiSuggestions.set(rows),
+      error: () => undefined,
+    });
+  }
+
+  runAiStubDemo(): void {
+    if (this.aiBusy() || !this.fixtureId) return;
+    this.aiBusy.set(true);
+    this.aiError.set(null);
+    this.api.runAiStubDemo(this.fixtureId).subscribe({
+      next: (res) => {
+        const pending = res.suggestions ?? [];
+        const existing = this.aiSuggestions().filter((row) => !pending.some((p) => p.id === row.id));
+        this.aiSuggestions.set([...existing, ...pending]);
+        this.aiBusy.set(false);
+        void this.toasts
+          .create({
+            message: `Stub demo ready (${res.provider || 'stub'}). Accept or reject below.`,
+            duration: 2800,
+            color: 'success',
+          })
+          .then((toast) => toast.present());
+      },
+      error: (err) => {
+        this.aiError.set(extractErrorMessage(err, 'Could not run the AI stub demo.'));
+        this.aiBusy.set(false);
+      },
+    });
+  }
+
+  acceptAi(row: AiEventSuggestion): void {
+    if (this.aiBusy() || row.status !== 'pending') return;
+    this.aiBusy.set(true);
+    this.aiError.set(null);
+    this.api.acceptAiSuggestion(row.id).subscribe({
+      next: () => {
+        this.aiSuggestions.update((rows) =>
+          rows.map((item) => (item.id === row.id ? { ...item, status: 'accepted' } : item)),
+        );
+        this.aiBusy.set(false);
+        this.reloadFixture();
+        void this.toasts
+          .create({
+            message: `Accepted ${this.aiLabel(row)}.`,
+            duration: 2200,
+            color: 'success',
+          })
+          .then((toast) => toast.present());
+      },
+      error: (err) => {
+        this.aiError.set(extractErrorMessage(err, 'Could not accept that suggestion.'));
+        this.aiBusy.set(false);
+      },
+    });
+  }
+
+  rejectAi(row: AiEventSuggestion): void {
+    if (this.aiBusy() || row.status !== 'pending') return;
+    this.aiBusy.set(true);
+    this.aiError.set(null);
+    this.api.rejectAiSuggestion(row.id).subscribe({
+      next: () => {
+        this.aiSuggestions.update((rows) =>
+          rows.map((item) => (item.id === row.id ? { ...item, status: 'rejected' } : item)),
+        );
+        this.aiBusy.set(false);
+      },
+      error: (err) => {
+        this.aiError.set(extractErrorMessage(err, 'Could not reject that suggestion.'));
+        this.aiBusy.set(false);
+      },
+    });
+  }
+
+  aiLabel(row: AiEventSuggestion): string {
+    const raw = (row.event_type || 'event').replace(/[_-]+/g, ' ');
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
+
+  aiClock(row: AiEventSuggestion): string {
+    const seconds = Number(row.timestamp_seconds);
+    if (!Number.isFinite(seconds) || seconds < 0) return '—';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60)
+      .toString()
+      .padStart(2, '0');
+    return `${mins}:${secs}`;
+  }
+
+  aiConfidencePct(row: AiEventSuggestion): number {
+    const value = Number(row.confidence);
+    if (!Number.isFinite(value)) return 0;
+    return Math.round(value <= 1 ? value * 100 : value);
   }
 
   canManage(): boolean {

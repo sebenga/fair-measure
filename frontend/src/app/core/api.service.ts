@@ -46,6 +46,7 @@ import type {
   UploadTarget,
   MarketingEnquiry,
   MarketingPlacement,
+  AiEventSuggestion,
   BillingConfig,
   VisibilityCheckout,
   VisibilityCheckoutKind,
@@ -445,6 +446,32 @@ export class ApiService {
   pairWatch(competitionId: string, fixtureId: string) {
     return this.http.post<{ code: string; watch_path: string; token: string; expires_at: string }>(
       `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/watch/pair`,
+      {},
+    );
+  }
+
+  listAiSuggestions(fixtureId: string) {
+    return this.http.get<AiEventSuggestion[]>(`${this.base}/fixtures/${fixtureId}/ai/suggestions`);
+  }
+
+  runAiStubDemo(fixtureId: string) {
+    return this.http.post<{
+      recording_id: string;
+      provider: string;
+      suggestions: AiEventSuggestion[];
+    }>(`${this.base}/fixtures/${fixtureId}/ai/demo-stub`, {});
+  }
+
+  acceptAiSuggestion(suggestionId: string, body: Record<string, unknown> = {}) {
+    return this.http.post<{ event_id: string; suggestion_id: string }>(
+      `${this.base}/ai/suggestions/${suggestionId}/accept`,
+      body,
+    );
+  }
+
+  rejectAiSuggestion(suggestionId: string) {
+    return this.http.post<{ id: string; status: string }>(
+      `${this.base}/ai/suggestions/${suggestionId}/reject`,
       {},
     );
   }

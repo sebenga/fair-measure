@@ -1125,6 +1125,20 @@ export interface GenerateFixturesRequest {
   cups?: string[];
 }
 
+export interface AiEventSuggestion {
+  id: string;
+  event_type: string;
+  timestamp_seconds: string;
+  clip_url: string;
+  confidence: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'edited' | string;
+  is_disciplinary: boolean;
+  player_guess_id: string | null;
+  team_side_id: string | null;
+  provider?: string;
+  match_event_id?: string | null;
+}
+
 export type VisibilityCheckoutKind = 'private' | 'landing';
 
 export interface BillingConfig {

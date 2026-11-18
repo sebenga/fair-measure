@@ -17,6 +17,22 @@ from .models import AiEventSuggestion, MatchRecording
 from .services import accept_suggestion, ai_camera_enabled, process_recording
 
 
+def _suggestion_payload(row: AiEventSuggestion) -> dict:
+    return {
+        "id": str(row.id),
+        "event_type": row.event_type,
+        "timestamp_seconds": str(row.timestamp_seconds),
+        "clip_url": row.clip_url,
+        "confidence": str(row.confidence),
+        "status": row.status,
+        "is_disciplinary": row.is_disciplinary,
+        "player_guess_id": str(row.player_guess_id) if row.player_guess_id else None,
+        "team_side_id": str(row.team_side_id) if row.team_side_id else None,
+        "provider": row.provider,
+        "match_event_id": str(row.match_event_id) if row.match_event_id else None,
+    }
+
+
 class RecordingCreateView(APIView):
     """Register a chunked recording metadata row (bytes live in object storage)."""
 
@@ -54,22 +70,7 @@ class SuggestionListView(APIView):
             Fixture, pk=fixture_pk, competition__in=visible_competitions(request.user)
         )
         rows = AiEventSuggestion.objects.filter(fixture=fixture).order_by("timestamp_seconds")
-        return Response(
-            [
-                {
-                    "id": str(row.id),
-                    "event_type": row.event_type,
-                    "timestamp_seconds": str(row.timestamp_seconds),
-                    "clip_url": row.clip_url,
-                    "confidence": str(row.confidence),
-                    "status": row.status,
-                    "is_disciplinary": row.is_disciplinary,
-                    "player_guess_id": str(row.player_guess_id) if row.player_guess_id else None,
-                    "team_side_id": str(row.team_side_id) if row.team_side_id else None,
-                }
-                for row in rows
-            ]
-        )
+        return Response([_suggestion_payload(row) for row in rows])
 
 
 class SuggestionAcceptView(APIView):
@@ -82,8 +83,13 @@ class SuggestionAcceptView(APIView):
             pk=suggestion_pk,
             fixture__competition__in=visible_competitions(request.user),
         )
-        category_id = request.data.get("scoring_category")
+        category_id = request.data.get("scoring_category") or _guess_category_id(suggestion)
         side_id = request.data.get("side") or suggestion.team_side_id
+        if not side_id:
+            home = suggestion.fixture.sides.filter(is_home=True).first() or suggestion.fixture.sides.order_by(
+                "position"
+            ).first()
+            side_id = str(home.id) if home else None
         if not category_id or not side_id:
             raise ValidationError({"scoring_category": "Choose the category and side."})
         event = accept_suggestion(
@@ -127,3 +133,81 @@ class ProcessRecordingView(APIView):
             {"recording_id": str(recording.id), "suggestions": len(rows)},
             status=status.HTTP_202_ACCEPTED,
         )
+
+
+class StubDemoView(APIView):
+    """One-click local emulation: enable AI on the competition, process a stub clip, return suggestions."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(tags=["AI Camera"], summary="Run the stub AI camera demo for a fixture")
+    def post(self, request: Request, fixture_pk) -> Response:
+        from django.conf import settings
+
+        fixture = get_object_or_404(
+            Fixture.objects.select_related("competition"),
+            pk=fixture_pk,
+            competition__in=visible_competitions(request.user),
+        )
+        if not has_at_least(fixture.competition, request.user, Role.ADMIN):
+            raise PermissionDenied("Only an admin can run the AI camera demo.")
+        if not getattr(settings, "AI_CAMERA_ENABLED", False):
+            raise ValidationError(
+                {"ai_camera": "Set AI_CAMERA_ENABLED=true to use the AI camera demo."}
+            )
+
+        competition = fixture.competition
+        settings_json = dict(competition.settings_json or {})
+        if not settings_json.get("ai_camera_enabled"):
+            settings_json["ai_camera_enabled"] = True
+            competition.settings_json = settings_json
+            competition.save(update_fields=["settings_json", "updated_at"])
+
+        recording = MatchRecording.objects.create(
+            fixture=fixture,
+            uploaded_by=request.user,
+            status=MatchRecording.Status.READY,
+            storage_key=f"fixtures/{fixture.id}/stub-demo.mp4",
+            consent_version="demo",
+        )
+        rows = process_recording(recording)
+        return Response(
+            {
+                "recording_id": str(recording.id),
+                "provider": getattr(settings, "AI_VISION_PROVIDER", "stub"),
+                "suggestions": [_suggestion_payload(row) for row in rows],
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+def _guess_category_id(suggestion: AiEventSuggestion):
+    """Map stub event types onto this competition's scoring categories."""
+
+    categories = list(suggestion.fixture.competition.scoring_categories.all())
+    if not categories:
+        return None
+    code = (suggestion.event_type or "").lower().replace("_", "-")
+    aliases = {
+        "yellow": ("yellow-card", "yellow", "card"),
+        "yellow-card": ("yellow-card", "yellow", "card"),
+        "red": ("red-card", "red", "card"),
+        "red-card": ("red-card", "red", "card"),
+        "tackle": ("tackle", "goal", "try"),
+        "goal": ("goal", "score"),
+        "try": ("try", "goal"),
+    }
+    wanted = aliases.get(code, (code,))
+    for needle in wanted:
+        for category in categories:
+            if (category.code or "").lower() == needle or (category.name or "").lower() == needle:
+                return str(category.id)
+    # Prefer a non-score card-like row for disciplinary; otherwise first category.
+    if suggestion.is_disciplinary:
+        for category in categories:
+            if not category.affects_score:
+                return str(category.id)
+    for category in categories:
+        if category.affects_score:
+            return str(category.id)
+    return str(categories[0].id)

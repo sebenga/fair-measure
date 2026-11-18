@@ -26,6 +26,10 @@ EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 # Set PAYSTACK_SECRET_KEY to use real Paystack test mode instead.
 BILLING_STUB = env_bool("BILLING_STUB", True)
 
+# Local AI camera panel uses the stub vision provider (no GPU / no video).
+AI_CAMERA_ENABLED = env_bool("AI_CAMERA_ENABLED", True)
+AI_VISION_PROVIDER = env("AI_VISION_PROVIDER", "stub")
+
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},

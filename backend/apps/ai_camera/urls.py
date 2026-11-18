@@ -14,6 +14,11 @@ urlpatterns = [
         name="ai-suggestions",
     ),
     path(
+        "fixtures/<uuid:fixture_pk>/ai/demo-stub",
+        views.StubDemoView.as_view(),
+        name="ai-demo-stub",
+    ),
+    path(
         "ai/suggestions/<uuid:suggestion_pk>/accept",
         views.SuggestionAcceptView.as_view(),
         name="ai-suggestion-accept",

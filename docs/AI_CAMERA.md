@@ -10,9 +10,13 @@ Assistive only: the AI suggests events; a referee or appointed stats operator co
 4. Output: `AiEventSuggestion` (pending → accepted/rejected/edited). Accept creates a `ScoreEvent` with `source=ai_camera`.
 5. Scouting stats should show verification badges: Referee verified / AI + reviewed / Self-reported (filter verified-only).
 
+## Local stub demo (no camera)
+
+On a match **Setup** tab (owner/admin), use **Run stub demo**. That hits `POST /api/fixtures/<id>/ai/demo-stub`, turns on `settings_json.ai_camera_enabled`, runs `StubVisionProvider`, and lists suggestions to **Accept** / **Reject**. Dev defaults: `AI_CAMERA_ENABLED=true`, `AI_VISION_PROVIDER=stub`.
+
 ## Feature flags & cost
 
-- Global: `AI_CAMERA_ENABLED=false` by default.
+- Global: `AI_CAMERA_ENABLED=false` by default (true in local `dev` settings).
 - Per competition: `settings_json.ai_camera_enabled`.
 - Free tier: limit upload duration/size; show processing time and quota in the UI (to wire).
 - Raw video retention: `RAW_VIDEO_RETENTION_DAYS` (default 30).
