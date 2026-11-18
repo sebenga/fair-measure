@@ -134,7 +134,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   <p class="hint">
                     This is a one-hour demo {{ sampleNoun() }}. Teams, officials
                     @if (!pointsTable() && entrantKind() === 'team') {
-                      , picks, fixtures, player ratings, player stats, the league squad and fantasy
+                      , picks, fixtures, player ratings, player stats and the league squad
                     } @else if (!pointsTable()) {
                       , picks and fixtures
                     } @else {
@@ -160,7 +160,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                     Skip the admin work and generate a one-hour demo {{ sampleNoun() }} with
                     {{ samplePeople() }}, officials
                     @if (!pointsTable() && entrantKind() === 'team') {
-                      , picks, fixtures, player ratings, player stats, a league squad and fantasy
+                      , picks, fixtures, player ratings, player stats and a league squad
                     } @else if (!pointsTable()) {
                       , picks and fixtures
                     }
@@ -1195,7 +1195,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
             </ion-list>
             <p class="hint">Scouts can search for players by the level they play at: the highest level of their teams' competitions.</p>
 
-            @if (canManage()) {
+            @if (canManage() && comp.open_to_scouts) {
               <div class="add-row">
                 <p class="hint">
                   Admins can pick, change and republish the league squad at any time — add or drop
@@ -1206,6 +1206,11 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   Amend league squad
                 </ion-button>
               </div>
+            } @else if (canManage()) {
+              <p class="hint">
+                Turn on Open to scouts above before amending the league squad — otherwise the squad
+                API is unavailable.
+              </p>
             }
 
             @if (comp.open_to_scouts) {
@@ -1739,7 +1744,7 @@ export class CompetitionSetupPage implements OnInit {
   demoExtras(): string {
     if (this.pointsTable()) return '';
     if (this.entrantKind() === 'team') {
-      return ', picks, fixtures, player ratings, player stats, the league squad and fantasy';
+      return ', picks, fixtures, player ratings, player stats and the league squad';
     }
     return ', picks and fixtures';
   }
@@ -1772,7 +1777,7 @@ export class CompetitionSetupPage implements OnInit {
         }
         await this.toast(
           result.fixtures
-            ? `Demo ready: ${result.teams} ${this.samplePeople()}${this.entrantKind() === 'team' ? ', ratings, player stats, league squad and fantasy' : ''}. It deletes in one hour.`
+            ? `Demo ready: ${result.teams} ${this.samplePeople()}${this.entrantKind() === 'team' ? ', ratings, player stats and league squad' : ''}. It deletes in one hour.`
             : `Demo ready: ${result.teams} ${this.samplePeople()}. It deletes in one hour.`,
           'success',
         );

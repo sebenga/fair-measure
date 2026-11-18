@@ -10,7 +10,8 @@ from apps.core.permissions import Role, has_at_least
 from .models import Fixture, FixtureReferee
 
 
-LIVE_STATUSES = {Fixture.Status.SCHEDULED, Fixture.Status.LIVE}
+# In-progress match only. Scheduled kickoff / first-event paths assert separately.
+LIVE_STATUSES = {Fixture.Status.LIVE}
 POST_MATCH = {
     Fixture.Status.COMPLETED,
     Fixture.Status.CONFIRMED,

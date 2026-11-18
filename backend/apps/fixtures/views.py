@@ -764,7 +764,12 @@ class ScoreEventViewSet(viewsets.ModelViewSet):
         fixture = self.get_fixture()
         reason = _official_reason(fixture, self.request)
         source = str(self.request.data.get("source") or "").strip()
-        if fixture.status in LIVE_STATUSES or fixture.status == Fixture.Status.POSTPONED:
+        if (
+            fixture.status in LIVE_STATUSES
+            or fixture.status == Fixture.Status.POSTPONED
+            or fixture.status == Fixture.Status.SCHEDULED
+        ):
+            # First event on a scheduled card is kickoff — still referee-only.
             assert_can_live_score(fixture, self.request.user)
             if not source:
                 source = ScoreEvent.Source.REFEREE

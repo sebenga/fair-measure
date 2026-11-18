@@ -20,7 +20,7 @@ from apps.competitions.views import visible_competitions
 from apps.core.permissions import Role, has_at_least
 
 from .models import Fixture, FixtureReferee, ScoreEvent, WatchDeviceToken
-from .officials import LIVE_STATUSES, assert_can_live_score, log_match_action, user_can_live_score
+from .officials import assert_can_live_score, log_match_action, user_can_live_score
 
 
 def _active_token(raw: str | None) -> WatchDeviceToken:
@@ -135,7 +135,11 @@ class WatchSyncView(APIView):
         if str(row.fixture_id) != str(fixture_pk):
             raise PermissionDenied("This watch is paired to a different match.")
         fixture = row.fixture
-        if fixture.status not in LIVE_STATUSES and fixture.status != Fixture.Status.POSTPONED:
+        if fixture.status not in {
+            Fixture.Status.LIVE,
+            Fixture.Status.SCHEDULED,
+            Fixture.Status.POSTPONED,
+        }:
             raise ValidationError({"status": "This match is no longer live."})
         actor = row.official.user if row.official_id else row.created_by
         if actor is None:

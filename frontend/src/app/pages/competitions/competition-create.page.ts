@@ -294,7 +294,7 @@ function presetKind(preset: Preset): PresetKind {
                   <p>
                     One tap builds a {{ demo.family_label || demo.label }} league with 16 teams and
                     a season scheduled automatically: results already in, a match live right now,
-                    a cup, fantasy and scouting. It deletes itself after an hour.
+                    a cup and scouting (Fantasy when that release is on). It deletes itself after an hour.
                   </p>
                 </div>
                 <ion-button

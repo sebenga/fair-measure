@@ -153,4 +153,17 @@ Audit of the Fair Measure v2 monorepo as of this document. No code was changed f
 - [x] Soccer & rugby flows traced create → scouting
 - [x] Known issues confirmed with file-level evidence
 - [x] Gaps for MatchEvent / referee / watch / AI / Render listed
-- [ ] Phases 1–5 implement fixes; this file remains the checklist until items are struck through in `MATCHDAY.md`
+- [x] Phases 1–5 close items — see `docs/MATCHDAY.md`, `docs/AI_CAMERA.md`, `watch/README.md`
+
+### Resolution notes (Phases 1–5)
+
+| Issue | Status |
+| --- | --- |
+| Amend league squad / 404 | Button gated on `open_to_scouts`; API still requires admin or open scouting league |
+| Fantasy claim without tab | Demo/create copy no longer promises Fantasy unless the release is on |
+| Soccer naming | Preset label **Football (Soccer)** |
+| Score without fixture / early finish | Results sports need scheduled fixtures; finish waits for confirmation |
+| Match vs league points | “How points work” on standings / match centre |
+| 14-player custom | `squadSizeOf` no longer defaults custom comps to 14 |
+| Tour auto social | Demo guide points only; no auto post/like/comment |
+| AI / watch / officials | Scaffolded per phase commits |

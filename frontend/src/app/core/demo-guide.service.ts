@@ -84,9 +84,9 @@ const STEPS: GuideStep[] = [
     key: 'welcome',
     title: 'Welcome to your demo',
     body:
-      "I'm Coach Kaya. This demo has 16 teams, a league and a cup, officials, line-ups, ratings and a fantasy " +
-      'game, all filled in for you. It deletes itself after an hour. On each page I will do the clicks myself ' +
-      'while you watch the hand. Tap Next to start.',
+      "I'm Coach Kaya. This demo has 16 teams, a league and a cup, officials, line-ups and ratings, all filled " +
+      'in for you (Fantasy appears when that feature is switched on). It deletes itself after an hour. I point ' +
+      'at the UI; you stay in control of posts and likes. Tap Next to start.',
     pose: 'wave',
     route: (ctx) => competition(ctx, 'feed'),
     target: '.pick-banner',
@@ -95,22 +95,18 @@ const STEPS: GuideStep[] = [
     key: 'feed',
     title: 'Posting on the feed',
     body:
-      'Every result, goal and rating lands here as a post. Watch: I write an update, post it, like it and leave a comment.',
+      'Every result, goal and rating lands here as a post. You choose what to share — I will only point at the composer; I will not post, like or comment for you.',
     pose: 'point',
     route: (ctx) => competition(ctx, 'feed'),
     target: 'fm-post-composer',
     actions: [
       { say: 'The Feed tab is the league’s social wall.', target: 'ion-segment-button[value="feed"]', point: true },
       {
-        say: 'Tap the box and write your update.',
+        say: 'If you want to post, tap the box and write your own update.',
         target: 'fm-post-composer ion-textarea',
-        type: 'Matchday is here! Who lifts the demo cup?',
+        point: true,
       },
-      { say: 'Tap Post to share it with every member.', target: 'fm-post-composer ion-button', text: 'Post' },
-      { say: 'Tap the heart to react to a post.', target: 'fm-post-card footer button.action', nth: 0 },
-      { say: 'Tap the speech bubble to open the comments.', target: 'fm-post-card footer button.action', nth: 1 },
-      { say: 'Write a comment…', target: 'fm-post-card .comments ion-input', type: 'Good luck to all 16 teams!' },
-      { say: '…and send it.', target: 'fm-post-card .comments ion-button[type="submit"]' },
+      { say: 'Post, like and comment only if you choose to.', target: 'fm-post-composer ion-button', point: true },
     ],
   },
   {

@@ -45,6 +45,17 @@ def _url(fixture, tail=""):
     return f"/api/v1/competitions/{fixture.competition_id}/fixtures/{fixture.id}/{tail}"
 
 
+def _accept_referee(fixture, user):
+    FixtureReferee.objects.update_or_create(
+        fixture=fixture,
+        user=user,
+        defaults={
+            "role": FixtureReferee.Role.REFEREE,
+            "status": FixtureReferee.Status.ACCEPTED,
+        },
+    )
+
+
 def _squad(side):
     return list(RosterMember.objects.filter(participant=side.participant).order_by("number"))
 
@@ -67,7 +78,7 @@ def test_team_sheet_uses_the_preset_formations_and_limits(api, league):
     day = api.get(_url(fixture, "team-sheets")).data
     assert day["enabled"] is True
     assert day["config"]["starters"] == 11
-    assert day["config"]["min_personnel"] == 11
+    assert day["config"]["min_personnel"] == 14
     assert day["config"]["max_substitutions"] == 5
     four_four_two = next(item for item in day["formations"] if item["key"] == "4-4-2")
     assert [slot["label"] for slot in four_four_two["slots"]] == ["GK"] + ["DEF"] * 4 + ["MID"] * 4 + ["FWD"] * 2
@@ -126,7 +137,7 @@ def test_team_manager_picks_before_kickoff_and_sheet_locks_after(api, league, ot
     assert api.put(_url(fixture, f"team-sheets/{sides[0].id}"), _sheet(sides[0]), format="json").status_code == 200
 
 
-def test_substitutions_follow_the_bench_and_the_limit(api, league):
+def test_substitutions_follow_the_bench_and_the_limit(api, league, user):
     _, fixture, sides = league
     api.put(_url(fixture, f"team-sheets/{sides[0].id}"), _sheet(sides[0]), format="json")
     squad = _squad(sides[0])
@@ -139,6 +150,7 @@ def test_substitutions_follow_the_bench_and_the_limit(api, league):
         )
 
     assert sub(squad[1], squad[11]).status_code == 400  # not kicked off yet
+    _accept_referee(fixture, user)
     fixture.status = Fixture.Status.LIVE
     fixture.save()
 
@@ -165,7 +177,7 @@ def test_substitutions_follow_the_bench_and_the_limit(api, league):
     assert minutes[squad[13].id] == 10
 
 
-def test_substitution_limit_and_delete_order(api, league):
+def test_substitution_limit_and_delete_order(api, league, user):
     _, fixture, sides = league
     sheet = _sheet(sides[0])
     squad = _squad(sides[0])
@@ -175,6 +187,7 @@ def test_substitution_limit_and_delete_order(api, league):
     ]
     sheet["bench"] += [{"player": str(member.id), "number": member.number} for member in extra]
     assert api.put(_url(fixture, f"team-sheets/{sides[0].id}"), sheet, format="json").status_code == 200
+    _accept_referee(fixture, user)
     fixture.status = Fixture.Status.LIVE
     fixture.save()
 
@@ -201,10 +214,11 @@ def test_substitution_limit_and_delete_order(api, league):
     assert removed.data["sides"][0]["substitutions_left"] == 1
 
 
-def test_cannot_delete_a_substitution_a_later_one_depends_on(api, league):
+def test_cannot_delete_a_substitution_a_later_one_depends_on(api, league, user):
     _, fixture, sides = league
     api.put(_url(fixture, f"team-sheets/{sides[0].id}"), _sheet(sides[0]), format="json")
     squad = _squad(sides[0])
+    _accept_referee(fixture, user)
     fixture.status = Fixture.Status.LIVE
     fixture.save()
     first = api.post(
@@ -228,22 +242,40 @@ def test_post_match_report_is_written_by_officials_after_the_result(api, league,
     assert api.put(_url(fixture, "report"), report, format="json").status_code == 400
 
     Membership.objects.create(competition=competition, user=other_user, role=Role.MEMBER)
-    FixtureReferee.objects.create(fixture=fixture, user=other_user)
-    started = api.post(_url(fixture, "set-status"), {"status": "live"}, format="json")
+    _accept_referee(fixture, other_user)
+    referee = APIClient()
+    referee.force_authenticate(other_user)
+    started = referee.post(_url(fixture, "set-status"), {"status": "live"}, format="json")
     assert started.status_code == 200, started.data
     squad = _squad(sides[0])
-    api.post(
-        _url(fixture, "substitutions"),
-        {"side": str(sides[0].id), "player_off": str(squad[9].id), "player_on": str(squad[12].id), "minute": 75},
-        format="json",
+    assert (
+        referee.post(
+            _url(fixture, "substitutions"),
+            {
+                "side": str(sides[0].id),
+                "player_off": str(squad[9].id),
+                "player_on": str(squad[12].id),
+                "minute": 75,
+            },
+            format="json",
+        ).status_code
+        == 201
     )
     goal = competition.scoring_categories.get(code="goal")
-    api.post(
-        f"/api/v1/fixtures/{fixture.id}/events",
-        {"side": str(sides[0].id), "scoring_category": str(goal.id), "minute": 88, "player": str(squad[12].id)},
-        format="json",
+    assert (
+        referee.post(
+            f"/api/v1/fixtures/{fixture.id}/events",
+            {
+                "side": str(sides[0].id),
+                "scoring_category": str(goal.id),
+                "minute": 88,
+                "player": str(squad[12].id),
+            },
+            format="json",
+        ).status_code
+        == 201
     )
-    finished = api.post(_url(fixture, "set-status"), {"status": "completed"}, format="json")
+    finished = referee.post(_url(fixture, "set-status"), {"status": "completed"}, format="json")
     assert finished.status_code == 200, finished.data
 
     member = APIClient()
@@ -251,8 +283,6 @@ def test_post_match_report_is_written_by_officials_after_the_result(api, league,
     assert member.put(_url(fixture, "report"), report, format="json").status_code == 403
     assert api.put(_url(fixture, "report"), {"summary": ""}, format="json").status_code == 400
 
-    referee = APIClient()
-    referee.force_authenticate(other_user)
     written = referee.put(_url(fixture, "report"), report, format="json")
     assert written.status_code == 200, written.data
     data = written.data
@@ -310,9 +340,20 @@ def test_kickoff_needs_both_team_sheets_of_eleven_and_officials(api, league, oth
     assert api.post(_url(fixture, "set-status"), {"status": "live"}, format="json").status_code == 400
 
     Membership.objects.create(competition=competition, user=other_user, role=Role.MEMBER)
-    FixtureReferee.objects.create(fixture=fixture, user=other_user)
+    FixtureReferee.objects.create(
+        fixture=fixture,
+        user=other_user,
+        role=FixtureReferee.Role.REFEREE,
+        status=FixtureReferee.Status.INVITED,
+    )
+    pending = api.get(detail).data["kickoff_problems"]
+    assert "The appointed referee must accept before kickoff." in pending
+    assert api.post(_url(fixture, "set-status"), {"status": "live"}, format="json").status_code == 400
+
+    _accept_referee(fixture, other_user)
     officials_only = api.get(detail).data["kickoff_problems"]
     assert "Pick the match officials before kickoff." not in officials_only
+    assert "The appointed referee must accept before kickoff." not in officials_only
     assert api.post(_url(fixture, "set-status"), {"status": "live"}, format="json").status_code == 400
 
     api.put(_url(fixture, f"team-sheets/{sides[0].id}"), _sheet(sides[0]), format="json")
@@ -326,20 +367,28 @@ def test_kickoff_needs_both_team_sheets_of_eleven_and_officials(api, league, oth
             lineup=lineup, player=member, role=LineupEntry.Role.STARTER, order=index
         )
     short = fixture.kickoff_problems()
-    assert "Away XI's team sheet needs at least 11 named players." in short
+    assert "Away XI's team sheet needs at least 14 named players." in short
     lineup.delete()
 
     lineup = FixtureLineup.objects.create(fixture=fixture, side=sides[1])
-    for index, member in enumerate(_squad(sides[1])[:11]):
+    for index, member in enumerate(_squad(sides[1])[:14]):
         LineupEntry.objects.create(
-            lineup=lineup, player=member, role=LineupEntry.Role.STARTER, order=index
+            lineup=lineup,
+            player=member,
+            role=LineupEntry.Role.STARTER if index < 11 else LineupEntry.Role.BENCH,
+            order=index,
+            number=member.number,
         )
+    # Drop numbers to assert shirt-number gate.
+    LineupEntry.objects.filter(lineup=lineup).update(number=None)
     unnumbered = fixture.kickoff_problems()
     assert "Give every player on Away XI's team sheet a shirt number." in unnumbered
     lineup.delete()
 
     api.put(_url(fixture, f"team-sheets/{sides[1].id}"), _sheet(sides[1]), format="json")
-    started = api.post(_url(fixture, "set-status"), {"status": "live"}, format="json")
+    referee = APIClient()
+    referee.force_authenticate(other_user)
+    started = referee.post(_url(fixture, "set-status"), {"status": "live"}, format="json")
     assert started.status_code == 200, started.data
     assert started.data["status"] == "live"
 
