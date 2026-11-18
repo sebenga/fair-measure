@@ -5,7 +5,7 @@ import { ActivatedRoute } from '@angular/router';
 import { IonContent } from '@ionic/angular/standalone';
 import { firstValueFrom } from 'rxjs';
 
-import { environment } from '../../environments/environment';
+import { environment } from '../../../environments/environment';
 
 type WatchSide = { id: string; name: string; score: string; is_home: boolean };
 type WatchCategory = {

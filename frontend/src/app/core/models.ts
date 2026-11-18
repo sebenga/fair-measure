@@ -16,6 +16,8 @@ export type FixtureStatus =
   | 'scheduled'
   | 'live'
   | 'completed'
+  | 'confirmed'
+  | 'disputed'
   | 'postponed'
   | 'cancelled'
   | 'forfeit';
