@@ -19,6 +19,7 @@ import {
   FALLBACK_LOGOS,
 } from '../../core/marketing-fallbacks';
 import type { MarketingAudience, MarketingPlacement } from '../../core/models';
+import { CommercialNoteComponent } from '../../shared/commercial-note.component';
 import { PageHeroComponent } from '../../shared/page-hero.component';
 
 @Component({
@@ -26,6 +27,7 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
   standalone: true,
   imports: [
     PageHeroComponent,
+    CommercialNoteComponent,
     IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './partnerships.page.scss',
@@ -49,6 +51,7 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
         />
 
         <div class="layout">
+          <fm-commercial-note [compact]="true" />
           <div class="tracks">
             <section>
               <p class="kicker">Corporate</p>

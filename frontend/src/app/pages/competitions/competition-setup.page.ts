@@ -29,7 +29,9 @@ import {
 } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
+import { COMMERCIAL, randAmount } from '../../core/commercial';
 import { extractErrorMessage } from '../../core/error-message';
+import { PaystackService } from '../../core/paystack.service';
 import type { CompetitionOfficial, Horse } from '../../core/results.models';
 import { ResultsService } from '../../core/results.service';
 import type { LeagueScout } from '../../core/scouting.models';
@@ -44,6 +46,7 @@ import type {
   PointsPolicy,
   ProfileSummary,
   ScoringCategory,
+  VisibilityCheckoutKind,
 } from '../../core/models';
 import {
   isPointsTable,
@@ -52,6 +55,7 @@ import {
   squadSizeOf,
   tableBonusOf,
 } from '../../core/models';
+import { CommercialNoteComponent } from '../../shared/commercial-note.component';
 
 type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
 
@@ -82,6 +86,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
     IonSearchbar,
     IonSpinner,
     IonToggle,
+    CommercialNoteComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -975,6 +980,10 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
             <p class="hint">
               Public competitions can be found in the app. Choose to show yours on the landing page
               if you want visitors to see it before they sign in.
+              @if (paymentsEnabled()) {
+                Turning private or landing placement on uses Paystack (test):
+                {{ privatePrice() }} private, {{ landingPrice() }} landing.
+              }
             </p>
             <ion-list inset="true">
               <ion-item>
@@ -983,7 +992,12 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   [disabled]="busy() || !canManage()"
                   (ionChange)="setPrivate(!$any($event).detail.checked)"
                 >
-                  {{ comp.is_private ? 'Private' : 'Public' }}
+                  <ion-label>
+                    <h2>{{ comp.is_private ? 'Private' : 'Public' }}</h2>
+                    @if (paymentsEnabled() && !comp.is_private) {
+                      <p>Unlock private for {{ privatePrice() }}</p>
+                    }
+                  </ion-label>
                 </ion-toggle>
               </ion-item>
               <ion-item>
@@ -992,17 +1006,25 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   [disabled]="busy() || !canManage() || !!comp.is_private"
                   (ionChange)="setShowOnLanding($any($event).detail.checked)"
                 >
-                  {{
-                    comp.show_on_landing
-                      ? 'Shown on the landing page'
-                      : 'Hidden from the landing page'
-                  }}
+                  <ion-label>
+                    <h2>
+                      {{
+                        comp.show_on_landing
+                          ? 'Shown on the landing page'
+                          : 'Hidden from the landing page'
+                      }}
+                    </h2>
+                    @if (paymentsEnabled() && !comp.is_private && !comp.show_on_landing) {
+                      <p>Unlock landing placement for {{ landingPrice() }}</p>
+                    }
+                  </ion-label>
                 </ion-toggle>
               </ion-item>
             </ion-list>
             @if (comp.is_private) {
               <p class="hint">Private competitions stay off the landing page. Make it public first.</p>
             }
+            <fm-commercial-note />
 
             <h3 class="fm-section-title">Game time</h3>
             <p class="hint">
@@ -1260,6 +1282,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
 })
 export class CompetitionSetupPage implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly paystack = inject(PaystackService);
   private readonly scouting = inject(ScoutingService);
   private readonly results = inject(ResultsService);
   private readonly route = inject(ActivatedRoute);
@@ -1269,6 +1292,9 @@ export class CompetitionSetupPage implements OnInit {
 
   private competitionId = '';
 
+  readonly paymentsEnabled = signal(false);
+  readonly privatePrice = signal(randAmount(COMMERCIAL.payments.privateCents));
+  readonly landingPrice = signal(randAmount(COMMERCIAL.payments.landingCents));
   readonly competition = signal<CompetitionDetail | null>(null);
   readonly participants = signal<Participant[]>([]);
   readonly categories = signal<ScoringCategory[]>([]);
@@ -1418,7 +1444,23 @@ export class CompetitionSetupPage implements OnInit {
 
   ngOnInit(): void {
     this.competitionId = this.route.snapshot.paramMap.get('id') ?? '';
+    void this.paystack.config().then((config) => {
+      this.paymentsEnabled.set(!!config.enabled);
+      this.privatePrice.set(randAmount(config.private_cents || COMMERCIAL.payments.privateCents));
+      this.landingPrice.set(randAmount(config.landing_cents || COMMERCIAL.payments.landingCents));
+    });
     this.load();
+    const pay = this.route.snapshot.queryParamMap.get('pay');
+    if (pay === 'private' || pay === 'landing' || pay === 'both') {
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { pay: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+      // Wait for the competition to load, then start the matching checkout(s).
+      queueMicrotask(() => void this.startPendingPayments(pay));
+    }
   }
 
   load(): void {
@@ -1522,6 +1564,10 @@ export class CompetitionSetupPage implements OnInit {
   setPrivate(isPrivate: boolean): void {
     const competition = this.competition();
     if (!competition || !!competition.is_private === isPrivate || this.busy()) return;
+    if (isPrivate && this.paymentsEnabled()) {
+      void this.payFor('private');
+      return;
+    }
     this.busy.set(true);
     this.api
       .updateCompetition(this.competitionId, {
@@ -1555,6 +1601,10 @@ export class CompetitionSetupPage implements OnInit {
       this.competition.set({ ...competition });
       return;
     }
+    if (show && this.paymentsEnabled()) {
+      void this.payFor('landing');
+      return;
+    }
     this.busy.set(true);
     this.api.updateCompetition(this.competitionId, { show_on_landing: show }).subscribe({
       next: async (updated) => {
@@ -1576,6 +1626,61 @@ export class CompetitionSetupPage implements OnInit {
         );
       },
     });
+  }
+
+  private async startPendingPayments(pay: 'private' | 'landing' | 'both'): Promise<void> {
+    const enabled = await this.paystack.paymentsEnabled();
+    this.paymentsEnabled.set(enabled);
+    if (!enabled) return;
+    // Give load() a moment to finish so toasts refer to a loaded competition.
+    for (let i = 0; i < 20 && !this.competition(); i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (pay === 'both' || pay === 'private') {
+      await this.payFor('private');
+    }
+    if (pay === 'both' || pay === 'landing') {
+      const competition = this.competition();
+      if (competition && !competition.is_private) {
+        await this.payFor('landing');
+      }
+    }
+  }
+
+  private async payFor(kind: VisibilityCheckoutKind): Promise<void> {
+    if (this.busy()) return;
+    this.busy.set(true);
+    try {
+      const result = await this.paystack.startCheckout(this.competitionId, kind);
+      if (result === 'redirect') return;
+      if (result === 'cancelled') {
+        await this.toast('Payment cancelled. Visibility was not changed.', 'medium');
+        // Force the toggle UI to re-read the current competition.
+        this.competition.set({ ...(this.competition() as CompetitionDetail) });
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        this.api.getCompetition(this.competitionId).subscribe({
+          next: (updated) => {
+            this.competition.set(updated);
+            resolve();
+          },
+          error: () => resolve(),
+        });
+      });
+      await this.toast(
+        kind === 'private'
+          ? 'Private competition unlocked.'
+          : 'Landing page placement unlocked.',
+        'success',
+      );
+    } catch (err: unknown) {
+      await this.toast(extractErrorMessage(err, 'Could not start Paystack checkout.'), 'danger');
+      const competition = this.competition();
+      if (competition) this.competition.set({ ...competition });
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   setOpenToScouts(open: boolean): void {

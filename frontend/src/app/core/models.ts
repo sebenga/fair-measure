@@ -1124,3 +1124,30 @@ export interface GenerateFixturesRequest {
   cup_every_league_rounds?: number;
   cups?: string[];
 }
+
+export type VisibilityCheckoutKind = 'private' | 'landing';
+
+export interface BillingConfig {
+  enabled: boolean;
+  public_key: string;
+  currency: string;
+  private_cents: number;
+  landing_cents: number;
+  gateway: string;
+}
+
+export interface VisibilityCheckout {
+  id: string;
+  competition: string;
+  kind: VisibilityCheckoutKind;
+  amount_cents: number;
+  currency: string;
+  reference: string;
+  status: 'pending' | 'paid' | 'failed' | 'abandoned';
+  authorization_url: string;
+  paid_at: string | null;
+  created_at: string;
+  public_key?: string;
+  email?: string;
+  access_code?: string;
+}

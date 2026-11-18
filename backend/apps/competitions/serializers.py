@@ -1332,6 +1332,41 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         if starts_on and ends_on and ends_on < starts_on:
             raise serializers.ValidationError({"ends_on": "End date is before the start date."})
         self._check_date_window(attrs, starts_on)
+        # Paystack unlocks: create without paid flags; turning on needs a paid
+        # VisibilityPayment when keys are configured. Turning off stays free.
+        from apps.billing.services import has_paid, payments_enabled
+
+        if payments_enabled():
+            was_private = bool(getattr(self.instance, "is_private", False)) if self.instance else False
+            was_landing = (
+                bool(getattr(self.instance, "show_on_landing", False)) if self.instance else False
+            )
+            if self.instance is None:
+                # Create first, then pay from Setup — avoid orphan Paystack rows.
+                attrs["is_private"] = False
+                attrs["show_on_landing"] = False
+            else:
+                if attrs.get("is_private") and not was_private:
+                    if not has_paid(self.instance, "private"):
+                        raise serializers.ValidationError(
+                            {
+                                "is_private": (
+                                    "Pay for the private-competition unlock before turning this on."
+                                )
+                            }
+                        )
+                if attrs.get("show_on_landing") and not was_landing:
+                    if attrs.get("is_private", was_private):
+                        attrs["show_on_landing"] = False
+                    elif not has_paid(self.instance, "landing"):
+                        raise serializers.ValidationError(
+                            {
+                                "show_on_landing": (
+                                    "Pay for landing-page placement before turning this on."
+                                )
+                            }
+                        )
+
         is_private = attrs.get("is_private", getattr(self.instance, "is_private", False))
         show_on_landing = attrs.get(
             "show_on_landing", getattr(self.instance, "show_on_landing", False)

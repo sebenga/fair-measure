@@ -85,6 +85,16 @@ services:
         sync: false
       - key: RAW_VIDEO_RETENTION_DAYS
         value: "30"
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: PAYSTACK_WEBHOOK_SECRET
+        sync: false
+      - key: BILLING_PRIVATE_CENTS
+        value: "9900"
+      - key: BILLING_LANDING_CENTS
+        value: "14900"
       # Point UptimeRobot (or equivalent) at GET /healthz every 5 minutes so
       # the free web process does not spin down. See HOSTING.md.
     preDeployCommand: "python manage.py migrate --noinput"

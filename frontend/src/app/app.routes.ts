@@ -116,6 +116,18 @@ export const routes: Routes = [
           import('./pages/partnerships/partnerships.page').then((m) => m.PartnershipsPage),
       },
       {
+        // Open to everyone: organisers should be able to read the terms before signing up.
+        path: 'commercial',
+        loadComponent: () =>
+          import('./pages/commercial/commercial.page').then((m) => m.CommercialPage),
+      },
+      {
+        path: 'billing/return',
+        canActivate: [authGuard],
+        loadComponent: () =>
+          import('./pages/billing/billing-return.page').then((m) => m.BillingReturnPage),
+      },
+      {
         path: 'profile',
         canActivate: [authGuard],
         loadComponent: () => import('./pages/profile/profile.page').then((m) => m.ProfilePage),
@@ -281,6 +293,8 @@ export const routes: Routes = [
 
   // Older links land back inside the tab shell so the bottom nav stays up.
   { path: 'partnerships', redirectTo: 'tabs/partnerships', pathMatch: 'full' },
+  { path: 'commercial', redirectTo: 'tabs/commercial', pathMatch: 'full' },
+  { path: 'pricing', redirectTo: 'tabs/commercial', pathMatch: 'full' },
   { path: 'competitions/new', redirectTo: 'tabs/competitions/new', pathMatch: 'full' },
   { path: 'competitions/:id/setup', redirectTo: 'tabs/competitions/:id/setup' },
   { path: 'competitions/:id/score', redirectTo: 'tabs/competitions/:id/score' },

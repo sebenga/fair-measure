@@ -81,7 +81,7 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
           [competitions]="competitions()"
           [demos]="stripDemos()"
           (open)="openCompetition($event.id)"
-          (tryDemo)="startDemo($event)"
+          (tryDemo)="showDemo($event)"
         />
 
         <section class="hero" id="top">
@@ -123,7 +123,7 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
             points board where you score everyone together. Each demo deletes itself after an hour.
           </p>
           <div class="demo-grid">
-            <article class="demo-card soccer">
+            <article class="demo-card soccer" id="demo-soccer" [class.spot]="demoSpot() === 'soccer'">
               <p class="demo-kind">Soccer</p>
               <h3>Football league demo</h3>
               <p>
@@ -144,7 +144,7 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
                 }
               </button>
             </article>
-            <article class="demo-card custom">
+            <article class="demo-card custom" id="demo-custom" [class.spot]="demoSpot() === 'custom'">
               <p class="demo-kind">Custom VS</p>
               <h3>Your-rules VS demo</h3>
               <p>
@@ -165,7 +165,11 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
                 }
               </button>
             </article>
-            <article class="demo-card points">
+            <article
+              class="demo-card points"
+              id="demo-custom_points"
+              [class.spot]="demoSpot() === 'custom_points'"
+            >
               <p class="demo-kind">Custom points</p>
               <h3>Individual points demo</h3>
               <p>
@@ -471,6 +475,9 @@ export class LandingPage {
   readonly liveCount = signal(0);
   readonly placements = signal<MarketingPlacement[]>([]);
   readonly demoBusy = signal<'soccer' | 'custom' | 'custom_points' | null>(null);
+  /** The demo card the top strip just pointed at, outlined for a moment. */
+  readonly demoSpot = signal<'soccer' | 'custom' | 'custom_points' | null>(null);
+  private demoSpotTimer: ReturnType<typeof setTimeout> | undefined;
   /** Always offer the one-hour demos in the top strip, including when logged out. */
   readonly stripDemos = computed<StripDemo[]>(() => [
     {
@@ -604,6 +611,29 @@ export class LandingPage {
 
   scrollTo(id: string): void {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /** A demo tile in the top strip leads to its card in the one-hour demos section. */
+  showDemo(kind: 'soccer' | 'custom' | 'custom_points'): void {
+    const section = document.getElementById('try');
+    const card = document.getElementById(`demo-${kind}`);
+    if (!section) return;
+
+    // Land on the section heading when the card fits under it; on a phone the cards
+    // stack, so go to the card itself rather than leave it below the fold.
+    const fits =
+      !card ||
+      card.getBoundingClientRect().bottom - section.getBoundingClientRect().top <=
+        window.innerHeight;
+    if (fits) {
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    this.demoSpot.set(kind);
+    clearTimeout(this.demoSpotTimer);
+    this.demoSpotTimer = setTimeout(() => this.demoSpot.set(null), 2200);
   }
 
   private load(): void {

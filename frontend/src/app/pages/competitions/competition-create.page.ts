@@ -43,11 +43,14 @@ import {
 } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
+import { COMMERCIAL, randAmount } from '../../core/commercial';
 import { extractErrorMessage } from '../../core/error-message';
+import { PaystackService } from '../../core/paystack.service';
 import type { ScoutingCatalog } from '../../core/scouting.models';
 import { ScoutingService, scoutingSportFor } from '../../core/scouting.service';
 import type { CompetitionFormat, Preset, PresetKind } from '../../core/models';
 import { isPointsPreset } from '../../core/models';
+import { CommercialNoteComponent } from '../../shared/commercial-note.component';
 import { DemoGuideService } from '../../core/demo-guide.service';
 
 type StepKey = 'sport' | 'name' | 'format' | 'points' | 'dates' | 'visibility' | 'review';
@@ -238,6 +241,7 @@ function presetKind(preset: Preset): PresetKind {
     IonButton,
     IonIcon,
     IonSpinner,
+    CommercialNoteComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './competition-create.page.scss',
@@ -1048,7 +1052,12 @@ function presetKind(preset: Preset): PresetKind {
               >
                 <ion-icon name="lock-closed-outline" aria-hidden="true" />
                 <strong>Private</strong>
-                <p>Only people you add can see it.</p>
+                <p>
+                  Only people you add can see it.
+                  @if (paymentsEnabled()) {
+                    Pay {{ privatePrice() }} with Paystack after create.
+                  }
+                </p>
               </button>
               @if (!form.controls.is_private.value) {
                 <button
@@ -1060,8 +1069,12 @@ function presetKind(preset: Preset): PresetKind {
                   <ion-icon name="megaphone-outline" aria-hidden="true" />
                   <strong>Show on the landing page</strong>
                   <p>
-                    Visitors can see this competition before they sign in. Use this to make it more
-                    public.
+                    Visitors can see this competition before they sign in.
+                    @if (paymentsEnabled()) {
+                      Pay {{ landingPrice() }} with Paystack after create.
+                    } @else {
+                      Use this to make it more public.
+                    }
                   </p>
                 </button>
               }
@@ -1183,6 +1196,7 @@ function presetKind(preset: Preset): PresetKind {
                 }
               </dl>
             </div>
+            <fm-commercial-note />
           }
         }
 
@@ -1259,10 +1273,14 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
   private readonly fb = inject(FormBuilder);
   readonly guide = inject(DemoGuideService);
   private readonly api = inject(ApiService);
+  private readonly paystack = inject(PaystackService);
   private readonly navCtrl = inject(NavController);
   private readonly alerts = inject(AlertController);
   private readonly scouting = inject(ScoutingService);
 
+  readonly paymentsEnabled = signal(false);
+  readonly privatePrice = signal(randAmount(COMMERCIAL.payments.privateCents));
+  readonly landingPrice = signal(randAmount(COMMERCIAL.payments.landingCents));
   readonly scoutingCatalog = signal<ScoutingCatalog | null>(null);
   private nextDraftKey = 1;
 
@@ -1536,6 +1554,11 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.guide.offerCreate();
+    void this.paystack.config().then((config) => {
+      this.paymentsEnabled.set(!!config.enabled);
+      this.privatePrice.set(randAmount(config.private_cents || COMMERCIAL.payments.privateCents));
+      this.landingPrice.set(randAmount(config.landing_cents || COMMERCIAL.payments.landingCents));
+    });
     this.scouting.catalog().subscribe({
       next: (catalog) => this.scoutingCatalog.set(catalog),
       error: () => this.scoutingCatalog.set(null),
@@ -2175,8 +2198,11 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
               table_bonus: this.tableBonusPayload(),
             }
           : {}),
-        is_private: raw.is_private,
-        show_on_landing: !raw.is_private && raw.show_on_landing,
+        // When Paystack is on, create public/hidden first; Setup starts checkout from intent.
+        is_private: this.paymentsEnabled() ? false : raw.is_private,
+        show_on_landing: this.paymentsEnabled()
+          ? false
+          : !raw.is_private && raw.show_on_landing,
         open_to_scouts: this.scoutable() && raw.open_to_scouts,
         starts_on: raw.starts_on || null,
         ends_on: raw.ends_on || null,
@@ -2186,11 +2212,19 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
       })
       .subscribe({
         next: (competition) => {
+          const payIntent = this.paymentsEnabled()
+            ? raw.is_private
+              ? 'private'
+              : raw.show_on_landing
+                ? 'landing'
+                : null
+            : null;
           const goSetup = () => {
             this.saving.set(false);
             this.progress.set('');
             void this.navCtrl.navigateForward(`/tabs/competitions/${competition.id}/setup`, {
               replaceUrl: true,
+              queryParams: payIntent ? { pay: payIntent } : undefined,
             });
           };
           if (!this.fillSample()) {

@@ -30,6 +30,7 @@ api_v1 = [
     path("", include("apps.marketing.urls")),
     path("", include("apps.releases.urls")),
     path("", include("apps.ai_camera.urls")),
+    path("", include("apps.billing.urls")),
 ]
 
 urlpatterns = [

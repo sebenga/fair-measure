@@ -46,6 +46,9 @@ import type {
   UploadTarget,
   MarketingEnquiry,
   MarketingPlacement,
+  BillingConfig,
+  VisibilityCheckout,
+  VisibilityCheckoutKind,
   User,
 } from './models';
 
@@ -768,6 +771,23 @@ export class ApiService {
 
   getMediaAsset(mediaId: string): Observable<MediaAsset> {
     return this.http.get<MediaAsset>(`${this.base}/media/${mediaId}`);
+  }
+
+  // --- Billing (Paystack visibility) ----------------------------------------
+
+  getBillingConfig() {
+    return this.http.get<BillingConfig>(`${this.base}/billing/config`);
+  }
+
+  createVisibilityCheckout(competitionId: string, kind: VisibilityCheckoutKind) {
+    return this.http.post<VisibilityCheckout>(`${this.base}/billing/checkouts`, {
+      competition_id: competitionId,
+      kind,
+    });
+  }
+
+  getVisibilityCheckout(reference: string) {
+    return this.http.get<VisibilityCheckout>(`${this.base}/billing/checkouts/${reference}`);
   }
 
   // --- Notifications --------------------------------------------------------

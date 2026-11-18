@@ -43,6 +43,7 @@ import { CompetitionFantasyComponent } from './tabs/competition-fantasy.componen
 import { CompetitionFeedComponent } from './tabs/competition-feed.component';
 import { CompetitionFixturesComponent } from './tabs/competition-fixtures.component';
 import { CompetitionStandingsComponent } from './tabs/competition-standings.component';
+import { CommercialNoteComponent } from '../../shared/commercial-note.component';
 import { LiveStripComponent } from '../../shared/live-strip.component';
 import { MatchCentreComponent } from './match-centre.component';
 
@@ -70,6 +71,7 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
     CompetitionCupComponent,
     CompetitionStandingsComponent,
     CompetitionFantasyComponent,
+    CommercialNoteComponent,
     LiveStripComponent,
     MatchCentreComponent,
   ],
@@ -181,6 +183,9 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
               Decline
             </ion-button>
           </div>
+        }
+        @if (canManage()) {
+          <fm-commercial-note [compact]="true" />
         }
         @if (tab() !== 'fantasy') {
           @if (hasInfo(comp)) {

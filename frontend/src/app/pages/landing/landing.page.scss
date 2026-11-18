@@ -285,6 +285,20 @@ nav {
   color: var(--teal);
 }
 
+.try-demos {
+  scroll-margin-top: 12px;
+}
+
+.demo-card {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 0.3s ease;
+}
+
+.demo-card.spot {
+  outline-color: var(--ion-color-primary);
+}
+
 .demo-card.custom .demo-kind {
   color: #1d4ed8;
 }

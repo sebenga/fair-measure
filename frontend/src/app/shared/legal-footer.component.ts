@@ -21,6 +21,8 @@ import { LEGAL } from '../core/legal';
         <a routerLink="/legal" fragment="privacy">Privacy (POPIA)</a>
         <span aria-hidden="true">·</span>
         <a routerLink="/legal" fragment="ownership">Legal Notice</a>
+        <span aria-hidden="true">·</span>
+        <a routerLink="/tabs/commercial">Costs and earnings</a>
       </nav>
     </footer>
   `,
