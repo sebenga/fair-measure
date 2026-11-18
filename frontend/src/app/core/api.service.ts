@@ -790,6 +790,13 @@ export class ApiService {
     return this.http.get<VisibilityCheckout>(`${this.base}/billing/checkouts/${reference}`);
   }
 
+  completeStubCheckout(reference: string) {
+    return this.http.post<VisibilityCheckout>(
+      `${this.base}/billing/checkouts/${reference}/complete-stub`,
+      {},
+    );
+  }
+
   // --- Notifications --------------------------------------------------------
 
   registerDevice(token: string, platform: 'ios' | 'android' | 'web', deviceName = '') {

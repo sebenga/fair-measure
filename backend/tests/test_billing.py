@@ -39,10 +39,12 @@ def test_billing_config_reports_enabled(api):
     assert response.data["landing_cents"] == 14900
 
 
+@override_settings(BILLING_STUB=False, PAYSTACK_SECRET_KEY="", PAYSTACK_PUBLIC_KEY="")
 def test_billing_config_disabled_without_keys(api):
     response = api.get("/api/v1/billing/config")
     assert response.status_code == 200
     assert response.data["enabled"] is False
+    assert response.data["stub"] is False
 
 
 @override_settings(**PAYSTACK)
@@ -239,6 +241,7 @@ def test_webhook_rejects_bad_signature(api, competition):
     assert payment.status == VisibilityPayment.Status.PENDING
 
 
+@override_settings(BILLING_STUB=False, PAYSTACK_SECRET_KEY="", PAYSTACK_PUBLIC_KEY="")
 def test_free_path_without_paystack_keys(api, competition):
     response = api.patch(
         f"/api/v1/competitions/{competition.id}",
@@ -248,3 +251,39 @@ def test_free_path_without_paystack_keys(api, competition):
     assert response.status_code == 200, response.data
     competition.refresh_from_db()
     assert competition.is_private is True
+
+
+@override_settings(BILLING_STUB=True, PAYSTACK_SECRET_KEY="", PAYSTACK_PUBLIC_KEY="")
+def test_stub_checkout_popup_path_unlocks_private(api, competition):
+    created = api.post(
+        "/api/v1/billing/checkouts",
+        {"competition_id": str(competition.id), "kind": "private"},
+        format="json",
+    )
+    assert created.status_code == 201, created.data
+    assert created.data["stub"] is True
+    reference = created.data["reference"]
+
+    done = api.post(f"/api/v1/billing/checkouts/{reference}/complete-stub", {}, format="json")
+    assert done.status_code == 200, done.data
+    assert done.data["status"] == "paid"
+    competition.refresh_from_db()
+    assert competition.is_private is True
+
+
+@override_settings(BILLING_STUB=True, PAYSTACK_SECRET_KEY="", PAYSTACK_PUBLIC_KEY="")
+def test_stub_checkout_unlocks_landing(api, competition):
+    created = api.post(
+        "/api/v1/billing/checkouts",
+        {"competition_id": str(competition.id), "kind": "landing"},
+        format="json",
+    )
+    assert created.status_code == 201, created.data
+    done = api.post(
+        f"/api/v1/billing/checkouts/{created.data['reference']}/complete-stub",
+        {},
+        format="json",
+    )
+    assert done.status_code == 200
+    competition.refresh_from_db()
+    assert competition.show_on_landing is True

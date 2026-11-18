@@ -1134,6 +1134,7 @@ export interface BillingConfig {
   private_cents: number;
   landing_cents: number;
   gateway: string;
+  stub?: boolean;
 }
 
 export interface VisibilityCheckout {
@@ -1150,4 +1151,5 @@ export interface VisibilityCheckout {
   public_key?: string;
   email?: string;
   access_code?: string;
+  stub?: boolean;
 }

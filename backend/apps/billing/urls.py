@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     BillingConfigView,
+    CheckoutCompleteStubView,
     CheckoutCreateView,
     CheckoutDetailView,
     PaystackWebhookView,
@@ -10,6 +11,11 @@ from .views import (
 urlpatterns = [
     path("billing/config", BillingConfigView.as_view(), name="billing-config"),
     path("billing/checkouts", CheckoutCreateView.as_view(), name="billing-checkout-create"),
+    path(
+        "billing/checkouts/<str:reference>/complete-stub",
+        CheckoutCompleteStubView.as_view(),
+        name="billing-checkout-complete-stub",
+    ),
     path(
         "billing/checkouts/<str:reference>",
         CheckoutDetailView.as_view(),

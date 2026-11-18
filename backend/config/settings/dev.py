@@ -22,6 +22,10 @@ LOCAL_MEDIA_UPLOADS = env_bool("LOCAL_MEDIA_UPLOADS", not STORAGE_ACCESS_KEY_ID)
 
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
+# Local visibility upgrades show a test payment popup without Paystack keys.
+# Set PAYSTACK_SECRET_KEY to use real Paystack test mode instead.
+BILLING_STUB = env_bool("BILLING_STUB", True)
+
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},

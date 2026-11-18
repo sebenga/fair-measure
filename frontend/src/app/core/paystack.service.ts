@@ -1,7 +1,9 @@
 import { Injectable, inject } from '@angular/core';
+import { AlertController } from '@ionic/angular/standalone';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from './api.service';
+import { randAmount } from './commercial';
 import type { BillingConfig, VisibilityCheckout, VisibilityCheckoutKind } from './models';
 
 declare global {
@@ -15,12 +17,13 @@ declare global {
 const SCRIPT_URL = 'https://js.paystack.co/v1/inline.js';
 
 /**
- * Opens a Paystack checkout for a visibility upgrade. Prefers the inline popup;
- * falls back to a full-page redirect when the script cannot load.
+ * Opens a payment checkout for a visibility upgrade.
+ * Prefers Paystack popup when keys are set; otherwise shows the local stub popup.
  */
 @Injectable({ providedIn: 'root' })
 export class PaystackService {
   private readonly api = inject(ApiService);
+  private readonly alerts = inject(AlertController);
   private scriptPromise: Promise<void> | null = null;
   private configPromise: Promise<BillingConfig> | null = null;
 
@@ -33,9 +36,15 @@ export class PaystackService {
         private_cents: 9900,
         landing_cents: 14900,
         gateway: 'paystack',
+        stub: false,
       }));
     }
     return this.configPromise;
+  }
+
+  /** Drop cached config after env changes (local server restart). */
+  refreshConfig(): void {
+    this.configPromise = null;
   }
 
   async paymentsEnabled(): Promise<boolean> {
@@ -53,10 +62,40 @@ export class PaystackService {
     if (checkout.status === 'paid') {
       return 'paid';
     }
-    return this.openCheckout(checkout);
+    if (checkout.stub || !(checkout.public_key || (await this.config()).public_key)) {
+      return this.openStubCheckout(checkout);
+    }
+    return this.openPaystackCheckout(checkout);
   }
 
-  async openCheckout(checkout: VisibilityCheckout): Promise<'paid' | 'cancelled' | 'redirect'> {
+  private async openStubCheckout(
+    checkout: VisibilityCheckout,
+  ): Promise<'paid' | 'cancelled' | 'redirect'> {
+    const label =
+      checkout.kind === 'private' ? 'Private competition' : 'Landing page placement';
+    const amount = randAmount(checkout.amount_cents);
+    const alert = await this.alerts.create({
+      header: 'Pay with Paystack (test)',
+      subHeader: label,
+      message: `Confirm ${amount} to unlock this. No card is charged in local stub mode.`,
+      backdropDismiss: false,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: `Pay ${amount}`, role: 'confirm' },
+      ],
+    });
+    await alert.present();
+    const { role } = await alert.onDidDismiss();
+    if (role !== 'confirm') {
+      return 'cancelled';
+    }
+    await firstValueFrom(this.api.completeStubCheckout(checkout.reference));
+    return 'paid';
+  }
+
+  private async openPaystackCheckout(
+    checkout: VisibilityCheckout,
+  ): Promise<'paid' | 'cancelled' | 'redirect'> {
     const publicKey = checkout.public_key || (await this.config()).public_key;
     if (!publicKey || !checkout.email) {
       if (checkout.authorization_url) {
@@ -95,7 +134,7 @@ export class PaystackService {
         ref: checkout.reference,
         callback: () => {
           void firstValueFrom(this.api.getVisibilityCheckout(checkout.reference))
-            .then((fresh) => resolve(fresh.status === 'paid' ? 'paid' : 'paid'))
+            .then(() => resolve('paid'))
             .catch(() => resolve('paid'));
         },
         onClose: () => resolve('cancelled'),

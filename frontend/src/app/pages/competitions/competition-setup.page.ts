@@ -989,22 +989,38 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
               <ion-item>
                 <ion-toggle
                   [checked]="!comp.is_private"
-                  [disabled]="busy() || !canManage()"
-                  (ionChange)="setPrivate(!$any($event).detail.checked)"
+                  [disabled]="busy() || !canManage() || (paymentsEnabled() && !comp.is_private)"
+                  (ionChange)="onPublicToggle($any($event).detail.checked)"
                 >
                   <ion-label>
                     <h2>{{ comp.is_private ? 'Private' : 'Public' }}</h2>
                     @if (paymentsEnabled() && !comp.is_private) {
-                      <p>Unlock private for {{ privatePrice() }}</p>
+                      <p>Use Pay private below to lock this competition</p>
                     }
                   </ion-label>
                 </ion-toggle>
               </ion-item>
+              @if (paymentsEnabled() && canManage() && !comp.is_private) {
+                <ion-item lines="none">
+                  <ion-button
+                    expand="block"
+                    [disabled]="busy()"
+                    (click)="payFor('private')"
+                  >
+                    Pay {{ privatePrice() }} · make private
+                  </ion-button>
+                </ion-item>
+              }
               <ion-item>
                 <ion-toggle
                   [checked]="!!comp.show_on_landing"
-                  [disabled]="busy() || !canManage() || !!comp.is_private"
-                  (ionChange)="setShowOnLanding($any($event).detail.checked)"
+                  [disabled]="
+                    busy() ||
+                    !canManage() ||
+                    !!comp.is_private ||
+                    (paymentsEnabled() && !comp.show_on_landing)
+                  "
+                  (ionChange)="onLandingToggle($any($event).detail.checked)"
                 >
                   <ion-label>
                     <h2>
@@ -1015,11 +1031,23 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                       }}
                     </h2>
                     @if (paymentsEnabled() && !comp.is_private && !comp.show_on_landing) {
-                      <p>Unlock landing placement for {{ landingPrice() }}</p>
+                      <p>Use Pay landing below to feature this competition</p>
                     }
                   </ion-label>
                 </ion-toggle>
               </ion-item>
+              @if (paymentsEnabled() && canManage() && !comp.is_private && !comp.show_on_landing) {
+                <ion-item lines="none">
+                  <ion-button
+                    expand="block"
+                    fill="outline"
+                    [disabled]="busy()"
+                    (click)="payFor('landing')"
+                  >
+                    Pay {{ landingPrice() }} · show on landing
+                  </ion-button>
+                </ion-item>
+              }
             </ion-list>
             @if (comp.is_private) {
               <p class="hint">Private competitions stay off the landing page. Make it public first.</p>
@@ -1444,6 +1472,7 @@ export class CompetitionSetupPage implements OnInit {
 
   ngOnInit(): void {
     this.competitionId = this.route.snapshot.paramMap.get('id') ?? '';
+    this.paystack.refreshConfig();
     void this.paystack.config().then((config) => {
       this.paymentsEnabled.set(!!config.enabled);
       this.privatePrice.set(randAmount(config.private_cents || COMMERCIAL.payments.privateCents));
@@ -1561,6 +1590,15 @@ export class CompetitionSetupPage implements OnInit {
       });
   }
 
+  /** Public toggle: turning public off is paid; turning public on (leaving private) is free. */
+  onPublicToggle(isPublic: boolean): void {
+    void this.setPrivate(!isPublic);
+  }
+
+  onLandingToggle(show: boolean): void {
+    void this.setShowOnLanding(show);
+  }
+
   setPrivate(isPrivate: boolean): void {
     const competition = this.competition();
     if (!competition || !!competition.is_private === isPrivate || this.busy()) return;
@@ -1647,7 +1685,7 @@ export class CompetitionSetupPage implements OnInit {
     }
   }
 
-  private async payFor(kind: VisibilityCheckoutKind): Promise<void> {
+  async payFor(kind: VisibilityCheckoutKind): Promise<void> {
     if (this.busy()) return;
     this.busy.set(true);
     try {

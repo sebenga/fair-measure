@@ -1554,6 +1554,7 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.guide.offerCreate();
+    this.paystack.refreshConfig();
     void this.paystack.config().then((config) => {
       this.paymentsEnabled.set(!!config.enabled);
       this.privatePrice.set(randAmount(config.private_cents || COMMERCIAL.payments.privateCents));

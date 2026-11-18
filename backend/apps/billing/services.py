@@ -25,8 +25,18 @@ PAYSTACK_INIT_URL = "https://api.paystack.co/transaction/initialize"
 PAYSTACK_VERIFY_URL = "https://api.paystack.co/transaction/verify/{reference}"
 
 
-def payments_enabled() -> bool:
+def paystack_configured() -> bool:
     return bool(getattr(settings, "PAYSTACK_SECRET_KEY", "").strip())
+
+
+def stub_mode() -> bool:
+    """In-app test checkout when Paystack keys are absent but stub billing is on."""
+
+    return bool(getattr(settings, "BILLING_STUB", False)) and not paystack_configured()
+
+
+def payments_enabled() -> bool:
+    return paystack_configured() or stub_mode()
 
 
 def amount_for(kind: str) -> int:

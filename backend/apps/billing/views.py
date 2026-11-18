@@ -30,6 +30,7 @@ from .services import (
     initialize_transaction,
     new_reference,
     payments_enabled,
+    stub_mode,
     verify_transaction,
     verify_webhook_signature,
 )
@@ -45,11 +46,12 @@ class BillingConfigView(APIView):
         return Response(
             {
                 "enabled": payments_enabled(),
-                "public_key": settings.PAYSTACK_PUBLIC_KEY if payments_enabled() else "",
+                "public_key": settings.PAYSTACK_PUBLIC_KEY if not stub_mode() else "",
                 "currency": "ZAR",
                 "private_cents": settings.BILLING_PRIVATE_CENTS,
                 "landing_cents": settings.BILLING_LANDING_CENTS,
-                "gateway": "paystack",
+                "gateway": "stub" if stub_mode() else "paystack",
+                "stub": stub_mode(),
             }
         )
 
@@ -105,12 +107,29 @@ class CheckoutCreateView(APIView):
 
         amount_cents = amount_for(kind)
         reference = new_reference(kind)
+        email = (request.user.email or "").strip() or "organiser@fairmeasure.app"
+
+        if stub_mode():
+            payment = VisibilityPayment.objects.create(
+                competition=competition,
+                user=request.user,
+                kind=kind,
+                amount_cents=amount_cents,
+                currency="ZAR",
+                reference=reference,
+                raw_payload={"stub": True},
+            )
+            body = CheckoutSerializer(payment).data
+            body["email"] = email
+            body["public_key"] = ""
+            body["access_code"] = ""
+            body["stub"] = True
+            return Response(body, status=status.HTTP_201_CREATED)
+
         callback = (
             f"{settings.PUBLIC_APP_ORIGIN.rstrip('/')}/tabs/billing/return"
             f"?reference={reference}&competition={competition.id}"
         )
-        email = (request.user.email or "").strip() or "organiser@fairmeasure.app"
-
         try:
             data = initialize_transaction(
                 email=email,
@@ -141,7 +160,26 @@ class CheckoutCreateView(APIView):
         body["public_key"] = settings.PAYSTACK_PUBLIC_KEY
         body["email"] = email
         body["access_code"] = payment.paystack_access_code
+        body["stub"] = False
         return Response(body, status=status.HTTP_201_CREATED)
+
+
+class CheckoutCompleteStubView(APIView):
+    """Confirm a local stub checkout (no Paystack). Disabled when Paystack keys are set."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(tags=["Billing"], request=None, responses={200: CheckoutSerializer})
+    def post(self, request: Request, reference: str) -> Response:
+        if not stub_mode():
+            raise ValidationError({"detail": "Stub checkout is only available in test mode."})
+        payment = get_object_or_404(VisibilityPayment, reference=reference)
+        if not has_at_least(payment.competition, request.user, Role.ADMIN):
+            raise PermissionDenied("Only competition admins can complete this checkout.")
+        if payment.status != VisibilityPayment.Status.PENDING:
+            return Response(CheckoutSerializer(payment).data)
+        payment = fulfill_reference(reference, {"status": "success", "amount": payment.amount_cents, "currency": "ZAR", "stub": True})
+        return Response(CheckoutSerializer(payment).data)
 
 
 class CheckoutDetailView(APIView):

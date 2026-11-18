@@ -19,7 +19,10 @@ Set these on the web service (Render Dashboard or `render.yaml` secrets):
 - `BILLING_PRIVATE_CENTS` — optional override (default `9900`)
 - `BILLING_LANDING_CENTS` — optional override (default `14900`)
 
-If `PAYSTACK_SECRET_KEY` is empty, visibility toggles behave as before (no charge).
+If `PAYSTACK_SECRET_KEY` is empty:
+
+- **Local/dev** (`BILLING_STUB=true`, the default in `config.settings.dev`): Setup still opens a **test payment popup**. Confirming calls `POST /billing/checkouts/:ref/complete-stub` and unlocks the flag without a card.
+- **Production** (`BILLING_STUB` false): visibility toggles stay free until Paystack keys are set.
 
 ## Webhook
 
