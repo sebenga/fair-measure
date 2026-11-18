@@ -24,6 +24,7 @@ from .views import (
     ScoreAssistView,
     ScoreEventViewSet,
 )
+from .watch import WatchClaimView, WatchPairView, WatchStateView, WatchSyncView
 
 fixture_list = FixtureViewSet.as_view({"get": "list", "post": "create"})
 fixture_detail = FixtureViewSet.as_view(
@@ -181,4 +182,12 @@ urlpatterns = [
         RefereeAppointmentRespondView.as_view(),
         name="referee-appointment-respond",
     ),
+    path(
+        "competitions/<uuid:competition_pk>/fixtures/<uuid:fixture_pk>/watch/pair",
+        WatchPairView.as_view(),
+        name="watch-pair",
+    ),
+    path("fixtures/<uuid:fixture_pk>/watch/claim", WatchClaimView.as_view(), name="watch-claim"),
+    path("fixtures/<uuid:fixture_pk>/watch/sync", WatchSyncView.as_view(), name="watch-sync"),
+    path("fixtures/<uuid:fixture_pk>/watch/state", WatchStateView.as_view(), name="watch-state"),
 ]

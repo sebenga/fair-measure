@@ -439,6 +439,13 @@ export class ApiService {
     );
   }
 
+  pairWatch(competitionId: string, fixtureId: string) {
+    return this.http.post<{ code: string; watch_path: string; token: string; expires_at: string }>(
+      `${this.base}/competitions/${competitionId}/fixtures/${fixtureId}/watch/pair`,
+      {},
+    );
+  }
+
   getPlayerProfile(competitionId: string, userId: string): Observable<PlayerLeagueProfile> {
     return this.http.get<PlayerLeagueProfile>(
       `${this.base}/competitions/${competitionId}/players/${userId}`,

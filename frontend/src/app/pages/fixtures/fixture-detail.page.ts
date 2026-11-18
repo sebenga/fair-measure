@@ -405,8 +405,18 @@ interface Celebration {
 
           <h3 class="fm-section-title">Officials</h3>
           <p class="hint">
-            Pick the match officials before kickoff. Officials score this game; an admin can still score it too.
+            Pick the match officials before kickoff. Only the accepted referee (or a delegated official) can
+            run the live match. Admins file corrections after full time.
           </p>
+          @if (canScore()) {
+            <ion-button size="small" fill="outline" (click)="pairWatch()">
+              <ion-icon slot="start" name="stopwatch-outline" aria-hidden="true" />
+              Pair watch
+            </ion-button>
+            @if (watchPair(); as pair) {
+              <p class="hint">Watch code <strong>{{ pair.code }}</strong> · open {{ pair.watch_path }}</p>
+            }
+          }
           <div class="referees">
             @for (referee of fx.referees; track referee.id) {
               <div class="referee">
@@ -672,6 +682,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
 
   readonly fixture = signal<FixtureDetail | null>(null);
   readonly competition = signal<CompetitionDetail | null>(null);
+  readonly watchPair = signal<{ code: string; watch_path: string } | null>(null);
   readonly loading = signal(true);
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
@@ -1429,6 +1440,21 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     if (referees.some((referee) => referee.id === me)) return true;
     if (referees.length > 0) return false;
     return role === 'scorer';
+  }
+
+  pairWatch(): void {
+    if (this.saving()) return;
+    this.saving.set(true);
+    this.api.pairWatch(this.competitionId, this.fixtureId).subscribe({
+      next: (pair) => {
+        this.watchPair.set({ code: pair.code, watch_path: pair.watch_path });
+        this.saving.set(false);
+      },
+      error: (err) => {
+        this.error.set(extractErrorMessage(err, 'Could not pair a watch.'));
+        this.saving.set(false);
+      },
+    });
   }
 
   canManage(): boolean {

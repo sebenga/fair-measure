@@ -525,6 +525,46 @@ class MatchAuditLog(BaseModel):
         return f"{self.action} @ {self.fixture_id}"
 
 
+class WatchDeviceToken(BaseModel):
+    """Short-lived, match-scoped token for the referee watch PWA."""
+
+    fixture = models.ForeignKey(Fixture, on_delete=models.CASCADE, related_name="watch_tokens")
+    official = models.ForeignKey(
+        FixtureReferee,
+        on_delete=models.CASCADE,
+        related_name="watch_tokens",
+        null=True,
+        blank=True,
+    )
+    code = models.CharField(max_length=6, db_index=True)
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="watch_tokens_created",
+    )
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    device_label = models.CharField(max_length=80, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["fixture", "code"])]
+
+    @property
+    def is_active(self) -> bool:
+        from django.utils import timezone
+
+        if self.revoked_at is not None:
+            return False
+        return self.expires_at > timezone.now()
+
+    def __str__(self) -> str:
+        return f"WatchToken {self.code} @ {self.fixture_id}"
+
+
 class MatchDispute(BaseModel):
     """Team manager challenge of a confirmed result (default window: 24h)."""
 

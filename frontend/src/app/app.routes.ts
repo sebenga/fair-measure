@@ -298,5 +298,11 @@ export const routes: Routes = [
   },
   { path: 'competitions/:id', redirectTo: 'tabs/competitions/:id' },
 
+  {
+    path: 'ref/watch/:matchId',
+    loadComponent: () =>
+      import('./pages/watch/ref-watch.page').then((m) => m.RefWatchPage),
+  },
+
   { path: '**', redirectTo: 'tabs/competitions' },
 ];
