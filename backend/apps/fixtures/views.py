@@ -118,6 +118,7 @@ from apps.competitions.presets import format_allowed
 from .services import (
     ScheduleOptions,
     award_criterion,
+    award_criterion_round,
     generate_knockout,
     generate_league_and_knockout,
     generate_round_robin,
@@ -796,6 +797,23 @@ class ScoreAssistView(APIView):
                         "id": str(event.id),
                         "awarded": str(event.points),
                         "note": event.note,
+                    },
+                    status=status.HTTP_201_CREATED,
+                )
+            if data["kind"] == "criterion_round":
+                result = award_criterion_round(
+                    competition=competition,
+                    category=data["scoring_category"],
+                    entries=data["entries"],
+                    note=data["note"].strip(),
+                    user=request.user,
+                )
+                self._publish_table(competition)
+                return Response(
+                    {
+                        "count": result["count"],
+                        "awarded": str(result["awarded"]),
+                        "note": data["note"].strip(),
                     },
                     status=status.HTTP_201_CREATED,
                 )

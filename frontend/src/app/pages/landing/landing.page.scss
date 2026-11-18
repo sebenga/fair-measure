@@ -289,6 +289,10 @@ nav {
   color: #1d4ed8;
 }
 
+.demo-card.points .demo-kind {
+  color: #0f766e;
+}
+
 .try-hint {
   margin: 12px 0 0;
   font-size: 0.88rem;
@@ -297,6 +301,12 @@ nav {
 @media (min-width: 720px) {
   .demo-grid {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 980px) {
+  .demo-grid {
+    grid-template-columns: 1fr 1fr 1fr;
   }
 }
 

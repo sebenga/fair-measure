@@ -628,6 +628,21 @@ function presetKind(preset: Preset): PresetKind {
                     <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
                   }
                 </button>
+                @if (pointsTable()) {
+                  <label class="score-all">
+                    <ion-checkbox
+                      [checked]="scoreAllOnCriterion()"
+                      (ionChange)="scoreAllOnCriterion.set($any($event).detail.checked === true)"
+                    />
+                    <span>
+                      <strong>Score everyone on one criterion</strong>
+                      <small>
+                        When adding points, pick a criterion and enter what each entrant achieved
+                        in the same round.
+                      </small>
+                    </span>
+                  </label>
+                }
                 <button
                   type="button"
                   class="format"
@@ -1128,6 +1143,18 @@ function presetKind(preset: Preset): PresetKind {
                     <dd>{{ entrantLabel() }}</dd>
                   </div>
                 }
+                @if (isCustom() && pointsTable()) {
+                  <div>
+                    <dt>Scoring board</dt>
+                    <dd>
+                      {{
+                        scoreAllOnCriterion()
+                          ? 'Everyone on one criterion each round'
+                          : 'One entrant at a time'
+                      }}
+                    </dd>
+                  </div>
+                }
                 @if (isCustom() && !pointsTable()) {
                   <div>
                     <dt>Table points</dt>
@@ -1364,6 +1391,8 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
   });
 
   readonly scoringBasis = signal<'results' | 'criteria'>('criteria');
+  /** Custom points boards only: score every entrant on the same criterion together. */
+  readonly scoreAllOnCriterion = signal(false);
 
   readonly pointsTable = computed(() => this.scoringBasis() === 'criteria');
   readonly fillSample = signal(false);
@@ -1569,6 +1598,7 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
   setCustomMode(mode: 'points' | 'versus'): void {
     if (mode === 'versus') {
       this.scoringBasis.set('results');
+      this.scoreAllOnCriterion.set(false);
       if (this.form.controls.format.value === 'freeform') {
         this.form.controls.format.setValue('league');
       }
@@ -2130,6 +2160,9 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
         ...(locked ? {} : { scoring_basis: this.scoringBasis(), scoring_categories }),
         ...(this.unitCountOptions() && this.unitCount() ? { unit_count: this.unitCount() } : {}),
         ...(this.isCustom() ? { participant_type: this.versusEntrants() } : {}),
+        ...(this.isCustom() && this.pointsTable()
+          ? { settings_json: { score_all_on_criterion: this.scoreAllOnCriterion() } }
+          : {}),
         ...(this.isCustom() && !this.pointsTable()
           ? {
               league_points: {

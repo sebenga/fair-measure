@@ -45,7 +45,13 @@ import type {
   ProfileSummary,
   ScoringCategory,
 } from '../../core/models';
-import { isPointsTable, isScoringLocked, squadSizeOf, tableBonusOf } from '../../core/models';
+import {
+  isPointsTable,
+  isScoringLocked,
+  scoresAllOnCriterion,
+  squadSizeOf,
+  tableBonusOf,
+} from '../../core/models';
 
 type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
 
@@ -567,6 +573,31 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                 </ion-item>
               }
             </ion-list>
+
+            @if (pointsTable() && isCustom()) {
+              <h3 class="fm-section-title">Scoring board</h3>
+              <p class="hint">
+                Choose whether points are added one entrant at a time, or for every
+                entrant on the same criterion in one round.
+              </p>
+              <ion-list inset="true">
+                <ion-item>
+                  <ion-checkbox
+                    labelPlacement="end"
+                    justify="start"
+                    [checked]="scoreAllOnCriterion()"
+                    [disabled]="scoringLocked() || busy()"
+                    (ionChange)="setScoreAllOnCriterion($any($event).detail.checked === true)"
+                  >
+                    Score everyone on one criterion
+                  </ion-checkbox>
+                </ion-item>
+              </ion-list>
+              <ion-note class="footnote">
+                When this is on, Add points shows one criterion and a field for each
+                entrant so you can enter the whole board together.
+              </ion-note>
+            }
 
             @if (pointsTable()) {
               <ion-note class="footnote">
@@ -1254,6 +1285,18 @@ export class CompetitionSetupPage implements OnInit {
     return competition ? isPointsTable(competition) : false;
   });
 
+  readonly isCustom = computed(() => {
+    const competition = this.competition();
+    if (!competition) return false;
+    const preset = String(competition.settings_json?.['preset'] ?? '');
+    return preset === 'custom' || !preset;
+  });
+
+  readonly scoreAllOnCriterion = computed(() => {
+    const competition = this.competition();
+    return competition ? scoresAllOnCriterion(competition) : false;
+  });
+
   squadSize(): number {
     const competition = this.competition();
     return competition ? squadSizeOf(competition) : 14;
@@ -1263,6 +1306,32 @@ export class CompetitionSetupPage implements OnInit {
     const competition = this.competition();
     return competition ? isScoringLocked(competition) : false;
   });
+
+  setScoreAllOnCriterion(enabled: boolean): void {
+    const competition = this.competition();
+    if (!competition || this.scoreAllOnCriterion() === enabled || this.busy()) return;
+    this.busy.set(true);
+    this.api
+      .updateCompetition(this.competitionId, {
+        settings_json: { ...(competition.settings_json ?? {}), score_all_on_criterion: enabled },
+      })
+      .subscribe({
+        next: (updated) => {
+          this.busy.set(false);
+          this.competition.set(updated);
+          void this.toast(
+            enabled
+              ? 'Add points will score everyone on one criterion together.'
+              : 'Add points will score one entrant at a time.',
+            'success',
+          );
+        },
+        error: async (err: unknown) => {
+          this.busy.set(false);
+          await this.toast(extractErrorMessage(err, 'Could not update scoring options.'), 'danger');
+        },
+      });
+  }
 
   leaguePointsNote(): string {
     const raw = this.competition()?.settings_json?.['league_points'];

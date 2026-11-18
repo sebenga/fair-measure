@@ -119,8 +119,8 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
             </div>
           </div>
           <p class="lede try-lede">
-            Jump straight into a filled competition — teams, fixtures, a live match, tables and the
-            feed. It deletes itself after an hour.
+            Jump straight into a filled competition — soccer, a custom VS league, or an individual
+            points board where you score everyone together. Each demo deletes itself after an hour.
           </p>
           <div class="demo-grid">
             <article class="demo-card soccer">
@@ -145,7 +145,7 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
               </button>
             </article>
             <article class="demo-card custom">
-              <p class="demo-kind">Custom</p>
+              <p class="demo-kind">Custom VS</p>
               <h3>Your-rules VS demo</h3>
               <p>
                 A head-to-head league with scoring you would define yourself — same boards, sheets
@@ -161,7 +161,28 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
                   <ion-spinner name="crescent" />
                   Building…
                 } @else {
-                  Try custom for 1 hour
+                  Try custom VS for 1 hour
+                }
+              </button>
+            </article>
+            <article class="demo-card points">
+              <p class="demo-kind">Custom points</p>
+              <h3>Individual points demo</h3>
+              <p>
+                People on a points board with sample KPIs — score everyone on one criterion in the
+                same round.
+              </p>
+              <button
+                type="button"
+                class="primary"
+                [disabled]="demoBusy() !== null"
+                (click)="startDemo('custom_points')"
+              >
+                @if (demoBusy() === 'custom_points') {
+                  <ion-spinner name="crescent" />
+                  Building…
+                } @else {
+                  Try points board for 1 hour
                 }
               </button>
             </article>
@@ -205,7 +226,7 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
                 </article>
                 <article class="comp demo-comp custom">
                   <div class="stripe" [style.background]="stripe(1)"></div>
-                  <p class="meta">Custom · one-hour demo</p>
+                  <p class="meta">Custom VS · one-hour demo</p>
                   <h3>Your-rules VS demo</h3>
                   <p class="meta">
                     Head-to-head league with custom scoring — same boards and match centre.
@@ -221,14 +242,37 @@ const STRIPES = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
                       @if (demoBusy() === 'custom') {
                         Building…
                       } @else {
-                        Try custom →
+                        Try custom VS →
+                      }
+                    </button>
+                  </div>
+                </article>
+                <article class="comp demo-comp points">
+                  <div class="stripe" [style.background]="stripe(2)"></div>
+                  <p class="meta">Custom points · one-hour demo</p>
+                  <h3>Individual points demo</h3>
+                  <p class="meta">
+                    People on a KPI board — score everyone on one criterion together.
+                  </p>
+                  <div class="card-foot">
+                    <span>Try the look and feel</span>
+                    <button
+                      type="button"
+                      class="text"
+                      [disabled]="demoBusy() !== null"
+                      (click)="startDemo('custom_points')"
+                    >
+                      @if (demoBusy() === 'custom_points') {
+                        Building…
+                      } @else {
+                        Try points board →
                       }
                     </button>
                   </div>
                 </article>
                 @for (competition of competitions(); track competition.id; let i = $index) {
                     <article class="comp">
-                      <div class="stripe" [style.background]="stripe(i + 2)"></div>
+                      <div class="stripe" [style.background]="stripe(i + 3)"></div>
                       <p class="meta">
                         {{ competition.sport || 'Multi-sport' }} ·
                         {{ formatLabel(competition.format) }}
@@ -426,7 +470,7 @@ export class LandingPage {
   readonly previewPosts = signal<Post[]>([]);
   readonly liveCount = signal(0);
   readonly placements = signal<MarketingPlacement[]>([]);
-  readonly demoBusy = signal<'soccer' | 'custom' | null>(null);
+  readonly demoBusy = signal<'soccer' | 'custom' | 'custom_points' | null>(null);
   /** Always offer the one-hour demos in the top strip, including when logged out. */
   readonly stripDemos = computed<StripDemo[]>(() => [
     {
@@ -440,6 +484,12 @@ export class LandingPage {
       name: 'Custom VS demo',
       sport: 'Custom',
       blurb: 'Your rules · 1 hour',
+    },
+    {
+      kind: 'custom_points',
+      name: 'Individual points demo',
+      sport: 'Custom',
+      blurb: 'Score everyone · 1 hour',
     },
   ]);
 
@@ -469,7 +519,10 @@ export class LandingPage {
   constructor() {
     this.load();
     const pending = this.route.snapshot.queryParamMap.get('demo');
-    if ((pending === 'soccer' || pending === 'custom') && this.auth.isAuthenticated()) {
+    if (
+      (pending === 'soccer' || pending === 'custom' || pending === 'custom_points') &&
+      this.auth.isAuthenticated()
+    ) {
       void this.router.navigate([], {
         relativeTo: this.route,
         queryParams: { demo: null },
@@ -503,7 +556,7 @@ export class LandingPage {
     });
   }
 
-  startDemo(kind: 'soccer' | 'custom'): void {
+  startDemo(kind: 'soccer' | 'custom' | 'custom_points'): void {
     if (this.demoBusy()) return;
     this.demoBusy.set(kind);
     this.api.tryDemo(kind).subscribe({
@@ -516,9 +569,11 @@ export class LandingPage {
           });
         }
         this.demoBusy.set(null);
-        void this.router.navigateByUrl(`/tabs/competitions/${payload.competition_id}/setup`, {
-          replaceUrl: true,
-        });
+        const path =
+          kind === 'custom_points'
+            ? `/tabs/competitions/${payload.competition_id}/score`
+            : `/tabs/competitions/${payload.competition_id}/setup`;
+        void this.router.navigateByUrl(path, { replaceUrl: true });
       },
       error: async (err: unknown) => {
         this.demoBusy.set(null);

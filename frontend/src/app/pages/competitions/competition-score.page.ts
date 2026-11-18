@@ -20,12 +20,13 @@ import {
   IonTitle,
   IonToolbar,
   ToastController,
+  IonLabel,
 } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail, ScoreAssistEntry } from '../../core/models';
-import { isPointsTable } from '../../core/models';
+import { isPointsTable, scoresAllOnCriterion } from '../../core/models';
 
 @Component({
   selector: 'fm-competition-score',
@@ -44,6 +45,7 @@ import { isPointsTable } from '../../core/models';
     IonTextarea,
     IonSelect,
     IonSelectOption,
+    IonLabel,
     IonButton,
     IonIcon,
     IonNote,
@@ -68,7 +70,9 @@ import { isPointsTable } from '../../core/models';
         <p class="hint">
           {{
             criteriaLeague()
-              ? 'Award a scoring criterion. The table adds what was achieved, and the note explains how those points were accumulated.'
+              ? allOnCriterion()
+                ? 'Pick one criterion and enter what every entrant achieved in this round. Leave a blank for anyone with nothing to add.'
+                : 'Award a scoring criterion. The table adds what was achieved, and the note explains how those points were accumulated.'
               : 'Record a finished fixture as a win, draw, or loss. Scoring criteria still describe what a point means.'
           }}
         </p>
@@ -78,46 +82,86 @@ import { isPointsTable } from '../../core/models';
         } @else if (criteriaLeague() && comp.participants.length === 0) {
           <ion-note class="footnote">Add entrants in setup, then award their points here.</ion-note>
         } @else if (criteriaLeague()) {
-          <ion-list inset="true">
-            <ion-item>
-              <ion-select label="Who" labelPlacement="stacked" [(ngModel)]="participantId" name="who">
-                @for (participant of comp.participants; track participant.id) {
-                  <ion-select-option [value]="participant.id">{{ participant.name }}</ion-select-option>
-                }
-              </ion-select>
-            </ion-item>
-            <ion-item>
-              <ion-select label="Criterion" labelPlacement="stacked" [(ngModel)]="categoryId" name="criterion">
-                @for (category of comp.scoring_categories; track category.id) {
-                  <ion-select-option [value]="category.id">
-                    {{ category.name }} · {{ trim(category.points) }} per unit
-                  </ion-select-option>
-                }
-              </ion-select>
-            </ion-item>
-            <ion-item>
-              <ion-input
-                label="What they achieved"
-                labelPlacement="stacked"
-                type="number"
-                inputmode="decimal"
-                [(ngModel)]="quantity"
-                name="quantity"
-              />
-            </ion-item>
-            <ion-item>
-              <ion-textarea
-                label="How these points were accumulated (required)"
-                labelPlacement="stacked"
-                [(ngModel)]="note"
-                name="note"
-                autoGrow="true"
-                rows="3"
-                maxlength="280"
-                placeholder="e.g. Three enterprise deals closed this week."
-              />
-            </ion-item>
-          </ion-list>
+          @if (allOnCriterion()) {
+            <ion-list inset="true">
+              <ion-item>
+                <ion-select label="Criterion" labelPlacement="stacked" [(ngModel)]="categoryId" name="criterion">
+                  @for (category of comp.scoring_categories; track category.id) {
+                    <ion-select-option [value]="category.id">
+                      {{ category.name }} · {{ trim(category.points) }} per unit
+                    </ion-select-option>
+                  }
+                </ion-select>
+              </ion-item>
+              <ion-item>
+                <ion-textarea
+                  label="How these points were accumulated (required)"
+                  labelPlacement="stacked"
+                  [(ngModel)]="note"
+                  name="note"
+                  autoGrow="true"
+                  rows="3"
+                  maxlength="280"
+                  placeholder="e.g. Week 4 sales board."
+                />
+              </ion-item>
+              @for (participant of comp.participants; track participant.id) {
+                <ion-item>
+                  <ion-input
+                    [label]="participant.name"
+                    labelPlacement="stacked"
+                    type="number"
+                    inputmode="decimal"
+                    [ngModel]="roundQuantities[participant.id] ?? ''"
+                    (ngModelChange)="setRoundQuantity(participant.id, $event)"
+                    [name]="'qty-' + participant.id"
+                    placeholder="0"
+                  />
+                </ion-item>
+              }
+            </ion-list>
+          } @else {
+            <ion-list inset="true">
+              <ion-item>
+                <ion-select label="Who" labelPlacement="stacked" [(ngModel)]="participantId" name="who">
+                  @for (participant of comp.participants; track participant.id) {
+                    <ion-select-option [value]="participant.id">{{ participant.name }}</ion-select-option>
+                  }
+                </ion-select>
+              </ion-item>
+              <ion-item>
+                <ion-select label="Criterion" labelPlacement="stacked" [(ngModel)]="categoryId" name="criterion">
+                  @for (category of comp.scoring_categories; track category.id) {
+                    <ion-select-option [value]="category.id">
+                      {{ category.name }} · {{ trim(category.points) }} per unit
+                    </ion-select-option>
+                  }
+                </ion-select>
+              </ion-item>
+              <ion-item>
+                <ion-input
+                  label="What they achieved"
+                  labelPlacement="stacked"
+                  type="number"
+                  inputmode="decimal"
+                  [(ngModel)]="quantity"
+                  name="quantity"
+                />
+              </ion-item>
+              <ion-item>
+                <ion-textarea
+                  label="How these points were accumulated (required)"
+                  labelPlacement="stacked"
+                  [(ngModel)]="note"
+                  name="note"
+                  autoGrow="true"
+                  rows="3"
+                  maxlength="280"
+                  placeholder="e.g. Three enterprise deals closed this week."
+                />
+              </ion-item>
+            </ion-list>
+          }
           @if (selectedCategory(); as category) {
             <ion-note class="footnote">{{ category.description || 'This criterion has no description yet.' }}</ion-note>
           }
@@ -265,15 +309,27 @@ export class CompetitionScorePage implements OnInit {
   awayId = '';
   outcome = 'home';
   note = '';
+  roundQuantities: Record<string, string> = {};
 
   readonly criteriaLeague = computed(() => {
     const competition = this.competition();
     return competition ? isPointsTable(competition) : false;
   });
 
+  readonly allOnCriterion = computed(() => {
+    const competition = this.competition();
+    return competition ? scoresAllOnCriterion(competition) : false;
+  });
+
+  readonly roundMode = computed(() => this.criteriaLeague() && this.allOnCriterion());
+
   selectedCategory() {
     const competition = this.competition();
     return competition?.scoring_categories.find((category) => category.id === this.categoryId) ?? null;
+  }
+
+  setRoundQuantity(participantId: string, value: string | number | null | undefined): void {
+    this.roundQuantities = { ...this.roundQuantities, [participantId]: String(value ?? '') };
   }
 
   ngOnInit(): void {
@@ -294,6 +350,9 @@ export class CompetitionScorePage implements OnInit {
         this.categoryId = competition.scoring_categories[0]?.id ?? '';
         this.homeId = competition.participants[0]?.id ?? '';
         this.awayId = competition.participants[1]?.id ?? '';
+        this.roundQuantities = Object.fromEntries(
+          competition.participants.map((participant) => [participant.id, '']),
+        );
         this.loading.set(false);
         this.loadEntries();
       },
@@ -312,6 +371,10 @@ export class CompetitionScorePage implements OnInit {
   }
 
   canSubmit(): boolean {
+    if (this.roundMode()) {
+      const scored = Object.values(this.roundQuantities).some((value) => Number(value));
+      return Boolean(this.categoryId && this.note.trim() && scored);
+    }
     if (this.criteriaLeague()) {
       return Boolean(this.participantId && this.categoryId && this.note.trim() && Number(this.quantity));
     }
@@ -322,29 +385,47 @@ export class CompetitionScorePage implements OnInit {
     if (!this.canSubmit() || this.busy()) return;
     this.busy.set(true);
     this.error.set(null);
-    const body = this.criteriaLeague()
+    const body = this.roundMode()
       ? {
-          kind: 'criterion',
-          participant: this.participantId,
+          kind: 'criterion_round',
           scoring_category: this.categoryId,
-          quantity: this.quantity,
           note: this.note.trim(),
+          entries: Object.entries(this.roundQuantities)
+            .filter(([, value]) => Number(value))
+            .map(([participant, quantity]) => ({ participant, quantity })),
         }
-      : {
-          kind: 'result',
-          home: this.homeId,
-          away: this.awayId,
-          outcome: this.outcome,
-          note: this.note.trim(),
-        };
+      : this.criteriaLeague()
+        ? {
+            kind: 'criterion',
+            participant: this.participantId,
+            scoring_category: this.categoryId,
+            quantity: this.quantity,
+            note: this.note.trim(),
+          }
+        : {
+            kind: 'result',
+            home: this.homeId,
+            away: this.awayId,
+            outcome: this.outcome,
+            note: this.note.trim(),
+          };
 
     this.api.recordScoreAssist(this.competitionId, body).subscribe({
       next: async () => {
         this.busy.set(false);
         this.note = '';
+        if (this.roundMode()) {
+          this.roundQuantities = Object.fromEntries(
+            Object.keys(this.roundQuantities).map((id) => [id, '']),
+          );
+        }
         const criteria = this.criteriaLeague();
         const toast = await this.toasts.create({
-          message: criteria ? 'Points added to the table.' : 'Score recorded.',
+          message: criteria
+            ? this.roundMode()
+              ? 'Round added to the table.'
+              : 'Points added to the table.'
+            : 'Score recorded.',
           duration: 1800,
           position: 'bottom',
         });

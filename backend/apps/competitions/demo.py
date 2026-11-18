@@ -324,8 +324,8 @@ def clear_demo_league(competition: Competition) -> dict:
     return _delete_demo_competition(competition)
 
 
-TRY_DEMO_KINDS = ("soccer", "custom")
-MAX_ACTIVE_TRY_DEMOS = 2
+TRY_DEMO_KINDS = ("soccer", "custom", "custom_points")
+MAX_ACTIVE_TRY_DEMOS = 3
 
 
 def _guest_demo_owner():
@@ -343,8 +343,65 @@ def _guest_demo_owner():
     )
 
 
+def _try_demo_body(choice: str) -> dict:
+    if choice == "soccer":
+        return {
+            "name": "Soccer demo",
+            "preset": "soccer",
+            "format": "league_knockout",
+            "is_private": False,
+            "show_on_landing": False,
+        }
+    if choice == "custom_points":
+        return {
+            "name": "Custom points demo",
+            "preset": "custom",
+            "format": "freeform",
+            "scoring_basis": "criteria",
+            "participant_type": "individual",
+            "scoring_categories": [
+                {
+                    "name": "Sales closed",
+                    "points": "2",
+                    "affects_score": True,
+                    "code": "sales",
+                    "description": "Deals closed in the period.",
+                },
+                {
+                    "name": "Calls made",
+                    "points": "1",
+                    "affects_score": True,
+                    "code": "calls",
+                    "description": "Outbound calls logged.",
+                },
+            ],
+            "settings_json": {"score_all_on_criterion": True},
+            "is_private": False,
+            "show_on_landing": False,
+        }
+    return {
+        "name": "Custom VS demo",
+        "preset": "custom",
+        "format": "league",
+        "scoring_basis": "results",
+        "participant_type": "team",
+        "scoring_categories": [
+            {
+                "name": "Goal",
+                "points": "1",
+                "affects_score": True,
+                "code": "goal",
+                "description": "A goal for this side.",
+            }
+        ],
+        "league_points": {"win": 3, "draw": 1, "loss": 0},
+        "is_private": False,
+        "show_on_landing": False,
+    }
+
+
 def start_try_demo(user, kind: str) -> dict:
-    """One-tap landing demos: a soccer league or a custom VS league, live for one hour.
+    """One-tap landing demos: soccer, custom VS, or custom points — live for one hour.
 
     Logged-out visitors get a guest account and JWT pair so they can open the demo
     immediately without registering.
@@ -352,7 +409,7 @@ def start_try_demo(user, kind: str) -> dict:
 
     choice = (kind or "").strip().lower()
     if choice not in TRY_DEMO_KINDS:
-        raise ValidationError({"kind": "Choose soccer or custom."})
+        raise ValidationError({"kind": "Choose soccer, custom, or custom_points."})
 
     guest = not getattr(user, "is_authenticated", False)
     if guest:
@@ -365,7 +422,7 @@ def start_try_demo(user, kind: str) -> dict:
             raise ValidationError(
                 {
                     "demo": (
-                        "You already have two active one-hour demos. "
+                        "You already have three active one-hour demos. "
                         "Wait for one to expire, or delete it from My leagues."
                     )
                 }
@@ -377,36 +434,9 @@ def start_try_demo(user, kind: str) -> dict:
         def __init__(self, actor):
             self.user = actor
 
-    if choice == "soccer":
-        body = {
-            "name": "Soccer demo",
-            "preset": "soccer",
-            "format": "league_knockout",
-            "is_private": False,
-            "show_on_landing": False,
-        }
-    else:
-        body = {
-            "name": "Custom demo",
-            "preset": "custom",
-            "format": "league",
-            "scoring_basis": "results",
-            "participant_type": "team",
-            "scoring_categories": [
-                {
-                    "name": "Goal",
-                    "points": "1",
-                    "affects_score": True,
-                    "code": "goal",
-                    "description": "A goal for this side.",
-                }
-            ],
-            "league_points": {"win": 3, "draw": 1, "loss": 0},
-            "is_private": False,
-            "show_on_landing": False,
-        }
-
-    serializer = CompetitionWriteSerializer(data=body, context={"request": _Request(user)})
+    serializer = CompetitionWriteSerializer(
+        data=_try_demo_body(choice), context={"request": _Request(user)}
+    )
     serializer.is_valid(raise_exception=True)
     competition = serializer.save()
 
@@ -437,6 +467,14 @@ def start_try_demo(user, kind: str) -> dict:
         if not competition.match_weekdays:
             competition.match_weekdays = [5]
         competition.save(update_fields=["settings_json", "match_weekdays", "updated_at"])
+    elif choice == "custom_points":
+        settings = dict(competition.settings_json or {})
+        settings["score_all_on_criterion"] = True
+        settings["participant_type"] = "individual"
+        settings["scoring_basis"] = "criteria"
+        settings["table_mode"] = "points"
+        competition.settings_json = settings
+        competition.save(update_fields=["settings_json", "updated_at"])
 
     payload = generate_demo_league(competition, user)
     if guest:

@@ -378,6 +378,31 @@
   padding: 0 16px 8px;
 }
 
+.score-all {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1.5px solid var(--ion-color-step-100, #e6e9ee);
+  border-radius: var(--fm-radius);
+  background: var(--ion-background-color, #fff);
+  cursor: pointer;
+
+  strong {
+    display: block;
+    font-size: 0.9rem;
+  }
+
+  small {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: var(--ion-color-medium);
+  }
+}
+
 .format {
   display: flex;
   align-items: flex-start;

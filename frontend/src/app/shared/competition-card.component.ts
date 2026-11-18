@@ -44,6 +44,9 @@ export type CompetitionCardPromo = {
 
           <div class="tags">
             <ion-badge [color]="statusColour()">{{ competition().status | titlecase }}</ion-badge>
+            @if (competition().is_demo) {
+              <ion-badge color="medium">Demo · 1 hour</ion-badge>
+            }
             @if (competition().show_on_landing) {
               <ion-badge color="warning">On landing page</ion-badge>
             }

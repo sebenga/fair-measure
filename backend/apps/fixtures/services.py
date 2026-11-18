@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
@@ -432,6 +433,55 @@ def award_criterion(*, competition, participant, category, quantity, note, user)
     fixture.recalculate_scores()
     refresh_standings(competition)
     return event
+
+
+def award_criterion_round(*, competition, category, entries, note, user):
+    """Score every listed entrant on the same criterion in one board round."""
+
+    from django.db import transaction
+    from django.utils import timezone
+
+    from apps.standings.services import refresh_standings
+
+    from .models import FixtureSide, ScoreEvent
+
+    if not (competition.settings_json or {}).get("score_all_on_criterion"):
+        raise ValueError(
+            "Turn on “score everyone on one criterion” in this competition's scoring options first."
+        )
+    if not entries:
+        raise ValueError("Enter at least one achievement for this round.")
+
+    events = []
+    total = Decimal("0")
+    with transaction.atomic():
+        for row in entries:
+            participant = row["participant"]
+            quantity = row["quantity"]
+            fixture = Fixture.objects.create(
+                competition=competition,
+                status=Fixture.Status.COMPLETED,
+                label=category.name,
+                completed_at=timezone.now(),
+                created_by=user,
+                notes=note,
+            )
+            side = FixtureSide.objects.create(
+                fixture=fixture, participant=participant, position=0, is_home=True
+            )
+            event = ScoreEvent.objects.create(
+                fixture=fixture,
+                side=side,
+                scoring_category=category,
+                quantity=quantity,
+                note=note,
+                recorded_by=user,
+            )
+            fixture.recalculate_scores()
+            events.append(event)
+            total += event.points
+        refresh_standings(competition)
+    return {"count": len(events), "awarded": total, "events": events}
 
 
 def record_result(*, competition, home, away, outcome, note, user):

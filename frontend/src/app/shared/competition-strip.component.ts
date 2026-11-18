@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, computed, input, output } from '@an
 import type { Competition } from '../core/models';
 
 export type StripDemo = {
-  kind: 'soccer' | 'custom';
+  kind: 'soccer' | 'custom' | 'custom_points';
   name: string;
   sport: string;
   blurb: string;
@@ -207,7 +207,7 @@ export class CompetitionStripComponent {
   readonly demos = input<StripDemo[]>([]);
   readonly title = input('Competitions');
   readonly open = output<Competition>();
-  readonly tryDemo = output<'soccer' | 'custom'>();
+  readonly tryDemo = output<'soccer' | 'custom' | 'custom_points'>();
 
   readonly hasRows = computed(() => this.competitions().length > 0 || this.demos().length > 0);
   readonly rowCount = computed(() => this.competitions().length + this.demos().length);

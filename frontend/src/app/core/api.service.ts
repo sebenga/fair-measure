@@ -522,11 +522,11 @@ export class ApiService {
     }>(`${this.base}/competitions/${competitionId}/advance`, {});
   }
 
-  /** One-tap landing demos: soccer league or custom VS league, live for one hour. */
-  tryDemo(kind: 'soccer' | 'custom') {
+  /** One-tap landing demos: soccer, custom VS, or custom points — live for one hour. */
+  tryDemo(kind: 'soccer' | 'custom' | 'custom_points') {
     return this.http.post<{
       active: boolean;
-      kind: 'soccer' | 'custom';
+      kind: 'soccer' | 'custom' | 'custom_points';
       competition_id: string;
       expires_at?: string;
       teams: number;
@@ -664,7 +664,7 @@ export class ApiService {
   }
 
   recordScoreAssist(competitionId: string, body: Record<string, unknown>) {
-    return this.http.post<{ id: string; awarded?: string; label?: string }>(
+    return this.http.post<{ id?: string; count?: number; awarded?: string; label?: string; note?: string }>(
       `${this.base}/competitions/${competitionId}/score-assist`,
       body,
     );

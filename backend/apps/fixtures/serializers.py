@@ -530,10 +530,15 @@ class FixtureStatusSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=Fixture.Status.choices)
 
 
-class ScoreAssistSerializer(serializers.Serializer):
-    """An admin records either a criterion award or a win/draw/loss result."""
+class CriterionRoundEntrySerializer(serializers.Serializer):
+    participant = serializers.PrimaryKeyRelatedField(queryset=Participant.objects.all())
+    quantity = serializers.DecimalField(max_digits=8, decimal_places=2)
 
-    kind = serializers.ChoiceField(choices=["criterion", "result"])
+
+class ScoreAssistSerializer(serializers.Serializer):
+    """An admin records a criterion award, a whole-board round, or a win/draw/loss."""
+
+    kind = serializers.ChoiceField(choices=["criterion", "criterion_round", "result"])
     participant = serializers.PrimaryKeyRelatedField(
         queryset=Participant.objects.all(), required=False
     )
@@ -543,6 +548,7 @@ class ScoreAssistSerializer(serializers.Serializer):
     quantity = serializers.DecimalField(
         max_digits=8, decimal_places=2, required=False, default=Decimal("1")
     )
+    entries = CriterionRoundEntrySerializer(many=True, required=False)
     home = serializers.PrimaryKeyRelatedField(
         queryset=Participant.objects.all(), required=False
     )
@@ -574,6 +580,56 @@ class ScoreAssistSerializer(serializers.Serializer):
                 raise serializers.ValidationError("That scoring criterion belongs to another competition.")
             if attrs["quantity"] == 0:
                 raise serializers.ValidationError({"quantity": "Enter what was achieved."})
+        elif kind == "criterion_round":
+            if not (competition.settings_json or {}).get("score_all_on_criterion"):
+                raise serializers.ValidationError(
+                    {
+                        "kind": (
+                            "Turn on “score everyone on one criterion” in this "
+                            "competition's scoring options first."
+                        )
+                    }
+                )
+            category = attrs.get("scoring_category")
+            entries = list(attrs.get("entries") or [])
+            if category is None:
+                raise serializers.ValidationError(
+                    {"scoring_category": "Choose the criterion for this round."}
+                )
+            if category.competition_id != competition.id:
+                raise serializers.ValidationError(
+                    "That scoring criterion belongs to another competition."
+                )
+            if not attrs.get("note", "").strip():
+                raise serializers.ValidationError(
+                    {"note": "Describe how these points were accumulated."}
+                )
+            if not entries:
+                raise serializers.ValidationError(
+                    {"entries": "Enter at least one achievement for this round."}
+                )
+            seen: set = set()
+            cleaned = []
+            for row in entries:
+                participant = row["participant"]
+                quantity = row["quantity"]
+                if participant.competition_id != competition.id:
+                    raise serializers.ValidationError(
+                        f"'{participant.name}' is not in this competition."
+                    )
+                if participant.id in seen:
+                    raise serializers.ValidationError(
+                        {"entries": f"{participant.name} is listed twice."}
+                    )
+                if quantity == 0:
+                    continue
+                seen.add(participant.id)
+                cleaned.append({"participant": participant, "quantity": quantity})
+            if not cleaned:
+                raise serializers.ValidationError(
+                    {"entries": "Enter at least one achievement for this round."}
+                )
+            attrs["entries"] = cleaned
         else:
             home = attrs.get("home")
             away = attrs.get("away")

@@ -1,4 +1,10 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
@@ -30,6 +36,8 @@ import type { Competition } from '../../core/models';
 import { CompetitionCardComponent } from '../../shared/competition-card.component';
 import { InboxTrayComponent } from '../../shared/inbox-tray.component';
 import { PageHeroComponent } from '../../shared/page-hero.component';
+
+const SHOW_DEMOS_KEY = 'fm.my-leagues.show-demos';
 
 @Component({
   selector: 'fm-competition-list',
@@ -163,7 +171,7 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
           </p>
         </div>
       } @else {
-        @for (competition of competitions(); track competition.id; let index = $index) {
+        @for (competition of realCompetitions(); track competition.id; let index = $index) {
           <fm-competition-card
             [style.--i]="index"
             [competition]="competition"
@@ -173,11 +181,53 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
           />
         }
 
+        @if (demoCompetitions().length > 0) {
+          <div class="demo-section">
+            <div class="demo-head">
+              <div>
+                <p class="demo-eyebrow">One-hour demos</p>
+                <h3>{{ demoCompetitions().length }} demo competition{{ demoCompetitions().length === 1 ? '' : 's' }}</h3>
+              </div>
+              <ion-button
+                size="small"
+                fill="outline"
+                type="button"
+                (click)="toggleDemos()"
+              >
+                {{ showDemos() ? 'Hide' : 'Show' }}
+              </ion-button>
+            </div>
+            @if (showDemos()) {
+              @for (competition of demoCompetitions(); track competition.id; let index = $index) {
+                <fm-competition-card
+                  [style.--i]="index"
+                  [competition]="competition"
+                  [canDelete]="competition.my_role === 'owner'"
+                  (open)="openCompetition(competition.id)"
+                  (deleteClick)="confirmDelete(competition)"
+                />
+              }
+            } @else {
+              <p class="demo-hidden">
+                Demos stay on this page until they expire. Tap Show to open them again.
+              </p>
+            }
+          </div>
+        }
+
+        @if (realCompetitions().length === 0 && demoCompetitions().length > 0 && !showDemos()) {
+          <div class="fm-empty compact">
+            <ion-icon name="hourglass-outline" aria-hidden="true" />
+            <h3>Only demos right now</h3>
+            <p>Show the one-hour demos above, or create your own competition.</p>
+          </div>
+        }
+
         <!-- Competitions are the point of this page, so they come first. -->
         <ng-container [ngTemplateOutlet]="createBanner" />
 
         <p class="footnote">
-          <ion-badge color="light">{{ competitions().length }}</ion-badge>
+          <ion-badge color="light">{{ visibleCount() }}</ion-badge>
           shown · last refreshed {{ refreshedAt() | date: 'shortTime' }}
         </p>
       }
@@ -255,6 +305,55 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
         font-size: 0.9rem;
         line-height: 1.4;
       }
+
+      .demo-section {
+        margin: 20px 16px 8px;
+        padding: 14px 0 4px;
+        border-top: 1px solid color-mix(in srgb, var(--ion-color-medium) 28%, transparent);
+      }
+
+      .demo-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0 0 8px;
+        padding: 0 2px;
+      }
+
+      .demo-eyebrow {
+        margin: 0;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ion-color-medium);
+      }
+
+      .demo-head h3 {
+        margin: 2px 0 0;
+        font-size: 1rem;
+        font-weight: 650;
+      }
+
+      .demo-section fm-competition-card {
+        margin-left: -16px;
+        margin-right: -16px;
+        width: calc(100% + 32px);
+      }
+
+      .demo-hidden {
+        margin: 0 2px 8px;
+        font-size: 0.86rem;
+        line-height: 1.45;
+        color: var(--ion-color-medium);
+      }
+
+      .fm-empty.compact {
+        margin-top: 8px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+      }
     `,
   ],
 })
@@ -271,6 +370,19 @@ export class CompetitionListPage {
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly refreshedAt = signal(new Date());
+  readonly showDemos = signal(CompetitionListPage.readShowDemos());
+
+  readonly realCompetitions = computed(() =>
+    this.competitions().filter((competition) => !competition.is_demo),
+  );
+  readonly demoCompetitions = computed(() =>
+    this.competitions().filter((competition) => competition.is_demo),
+  );
+  readonly visibleCount = computed(
+    () =>
+      this.realCompetitions().length +
+      (this.showDemos() ? this.demoCompetitions().length : 0),
+  );
 
   constructor() {
     // A new invite or an answered one changes this list.
@@ -280,6 +392,27 @@ export class CompetitionListPage {
   ionViewWillEnter(): void {
     this.load(this.competitions().length === 0);
     this.competitionInvites.refresh();
+  }
+
+  toggleDemos(): void {
+    const next = !this.showDemos();
+    this.showDemos.set(next);
+    try {
+      localStorage.setItem(SHOW_DEMOS_KEY, next ? '1' : '0');
+    } catch {
+      /* private mode — preference stays in memory for this visit */
+    }
+  }
+
+  private static readShowDemos(): boolean {
+    try {
+      const raw = localStorage.getItem(SHOW_DEMOS_KEY);
+      if (raw === '0') return false;
+      if (raw === '1') return true;
+    } catch {
+      /* ignore */
+    }
+    return true;
   }
 
   private listQuery(): { mine?: boolean; show_on_landing?: boolean; page_size: number } {
@@ -324,7 +457,9 @@ export class CompetitionListPage {
   async confirmDelete(competition: Competition): Promise<void> {
     const alert = await this.alerts.create({
       header: `Delete ${competition.name}?`,
-      message: 'Scoring, fixtures, and the feed are removed. This cannot be undone.',
+      message: competition.is_demo
+        ? 'This one-hour demo and everything in it will be removed.'
+        : 'Scoring, fixtures, and the feed are removed. This cannot be undone.',
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         { text: 'Delete', role: 'destructive' },
@@ -342,7 +477,10 @@ export class CompetitionListPage {
         this.competitions.update((current) =>
           current.filter((item) => item.id !== competition.id),
         );
-        void this.toast('Competition deleted.', 'success');
+        void this.toast(
+          competition.is_demo ? 'Demo deleted.' : 'Competition deleted.',
+          'success',
+        );
       },
       error: (err: unknown) => {
         void this.toast(

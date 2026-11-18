@@ -1049,6 +1049,8 @@ class CompetitionListSerializer(serializers.ModelSerializer):
     participant_count = serializers.IntegerField(read_only=True)
     my_role = serializers.SerializerMethodField()
     scoring_basis = serializers.SerializerMethodField()
+    is_demo = serializers.SerializerMethodField()
+    demo_expires_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Competition
@@ -1071,6 +1073,8 @@ class CompetitionListSerializer(serializers.ModelSerializer):
             "participant_count",
             "my_role",
             "scoring_basis",
+            "is_demo",
+            "demo_expires_at",
             "created_at",
         ]
 
@@ -1086,6 +1090,17 @@ class CompetitionListSerializer(serializers.ModelSerializer):
         if settings.get("table_mode") == "points":
             return "criteria"
         return "results"
+
+    def get_is_demo(self, obj: Competition) -> bool:
+        from .demo import demo_is_active
+
+        return demo_is_active(obj)
+
+    def get_demo_expires_at(self, obj: Competition) -> str | None:
+        from .demo import demo_expires_at
+
+        when = demo_expires_at(obj)
+        return when.isoformat() if when is not None else None
 
 
 class CompetitionDetailSerializer(CompetitionListSerializer):
@@ -1453,6 +1468,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         "cup_every_league_rounds",
         "cups",
         "team_entry_open",
+        "score_all_on_criterion",
     )
 
     def _update(self, instance: Competition, validated_data: dict) -> Competition:

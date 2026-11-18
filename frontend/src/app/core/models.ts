@@ -273,6 +273,9 @@ export interface Competition {
   participant_count: number;
   my_role: Role | null;
   scoring_basis?: 'results' | 'criteria';
+  /** One-hour try-demo or generated demo league — deletes itself when the timer ends. */
+  is_demo?: boolean;
+  demo_expires_at?: string | null;
   settings_json?: Record<string, unknown>;
   created_at: string;
 }
@@ -907,6 +910,13 @@ export function isPointsTable(competition: {
     Number(policy.draw_points) === 0 &&
     Number(policy.loss_points) === 0
   );
+}
+
+/** Custom points boards that score every entrant on one criterion in a round. */
+export function scoresAllOnCriterion(competition: {
+  settings_json?: Record<string, unknown>;
+}): boolean {
+  return competition.settings_json?.['score_all_on_criterion'] === true;
 }
 
 /** Fantasy picks a squad from club rosters. Only team-sport leagues have those. */
