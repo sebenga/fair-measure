@@ -25,8 +25,13 @@ import {
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
-import type { CompetitionDetail, ScoreAssistEntry } from '../../core/models';
-import { isPointsTable, scoresAllOnCriterion } from '../../core/models';
+import type { CompetitionDetail, ScoreAssistEntry, VotingRound } from '../../core/models';
+import {
+  isPointsTable,
+  pointsByVoting,
+  scoresAllOnCriterion,
+  votingVisibility,
+} from '../../core/models';
 
 @Component({
   selector: 'fm-competition-score',
@@ -58,7 +63,7 @@ import { isPointsTable, scoresAllOnCriterion } from '../../core/models';
         <ion-buttons slot="start">
           <ion-back-button [defaultHref]="backHref()" />
         </ion-buttons>
-        <ion-title>{{ criteriaLeague() ? 'Add points' : 'Score' }}</ion-title>
+        <ion-title>{{ votingOn() ? 'Vote & points' : criteriaLeague() ? 'Add points' : 'Score' }}</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -66,7 +71,111 @@ import { isPointsTable, scoresAllOnCriterion } from '../../core/models';
       @if (loading()) {
         <div class="centered"><ion-spinner name="crescent" /></div>
       } @else if (competition(); as comp) {
-        <h3 class="fm-section-title">Record a score</h3>
+        @if (votingOn()) {
+          <h3 class="fm-section-title">Member voting</h3>
+          <p class="hint">
+            Only members can vote. Ballots are
+            {{ ballotVisibility() === 'visible' ? 'visible while open' : 'secret until an admin closes the round' }}.
+            Closing awards one criterion unit per vote to the table.
+          </p>
+
+          @if (canManageVotes()) {
+            <ion-list inset="true">
+              <ion-item>
+                <ion-select label="Criterion" labelPlacement="stacked" [(ngModel)]="voteCategoryId" name="vote-criterion">
+                  @for (category of comp.scoring_categories; track category.id) {
+                    <ion-select-option [value]="category.id">
+                      {{ category.name }} · {{ trim(category.points) }} per vote
+                    </ion-select-option>
+                  }
+                </ion-select>
+              </ion-item>
+              <ion-item>
+                <ion-input
+                  label="Round title (optional)"
+                  labelPlacement="stacked"
+                  [(ngModel)]="voteTitle"
+                  name="vote-title"
+                  maxlength="200"
+                  placeholder="e.g. Week 3 popular pick"
+                />
+              </ion-item>
+            </ion-list>
+            <ion-button expand="block" class="submit" [disabled]="voteBusy() || !voteCategoryId" (click)="openRound()">
+              @if (voteBusy()) {
+                <ion-spinner name="crescent" />
+              } @else {
+                Open voting round
+              }
+            </ion-button>
+          }
+
+          @if (voteError()) {
+            <p class="fm-form-error" role="alert">{{ voteError() }}</p>
+          }
+
+          @if (!rounds().length) {
+            <ion-note class="footnote">No voting rounds yet.</ion-note>
+          } @else {
+            @for (round of rounds(); track round.id) {
+              <section class="vote-round">
+                <div class="vote-head">
+                  <div>
+                    <strong>{{ round.title }}</strong>
+                    <small>
+                      {{ round.category_name }} · {{ round.status }}
+                      · {{ round.visibility }} · {{ round.vote_count }} vote{{ round.vote_count === 1 ? '' : 's' }}
+                    </small>
+                  </div>
+                  @if (canManageVotes() && round.status === 'open') {
+                    <ion-button size="small" fill="outline" [disabled]="voteBusy()" (click)="closeRound(round)">
+                      Close &amp; award
+                    </ion-button>
+                  }
+                </div>
+
+                @if (round.status === 'open' && canVote()) {
+                  <ion-list inset="true">
+                    <ion-item>
+                      <ion-select
+                        label="Your vote"
+                        labelPlacement="stacked"
+                        [ngModel]="round.my_vote?.participant_id || ''"
+                        (ngModelChange)="castFor(round, $event)"
+                        [name]="'vote-' + round.id"
+                      >
+                        @for (participant of comp.participants; track participant.id) {
+                          <ion-select-option [value]="participant.id">{{ participant.name }}</ion-select-option>
+                        }
+                      </ion-select>
+                    </ion-item>
+                  </ion-list>
+                  @if (round.my_vote) {
+                    <ion-note class="footnote">You voted for {{ round.my_vote.participant_name }}.</ion-note>
+                  }
+                }
+
+                @if (round.tallies_hidden) {
+                  <ion-note class="footnote">Tallies are secret until this round closes.</ion-note>
+                } @else if (round.tallies?.length) {
+                  <ul class="tallies">
+                    @for (row of round.tallies; track row.participant_id) {
+                      <li>
+                        <span>{{ row.participant_name }}</span>
+                        <strong>{{ row.votes }}</strong>
+                      </li>
+                    }
+                  </ul>
+                } @else if (round.status === 'closed') {
+                  <ion-note class="footnote">No votes were cast.</ion-note>
+                }
+              </section>
+            }
+          }
+        }
+
+        @if (canScoreAdmin()) {
+        <h3 class="fm-section-title">{{ votingOn() ? 'Admin award' : 'Record a score' }}</h3>
         <p class="hint">
           {{
             criteriaLeague()
@@ -247,6 +356,7 @@ import { isPointsTable, scoresAllOnCriterion } from '../../core/models';
             }
           </ion-list>
         }
+        }
       }
     </ion-content>
   `,
@@ -284,6 +394,39 @@ import { isPointsTable, scoresAllOnCriterion } from '../../core/models';
       .quiet {
         font-style: italic;
       }
+      .vote-round {
+        margin: 0 16px 18px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--ion-color-step-150, #e6e8eb);
+      }
+      .vote-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+      .vote-head strong {
+        display: block;
+      }
+      .vote-head small {
+        color: var(--ion-color-medium);
+        font-size: 0.78rem;
+      }
+      .tallies {
+        list-style: none;
+        margin: 8px 0 0;
+        padding: 0;
+        display: grid;
+        gap: 6px;
+      }
+      .tallies li {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 0.9rem;
+      }
     `,
   ],
 })
@@ -298,12 +441,17 @@ export class CompetitionScorePage implements OnInit {
 
   readonly competition = signal<CompetitionDetail | null>(null);
   readonly entries = signal<ScoreAssistEntry[]>([]);
+  readonly rounds = signal<VotingRound[]>([]);
   readonly loading = signal(true);
   readonly busy = signal(false);
+  readonly voteBusy = signal(false);
   readonly error = signal<string | null>(null);
+  readonly voteError = signal<string | null>(null);
 
   participantId = '';
   categoryId = '';
+  voteCategoryId = '';
+  voteTitle = '';
   quantity = '1';
   homeId = '';
   awayId = '';
@@ -321,7 +469,31 @@ export class CompetitionScorePage implements OnInit {
     return competition ? scoresAllOnCriterion(competition) : false;
   });
 
+  readonly votingOn = computed(() => {
+    const competition = this.competition();
+    return competition ? pointsByVoting(competition) : false;
+  });
+
+  readonly ballotVisibility = computed(() => {
+    const competition = this.competition();
+    return competition ? votingVisibility(competition) : 'secret';
+  });
+
   readonly roundMode = computed(() => this.criteriaLeague() && this.allOnCriterion());
+
+  canVote(): boolean {
+    return Boolean(this.competition()?.my_role);
+  }
+
+  canManageVotes(): boolean {
+    const role = this.competition()?.my_role;
+    return role === 'owner' || role === 'admin';
+  }
+
+  canScoreAdmin(): boolean {
+    const role = this.competition()?.my_role;
+    return role === 'owner' || role === 'admin' || role === 'scorer';
+  }
 
   selectedCategory() {
     const competition = this.competition();
@@ -348,13 +520,15 @@ export class CompetitionScorePage implements OnInit {
         this.competition.set(competition);
         this.participantId = competition.participants[0]?.id ?? '';
         this.categoryId = competition.scoring_categories[0]?.id ?? '';
+        this.voteCategoryId = competition.scoring_categories[0]?.id ?? '';
         this.homeId = competition.participants[0]?.id ?? '';
         this.awayId = competition.participants[1]?.id ?? '';
         this.roundQuantities = Object.fromEntries(
           competition.participants.map((participant) => [participant.id, '']),
         );
         this.loading.set(false);
-        this.loadEntries();
+        if (this.canScoreAdmin()) this.loadEntries();
+        if (pointsByVoting(competition)) this.loadRounds();
       },
       error: (err: unknown) => {
         this.loading.set(false);
@@ -367,6 +541,72 @@ export class CompetitionScorePage implements OnInit {
     this.api.listScoreAssist(this.competitionId).subscribe({
       next: (entries) => this.entries.set(entries),
       error: () => this.entries.set([]),
+    });
+  }
+
+  loadRounds(): void {
+    this.api.listVotingRounds(this.competitionId).subscribe({
+      next: (rounds) => this.rounds.set(rounds),
+      error: () => this.rounds.set([]),
+    });
+  }
+
+  openRound(): void {
+    if (this.voteBusy() || !this.voteCategoryId) return;
+    this.voteBusy.set(true);
+    this.voteError.set(null);
+    this.api
+      .openVotingRound(this.competitionId, {
+        scoring_category: this.voteCategoryId,
+        title: this.voteTitle.trim(),
+      })
+      .subscribe({
+        next: (round) => {
+          this.rounds.update((rows) => [round, ...rows]);
+          this.voteTitle = '';
+          this.voteBusy.set(false);
+          void this.notify('Voting round opened.', 'success');
+        },
+        error: (err: unknown) => {
+          this.voteBusy.set(false);
+          this.voteError.set(extractErrorMessage(err, 'Could not open a voting round.'));
+        },
+      });
+  }
+
+  castFor(round: VotingRound, participantId: string): void {
+    if (!participantId || this.voteBusy() || round.status !== 'open') return;
+    if (round.my_vote?.participant_id === participantId) return;
+    this.voteBusy.set(true);
+    this.voteError.set(null);
+    this.api.castVote(this.competitionId, round.id, participantId).subscribe({
+      next: (res) => {
+        this.rounds.update((rows) => rows.map((row) => (row.id === round.id ? res.round : row)));
+        this.voteBusy.set(false);
+        void this.notify(`Voted for ${res.vote.participant_name}.`, 'success');
+      },
+      error: (err: unknown) => {
+        this.voteBusy.set(false);
+        this.voteError.set(extractErrorMessage(err, 'Could not cast that vote.'));
+      },
+    });
+  }
+
+  closeRound(round: VotingRound): void {
+    if (this.voteBusy() || round.status !== 'open') return;
+    this.voteBusy.set(true);
+    this.voteError.set(null);
+    this.api.closeVotingRound(this.competitionId, round.id).subscribe({
+      next: (updated) => {
+        this.rounds.update((rows) => rows.map((row) => (row.id === round.id ? updated : row)));
+        this.voteBusy.set(false);
+        if (this.canScoreAdmin()) this.loadEntries();
+        void this.notify('Round closed. Points added to the table.', 'success');
+      },
+      error: (err: unknown) => {
+        this.voteBusy.set(false);
+        this.voteError.set(extractErrorMessage(err, 'Could not close that round.'));
+      },
     });
   }
 

@@ -938,6 +938,44 @@ export function scoresAllOnCriterion(competition: {
   return competition.settings_json?.['score_all_on_criterion'] === true;
 }
 
+/** Custom points boards where members vote to accumulate criterion points. */
+export function pointsByVoting(competition: {
+  settings_json?: Record<string, unknown>;
+}): boolean {
+  return competition.settings_json?.['points_by_voting'] === true;
+}
+
+/** Whether vote tallies are live (`visible`) or hidden until close (`secret`). */
+export function votingVisibility(competition: {
+  settings_json?: Record<string, unknown>;
+}): 'secret' | 'visible' {
+  return competition.settings_json?.['voting_visibility'] === 'visible' ? 'visible' : 'secret';
+}
+
+export interface VotingRoundTally {
+  participant_id: string;
+  participant_name: string;
+  votes: number;
+}
+
+export interface VotingRound {
+  id: string;
+  competition_id: string;
+  category_id: string;
+  category_name: string;
+  category_points: string;
+  title: string;
+  status: 'open' | 'closed' | string;
+  visibility: 'secret' | 'visible' | string;
+  note: string;
+  created_at: string;
+  closed_at: string | null;
+  vote_count: number;
+  my_vote: { participant_id: string; participant_name: string } | null;
+  tallies: VotingRoundTally[] | null;
+  tallies_hidden: boolean;
+}
+
 /** Fantasy picks a squad from club rosters. Only team-sport leagues have those. */
 export function showsFantasy(competition: {
   settings_json?: Record<string, unknown>;

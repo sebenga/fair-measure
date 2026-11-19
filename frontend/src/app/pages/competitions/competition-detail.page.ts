@@ -36,7 +36,7 @@ import { ReleasesService } from '../../core/releases.service';
 import { DemoGuideService } from '../../core/demo-guide.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail, TeamPick } from '../../core/models';
-import { isPointsTable, showsFantasy } from '../../core/models';
+import { isPointsTable, pointsByVoting, showsFantasy } from '../../core/models';
 import { RealtimeService, competitionRoom } from '../../core/realtime.service';
 import { CompetitionCupComponent } from './tabs/competition-cup.component';
 import { CompetitionFantasyComponent } from './tabs/competition-fantasy.component';
@@ -89,10 +89,14 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
           }
         </div>
         <ion-buttons slot="end">
-          @if (canScore()) {
+          @if (canOpenScore()) {
             @if (pointsLeague()) {
               <ion-button (click)="openScore()">
-                <ion-icon slot="icon-only" name="add-outline" aria-label="Add points" />
+                <ion-icon
+                  slot="icon-only"
+                  [name]="votingEnabled() && !canScore() ? 'people-outline' : 'add-outline'"
+                  [attr.aria-label]="votingEnabled() && !canScore() ? 'Vote' : 'Add points'"
+                />
               </ion-button>
             } @else {
               <ion-button (click)="openScore()">
@@ -322,9 +326,11 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
             }
           }
           @case ('standings') {
-            @if (pointsLeague() && canScore()) {
+            @if (pointsLeague() && canOpenScore()) {
               <div class="add-points">
-                <ion-button expand="block" (click)="openScore()">Add points</ion-button>
+                <ion-button expand="block" (click)="openScore()">
+                  {{ votingEnabled() && !canScore() ? 'Vote for points' : 'Add points' }}
+                </ion-button>
               </div>
             }
             <fm-competition-standings [competition]="comp" />
@@ -798,6 +804,16 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   canScore(): boolean {
     const role = this.competition()?.my_role;
     return role === 'owner' || role === 'admin' || role === 'scorer';
+  }
+
+  votingEnabled(): boolean {
+    const competition = this.competition();
+    return competition ? pointsByVoting(competition) : false;
+  }
+
+  canOpenScore(): boolean {
+    if (this.canScore()) return true;
+    return this.pointsLeague() && this.votingEnabled() && Boolean(this.competition()?.my_role);
   }
 
   canManage(): boolean {

@@ -51,6 +51,7 @@ import type {
   VisibilityCheckout,
   VisibilityCheckoutKind,
   User,
+  VotingRound,
 } from './models';
 
 type Query = Record<string, string | number | boolean | undefined | null>;
@@ -705,6 +706,31 @@ export class ApiService {
     return this.http.post<{ id?: string; count?: number; awarded?: string; label?: string; note?: string }>(
       `${this.base}/competitions/${competitionId}/score-assist`,
       body,
+    );
+  }
+
+  listVotingRounds(competitionId: string) {
+    return this.http.get<VotingRound[]>(`${this.base}/competitions/${competitionId}/voting-rounds`);
+  }
+
+  openVotingRound(competitionId: string, body: Record<string, unknown>) {
+    return this.http.post<VotingRound>(
+      `${this.base}/competitions/${competitionId}/voting-rounds`,
+      body,
+    );
+  }
+
+  castVote(competitionId: string, roundId: string, participantId: string) {
+    return this.http.put<{ round: VotingRound; vote: { id: string; participant_id: string; participant_name: string } }>(
+      `${this.base}/competitions/${competitionId}/voting-rounds/${roundId}/vote`,
+      { participant: participantId },
+    );
+  }
+
+  closeVotingRound(competitionId: string, roundId: string) {
+    return this.http.post<VotingRound>(
+      `${this.base}/competitions/${competitionId}/voting-rounds/${roundId}/close`,
+      {},
     );
   }
 

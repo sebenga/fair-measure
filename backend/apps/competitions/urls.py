@@ -1,6 +1,12 @@
 from django.urls import path
 from rest_framework_nested import routers
 
+from .voting import (
+    VoteCastView,
+    VotingRoundCloseView,
+    VotingRoundDetailView,
+    VotingRoundListCreateView,
+)
 from .views import (
     CompetitionInviteCancelView,
     CompetitionInviteListView,
@@ -100,6 +106,26 @@ urlpatterns = [
         "competitions/<uuid:competition_pk>/participants/<uuid:participant_pk>/picks",
         TeamPickListCreateView.as_view(),
         name="team-picks",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/voting-rounds",
+        VotingRoundListCreateView.as_view(),
+        name="voting-rounds",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/voting-rounds/<uuid:round_pk>",
+        VotingRoundDetailView.as_view(),
+        name="voting-round-detail",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/voting-rounds/<uuid:round_pk>/vote",
+        VoteCastView.as_view(),
+        name="voting-round-vote",
+    ),
+    path(
+        "competitions/<uuid:competition_pk>/voting-rounds/<uuid:round_pk>/close",
+        VotingRoundCloseView.as_view(),
+        name="voting-round-close",
     ),
     *router.urls,
     *competition_router.urls,

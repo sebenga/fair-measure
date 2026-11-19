@@ -51,9 +51,11 @@ import type {
 import {
   isPointsTable,
   isScoringLocked,
+  pointsByVoting,
   scoresAllOnCriterion,
   squadSizeOf,
   tableBonusOf,
+  votingVisibility,
 } from '../../core/models';
 import { CommercialNoteComponent } from '../../shared/commercial-note.component';
 
@@ -594,8 +596,8 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
             @if (pointsTable() && isCustom()) {
               <h3 class="fm-section-title">Scoring board</h3>
               <p class="hint">
-                Choose whether points are added one entrant at a time, or for every
-                entrant on the same criterion in one round.
+                Choose whether points are added one entrant at a time, for every
+                entrant on the same criterion in one round, or by member votes.
               </p>
               <ion-list inset="true">
                 <ion-item>
@@ -603,16 +605,41 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                     labelPlacement="end"
                     justify="start"
                     [checked]="scoreAllOnCriterion()"
-                    [disabled]="scoringLocked() || busy()"
+                    [disabled]="busy()"
                     (ionChange)="setScoreAllOnCriterion($any($event).detail.checked === true)"
                   >
                     Score everyone on one criterion
                   </ion-checkbox>
                 </ion-item>
+                <ion-item>
+                  <ion-checkbox
+                    labelPlacement="end"
+                    justify="start"
+                    [checked]="votingEnabled()"
+                    [disabled]="busy()"
+                    (ionChange)="setPointsByVoting($any($event).detail.checked === true)"
+                  >
+                    Points by voting
+                  </ion-checkbox>
+                </ion-item>
+                @if (votingEnabled()) {
+                  <ion-item>
+                    <ion-select
+                      label="Ballot visibility"
+                      labelPlacement="stacked"
+                      [value]="ballotVisibility()"
+                      [disabled]="busy()"
+                      (ionChange)="setVotingVisibility($any($event).detail.value)"
+                    >
+                      <ion-select-option value="secret">Secret until close</ion-select-option>
+                      <ion-select-option value="visible">Visible tallies</ion-select-option>
+                    </ion-select>
+                  </ion-item>
+                }
               </ion-list>
               <ion-note class="footnote">
-                When this is on, Add points shows one criterion and a field for each
-                entrant so you can enter the whole board together.
+                Voting is members only. Secret hides tallies from members until an admin
+                closes the round and awards points; visible shows live counts.
               </ion-note>
             }
 
@@ -1368,6 +1395,16 @@ export class CompetitionSetupPage implements OnInit {
     return competition ? scoresAllOnCriterion(competition) : false;
   });
 
+  readonly votingEnabled = computed(() => {
+    const competition = this.competition();
+    return competition ? pointsByVoting(competition) : false;
+  });
+
+  readonly ballotVisibility = computed(() => {
+    const competition = this.competition();
+    return competition ? votingVisibility(competition) : 'secret';
+  });
+
   squadSize(): number {
     const competition = this.competition();
     return competition ? squadSizeOf(competition) : 0;
@@ -1378,30 +1415,61 @@ export class CompetitionSetupPage implements OnInit {
     return competition ? isScoringLocked(competition) : false;
   });
 
-  setScoreAllOnCriterion(enabled: boolean): void {
+  private patchScoringSettings(
+    patch: Record<string, unknown>,
+    successMessage: string,
+  ): void {
     const competition = this.competition();
-    if (!competition || this.scoreAllOnCriterion() === enabled || this.busy()) return;
+    if (!competition || this.busy()) return;
     this.busy.set(true);
     this.api
       .updateCompetition(this.competitionId, {
-        settings_json: { ...(competition.settings_json ?? {}), score_all_on_criterion: enabled },
+        settings_json: { ...(competition.settings_json ?? {}), ...patch },
       })
       .subscribe({
         next: (updated) => {
           this.busy.set(false);
           this.competition.set(updated);
-          void this.toast(
-            enabled
-              ? 'Add points will score everyone on one criterion together.'
-              : 'Add points will score one entrant at a time.',
-            'success',
-          );
+          void this.toast(successMessage, 'success');
         },
         error: async (err: unknown) => {
           this.busy.set(false);
           await this.toast(extractErrorMessage(err, 'Could not update scoring options.'), 'danger');
         },
       });
+  }
+
+  setScoreAllOnCriterion(enabled: boolean): void {
+    if (this.scoreAllOnCriterion() === enabled) return;
+    this.patchScoringSettings(
+      { score_all_on_criterion: enabled },
+      enabled
+        ? 'Add points will score everyone on one criterion together.'
+        : 'Add points will score one entrant at a time.',
+    );
+  }
+
+  setPointsByVoting(enabled: boolean): void {
+    if (this.votingEnabled() === enabled) return;
+    this.patchScoringSettings(
+      {
+        points_by_voting: enabled,
+        voting_visibility: enabled ? this.ballotVisibility() : 'secret',
+      },
+      enabled
+        ? 'Members can vote to accumulate points. Open a round from Add points.'
+        : 'Member voting is off.',
+    );
+  }
+
+  setVotingVisibility(value: 'secret' | 'visible'): void {
+    if (this.ballotVisibility() === value || !this.votingEnabled()) return;
+    this.patchScoringSettings(
+      { voting_visibility: value },
+      value === 'visible'
+        ? 'Vote tallies are visible while a round is open.'
+        : 'Vote tallies stay secret until a round closes.',
+    );
   }
 
   leaguePointsNote(): string {

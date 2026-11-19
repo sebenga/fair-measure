@@ -481,3 +481,75 @@ class RosterMember(BaseModel):
 
     def __str__(self) -> str:
         return self.name
+
+
+class VotingRound(BaseModel):
+    """A membership ballot that awards scoring-criterion units when closed.
+
+    Used by custom points boards with ``settings_json.points_by_voting``. Each
+    member casts one vote for one entrant; closing the round adds
+    ``vote_count × category.points`` to the table via the normal criterion path.
+    """
+
+    class Status(models.TextChoices):
+        OPEN = "open", _("Open")
+        CLOSED = "closed", _("Closed")
+
+    class Visibility(models.TextChoices):
+        SECRET = "secret", _("Secret")
+        VISIBLE = "visible", _("Visible")
+
+    competition = models.ForeignKey(
+        Competition, on_delete=models.CASCADE, related_name="voting_rounds"
+    )
+    category = models.ForeignKey(
+        ScoringCategory, on_delete=models.CASCADE, related_name="voting_rounds"
+    )
+    title = models.CharField(max_length=200, blank=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.OPEN)
+    visibility = models.CharField(
+        max_length=12, choices=Visibility.choices, default=Visibility.SECRET
+    )
+    note = models.CharField(max_length=280, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="opened_voting_rounds",
+    )
+    closed_at = models.DateTimeField(null=True, blank=True)
+    closed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="closed_voting_rounds",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return self.title or f"Vote · {self.category.name}"
+
+
+class Vote(BaseModel):
+    """One member's ballot in a voting round (one entrant)."""
+
+    round = models.ForeignKey(VotingRound, on_delete=models.CASCADE, related_name="votes")
+    voter = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="competition_votes"
+    )
+    participant = models.ForeignKey(
+        Participant, on_delete=models.CASCADE, related_name="votes_received"
+    )
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["round", "voter"], name="uniq_vote_per_round_voter")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.voter_id} → {self.participant_id} ({self.round_id})"

@@ -646,6 +646,53 @@ function presetKind(preset: Preset): PresetKind {
                       </small>
                     </span>
                   </label>
+                  <label class="score-all">
+                    <ion-checkbox
+                      [checked]="pointsByVoting()"
+                      (ionChange)="pointsByVoting.set($any($event).detail.checked === true)"
+                    />
+                    <span>
+                      <strong>Points by voting</strong>
+                      <small>
+                        Members vote for an entrant on a criterion. Votes become table points when
+                        the round is closed. You must be a member to vote.
+                      </small>
+                    </span>
+                  </label>
+                  @if (pointsByVoting()) {
+                    <div class="formats vote-visibility">
+                      <button
+                        type="button"
+                        class="format"
+                        [class.selected]="votingVisibility() === 'secret'"
+                        (click)="votingVisibility.set('secret')"
+                      >
+                        <ion-icon name="eye-off-outline" aria-hidden="true" />
+                        <div>
+                          <strong>Secret ballots</strong>
+                          <p>Tallies stay hidden from members until the round closes.</p>
+                        </div>
+                        @if (votingVisibility() === 'secret') {
+                          <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                        }
+                      </button>
+                      <button
+                        type="button"
+                        class="format"
+                        [class.selected]="votingVisibility() === 'visible'"
+                        (click)="votingVisibility.set('visible')"
+                      >
+                        <ion-icon name="eye-outline" aria-hidden="true" />
+                        <div>
+                          <strong>Visible tallies</strong>
+                          <p>Members see the running vote counts while the round is open.</p>
+                        </div>
+                        @if (votingVisibility() === 'visible') {
+                          <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                        }
+                      </button>
+                    </div>
+                  }
                 }
                 <button
                   type="button"
@@ -1167,6 +1214,18 @@ function presetKind(preset: Preset): PresetKind {
                       }}
                     </dd>
                   </div>
+                  @if (pointsByVoting()) {
+                    <div>
+                      <dt>Member voting</dt>
+                      <dd>
+                        {{
+                          votingVisibility() === 'visible'
+                            ? 'On · visible tallies'
+                            : 'On · secret until close'
+                        }}
+                      </dd>
+                    </div>
+                  }
                 }
                 @if (isCustom() && !pointsTable()) {
                   <div>
@@ -1413,6 +1472,8 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
   readonly scoringBasis = signal<'results' | 'criteria'>('criteria');
   /** Custom points boards only: score every entrant on the same criterion together. */
   readonly scoreAllOnCriterion = signal(false);
+  readonly pointsByVoting = signal(false);
+  readonly votingVisibility = signal<'secret' | 'visible'>('secret');
 
   readonly pointsTable = computed(() => this.scoringBasis() === 'criteria');
   readonly fillSample = signal(false);
@@ -1625,6 +1686,8 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
     if (mode === 'versus') {
       this.scoringBasis.set('results');
       this.scoreAllOnCriterion.set(false);
+      this.pointsByVoting.set(false);
+      this.votingVisibility.set('secret');
       if (this.form.controls.format.value === 'freeform') {
         this.form.controls.format.setValue('league');
       }
@@ -2187,7 +2250,13 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
         ...(this.unitCountOptions() && this.unitCount() ? { unit_count: this.unitCount() } : {}),
         ...(this.isCustom() ? { participant_type: this.versusEntrants() } : {}),
         ...(this.isCustom() && this.pointsTable()
-          ? { settings_json: { score_all_on_criterion: this.scoreAllOnCriterion() } }
+          ? {
+              settings_json: {
+                score_all_on_criterion: this.scoreAllOnCriterion(),
+                points_by_voting: this.pointsByVoting(),
+                voting_visibility: this.pointsByVoting() ? this.votingVisibility() : 'secret',
+              },
+            }
           : {}),
         ...(this.isCustom() && !this.pointsTable()
           ? {

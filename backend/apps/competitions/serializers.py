@@ -1504,6 +1504,8 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         "cups",
         "team_entry_open",
         "score_all_on_criterion",
+        "points_by_voting",
+        "voting_visibility",
     )
 
     def _update(self, instance: Competition, validated_data: dict) -> Competition:
