@@ -257,7 +257,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 12px;
+  gap: 16px;
   padding: 0 8px 28px;
 }
 
@@ -265,25 +265,35 @@
   display: none;
   position: sticky;
   top: 8px;
+  gap: 16px;
+}
+
+.rail-block {
+  display: grid;
   gap: 0;
 }
 
 .feed {
   min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.campaigns {
+  margin-top: 4px;
+}
+
+.market-band {
+  margin: 4px 0 8px;
 }
 
 .market-carousel {
-  padding: 12px 8px 2px;
-}
-
-.campaigns,
-.feed > fm-sponsor-showcase {
-  margin-top: 12px;
+  padding: 0 8px;
 }
 
 .rail-kicker,
 .section-head p {
-  margin: 12px 4px 0;
+  margin: 0 4px;
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -291,19 +301,15 @@
   color: var(--ion-color-medium);
 }
 
-.rail-kicker.later {
-  margin-top: 22px;
-}
-
 .rail-title,
 .section-head h3 {
   margin: 2px 4px 8px;
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 750;
 }
 
 .section-head {
-  margin: 18px 8px 8px;
+  margin: 4px 8px 8px;
 }
 
 .section-head p,
@@ -311,24 +317,51 @@
   margin: 0;
 }
 
+.section-head h3 {
+  margin-top: 2px;
+}
+
 .logo-card {
-  margin-top: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--ion-card-background, #fff);
+  box-shadow: var(--fm-shadow);
 }
 
-.logo-card p {
+.logo-card .rail-kicker {
   margin: 0 0 8px;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ion-color-medium);
 }
 
+.logo-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
+.logo-chip {
+  display: grid;
+  place-items: center;
+  min-width: 64px;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 1px solid var(--ion-color-step-150, #e3e6eb);
+  border-radius: 10px;
+  background: var(--ion-background-color, #fff);
+  color: var(--ion-text-color);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
 
+.logo-chip img {
+  max-width: 72px;
+  max-height: 28px;
+  object-fit: contain;
+}
 
 .composer-wrap {
-  margin: 12px 0 4px;
+  margin: 8px 0 4px;
 }
 
 .composer-wrap label {
@@ -356,6 +389,10 @@
   margin: 8px 0;
 }
 
+.scout-rail {
+  margin-top: 4px;
+}
+
 .suggest-copy {
   margin: 0 16px 4px;
   color: var(--ion-color-medium);
@@ -367,25 +404,27 @@
   gap: 8px;
   overflow-x: auto;
   padding: 0 8px 4px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
 }
 
 .chip {
-  flex: 0 0 210px;
+  flex: 0 0 200px;
   display: grid;
   gap: 2px;
-  padding: 12px;
+  padding: 11px 12px;
   border: 0;
   border-radius: 14px;
   background: var(--fm-chip-selected);
   color: var(--fm-ink);
   font: inherit;
   text-align: left;
-}
-
-.chip[data-kind='competition'] {
-  background: linear-gradient(160deg, #fff7ed, #ffffff 70%);
-  box-shadow: inset 3px 0 0 #ea580c;
-  color: var(--fm-on-light);
+  scroll-snap-align: start;
+  cursor: pointer;
 }
 
 .chip span {
@@ -402,7 +441,8 @@
 
 @media (min-width: 760px) {
   .discover-shell {
-    grid-template-columns: minmax(0, 1fr) 240px;
+    grid-template-columns: minmax(0, 1fr) 260px;
+    gap: 18px;
     padding: 0 16px 28px;
   }
 
@@ -413,15 +453,15 @@
 
 @media (min-width: 1100px) {
   .discover-shell {
-    grid-template-columns: 240px minmax(0, 1fr) 240px;
+    grid-template-columns: 260px minmax(0, 1fr) 260px;
   }
 
   .sponsored-rail.left {
     display: grid;
   }
 
-  /* The side columns carry these on wide screens. */
-  fm-sponsor-showcase.market-carousel {
+  /* Both rails are on screen; the phone partner strip is redundant. */
+  .market-band {
     display: none;
   }
 }

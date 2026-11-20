@@ -155,12 +155,12 @@ import { IonIcon } from '@ionic/angular/standalone';
         isolation: isolate;
         overflow: hidden;
         align-content: end;
-        min-height: 190px;
-        padding: 16px;
-        border-radius: 18px;
+        min-height: 128px;
+        padding: 12px 14px;
+        border-radius: 16px;
         background: #0b1220;
         color: #fff;
-        box-shadow: 0 12px 28px rgb(15 23 42 / 14%);
+        box-shadow: 0 8px 20px rgb(15 23 42 / 12%);
       }
 
       .slot.photo .bg {

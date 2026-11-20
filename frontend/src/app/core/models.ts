@@ -254,6 +254,18 @@ export interface ParticipantRef {
   logo_url: string;
 }
 
+/** Compact live fixture for competition list / Discover cards. */
+export interface LiveMatchSummary {
+  id: string;
+  label: string;
+  sides: Array<{
+    name: string;
+    short_name: string;
+    score: string;
+    position: number;
+  }>;
+}
+
 export interface Competition {
   id: string;
   name: string;
@@ -278,6 +290,9 @@ export interface Competition {
   /** One-hour try-demo or generated demo league — deletes itself when the timer ends. */
   is_demo?: boolean;
   demo_expires_at?: string | null;
+  /** Games in play right now (list / Discover). */
+  live_count?: number;
+  live_matches?: LiveMatchSummary[];
   settings_json?: Record<string, unknown>;
   created_at: string;
 }

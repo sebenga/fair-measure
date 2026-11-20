@@ -23,7 +23,10 @@ const TINTS = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
   selector: 'fm-sponsor-showcase',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[class.compact]': 'compact()' },
+  host: {
+    '[class.compact]': 'compact()',
+    '[class.dense]': 'dense()',
+  },
   template: `
     <div
       class="stage"
@@ -279,6 +282,44 @@ const TINTS = ['#0f766e', '#ea580c', '#2563eb', '#7c3aed', '#0891b2'];
       font-size: 0.8rem;
       line-height: 1.4;
     }
+    /* Side rails and phone partner strips: card-height, not a hero stage. */
+    :host(.dense) .stage {
+      min-height: 132px;
+      border-radius: 16px;
+      box-shadow: 0 8px 20px rgb(15 23 42 / 10%);
+    }
+    :host(.dense) .copy {
+      gap: 2px;
+      padding: 12px 12px 14px;
+    }
+    :host(.dense) .logo {
+      max-width: 96px;
+      max-height: 28px;
+    }
+    :host(.dense) .tag {
+      padding: 2px 7px;
+      font-size: 0.62rem;
+    }
+    :host(.dense) h3 {
+      font-size: 0.98rem;
+      letter-spacing: -0.01em;
+    }
+    :host(.dense) p {
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      font-size: 0.76rem;
+      line-height: 1.35;
+    }
+    :host(.dense) .copy button {
+      margin-top: 4px;
+      padding: 5px 11px;
+      font-size: 0.78rem;
+    }
+    :host(.dense) .dots {
+      margin-top: 8px;
+    }
     .dots {
       display: flex;
       justify-content: center;
@@ -319,6 +360,8 @@ export class SponsorShowcaseComponent {
   readonly start = input(0);
   /** Narrow sidebars: a shorter stage and dots instead of name chips. */
   readonly compact = input(false, { transform: (value: boolean | string) => value !== false });
+  /** Card-height marketing for rails and phone strips (pairs with compact). */
+  readonly dense = input(false, { transform: (value: boolean | string) => value !== false });
   readonly open = output<MarketingPlacement>();
 
   private readonly position = signal(0);

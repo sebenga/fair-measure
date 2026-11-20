@@ -799,6 +799,12 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
     }
     if (value === this.tab()) return;
     this.tab.set(value);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab: value },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   canScore(): boolean {

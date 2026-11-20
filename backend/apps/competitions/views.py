@@ -171,6 +171,23 @@ class CompetitionViewSet(viewsets.ModelViewSet):
                 queryset = queryset.none()
             else:
                 queryset = queryset.filter(member_of(self.request.user))
+        if self.action == "list":
+            # Discover cards deep-link into live games; prefetch once per page.
+            queryset = queryset.annotate(
+                live_count=Count(
+                    "fixtures",
+                    filter=Q(fixtures__status=Fixture.Status.LIVE),
+                    distinct=True,
+                )
+            ).prefetch_related(
+                Prefetch(
+                    "fixtures",
+                    queryset=Fixture.objects.filter(status=Fixture.Status.LIVE)
+                    .prefetch_related("sides__participant")
+                    .order_by("started_at", "scheduled_at", "created_at"),
+                    to_attr="_live_fixtures",
+                )
+            )
         if self.action == "retrieve":
             # Each roster row names its account and each entrant lists its stages: fetch
             # those alongside, or a 16-team league costs one query per player.

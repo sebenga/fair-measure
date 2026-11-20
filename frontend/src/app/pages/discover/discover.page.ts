@@ -42,7 +42,10 @@ import {
 import { InboxTrayComponent } from '../../shared/inbox-tray.component';
 import { PostCardComponent } from '../../shared/post-card.component';
 import { PostComposerComponent } from '../../shared/post-composer.component';
+import { PageHeroComponent } from '../../shared/page-hero.component';
 import { PromoSlotComponent } from '../../shared/promo-slot.component';
+import { CompetitionStripComponent } from '../../shared/competition-strip.component';
+import { SponsorShowcaseComponent } from '../landing/sponsor-showcase.component';
 
 type FeedItem =
   | { kind: 'competition'; id: string; competition: Competition }
@@ -65,8 +68,6 @@ const YOUR_LEAGUE_HERE: MarketingPlacement = {
 };
 
 const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] };
-import { SponsorShowcaseComponent } from '../landing/sponsor-showcase.component';
-import { CompetitionStripComponent } from '../../shared/competition-strip.component';
 
 @Component({
   selector: 'fm-discover',
@@ -74,6 +75,7 @@ import { CompetitionStripComponent } from '../../shared/competition-strip.compon
   imports: [
     CompetitionStripComponent,
     SponsorShowcaseComponent,
+    PageHeroComponent,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -165,38 +167,68 @@ import { CompetitionStripComponent } from '../../shared/competition-strip.compon
         />
         <div class="discover-shell">
           <aside class="sponsored-rail left" aria-label="Corporate marketing">
-            <p class="rail-kicker">Commercial</p>
-            <h3 class="rail-title">Corporate</h3>
-            <fm-sponsor-showcase
-              compact
-              label="Corporate partners"
-              [sponsors]="corporateSlides()"
-              (open)="openSlide($event)"
-            />
+            <div class="rail-block">
+              <p class="rail-kicker">Commercial</p>
+              <h3 class="rail-title">Corporate</h3>
+              <fm-sponsor-showcase
+                compact
+                dense
+                label="Corporate partners"
+                [sponsors]="corporateSlides()"
+                (open)="openSlide($event)"
+              />
+            </div>
             @if (logos().length) {
-              <div class="logo-card">
-                <p>Partners on this page</p>
-                <fm-sponsor-showcase [sponsors]="logos()" compact (open)="openPlacement($event)" />
+              <div class="rail-block logo-card">
+                <p class="rail-kicker">Partners on this page</p>
+                <div class="logo-row">
+                  @for (logo of logos(); track logo.id) {
+                    <button
+                      type="button"
+                      class="logo-chip"
+                      [attr.aria-label]="logo.name"
+                      (click)="openPlacement(logo)"
+                    >
+                      @if (logo.logo_url) {
+                        <img [src]="logo.logo_url" [alt]="logo.name" />
+                      } @else {
+                        <span>{{ logo.name }}</span>
+                      }
+                    </button>
+                  }
+                </div>
               </div>
             }
           </aside>
 
           <div class="feed">
-            <fm-sponsor-showcase
-              class="market-carousel"
-              compact
-              label="Corporate, government and current competitions"
-              [sponsors]="marketSlides()"
-              (open)="openSlide($event)"
-            />
-
-            <fm-sponsor-showcase
+            <fm-page-hero
               class="campaigns"
+              eyebrow="Campaign"
+              [title]="campaign().name"
+              [subtitle]="campaign().body"
+              [image]="campaign().image_url || 'assets/landing/moment-fans.jpg'"
               compact
-              label="Campaigns"
-              [sponsors]="campaignSlides()"
-              (open)="openSlide($event)"
-            />
+            >
+              <ion-button size="small" type="button" (click)="openPlacement(campaign())">
+                {{ campaign().cta_label || 'Create a public league' }}
+              </ion-button>
+            </fm-page-hero>
+
+            <section class="market-band" aria-label="Partners and featured competitions">
+              <div class="section-head">
+                <p>Partners</p>
+                <h3>Corporate, government and current competitions</h3>
+              </div>
+              <fm-sponsor-showcase
+                class="market-carousel"
+                compact
+                dense
+                label="Corporate, government and current competitions"
+                [sponsors]="marketSlides()"
+                (open)="openSlide($event)"
+              />
+            </section>
 
             @if (composerLeague(); as league) {
               <div class="composer-wrap">
@@ -221,26 +253,8 @@ import { CompetitionStripComponent } from '../../shared/competition-strip.compon
               </div>
             }
 
-            @if (currentCompetitions().length) {
-              <section class="rail">
-                <div class="section-head">
-                  <p>Marketing</p>
-                  <h3>Current competitions</h3>
-                </div>
-                <div class="scroller">
-                  @for (league of currentCompetitions(); track league.id) {
-                    <button type="button" class="chip" data-kind="competition" (click)="open(league)">
-                      <span>On landing page</span>
-                      <strong>{{ league.name }}</strong>
-                      <small>{{ league.sport || 'League' }} · {{ league.participant_count }} sides</small>
-                    </button>
-                  }
-                </div>
-              </section>
-            }
-
             @if (featured().length) {
-              <section class="rail">
+              <section class="rail scout-rail">
                 <div class="section-head">
                   <p>Scouting</p>
                   <h3>Open to scouts</h3>
@@ -276,18 +290,23 @@ import { CompetitionStripComponent } from '../../shared/competition-strip.compon
                     [style.--i]="index"
                     [competition]="item.competition"
                     [size]="isSoccerLeague(item.competition) ? 'large' : 'default'"
+                    shortcuts
                     [promo]="cardPromo(item.competition, index)"
                     (open)="open(item.competition)"
                     (promoClick)="onCardPromo(item.competition, index)"
                   />
                 } @else if (item.kind === 'promo') {
-                  <fm-sponsor-showcase
+                  <fm-promo-slot
                     [style.--i]="index"
-                    compact
-                    label="Partners"
-                    [sponsors]="feedSlides()"
-                    [start]="feedAdStart(item.placement)"
-                    (open)="openSlide($event)"
+                    [kind]="promoKind(item.placement)"
+                    [eyebrow]="promoEyebrow(item.placement)"
+                    [title]="item.placement.name"
+                    [body]="item.placement.tagline || item.placement.body"
+                    [action]="item.placement.cta_label || 'Learn more'"
+                    [logo]="item.placement.logo_url || ''"
+                    [image]="item.placement.image_url || ''"
+                    [icon]="promoIcon(item.placement)"
+                    (open)="openPlacement(item.placement)"
                   />
                 } @else {
                   <fm-post-card
@@ -324,23 +343,29 @@ import { CompetitionStripComponent } from '../../shared/competition-strip.compon
           </div>
 
           <aside class="sponsored-rail right" aria-label="Government and current competitions">
-            <p class="rail-kicker">Public sector</p>
-            <h3 class="rail-title">Government</h3>
-            <fm-sponsor-showcase
-              compact
-              label="Government programmes"
-              [sponsors]="governmentSlides()"
-              (open)="openSlide($event)"
-            />
+            <div class="rail-block">
+              <p class="rail-kicker">Public sector</p>
+              <h3 class="rail-title">Government</h3>
+              <fm-sponsor-showcase
+                compact
+                dense
+                label="Government programmes"
+                [sponsors]="governmentSlides()"
+                (open)="openSlide($event)"
+              />
+            </div>
 
-            <p class="rail-kicker later">Featured</p>
-            <h3 class="rail-title">Current competitions</h3>
-            <fm-sponsor-showcase
-              compact
-              label="Current competitions"
-              [sponsors]="leagueSlides()"
-              (open)="openSlide($event)"
-            />
+            <div class="rail-block">
+              <p class="rail-kicker">Featured</p>
+              <h3 class="rail-title">Current competitions</h3>
+              <fm-sponsor-showcase
+                compact
+                dense
+                label="Current competitions"
+                [sponsors]="leagueSlides()"
+                (open)="openSlide($event)"
+              />
+            </div>
           </aside>
         </div>
       }
@@ -404,8 +429,6 @@ export class DiscoverPage implements OnInit {
     const rows = this.placements().filter((item) => item.slot === 'banner');
     return rows.length ? rows : [FALLBACK_CAMPAIGN];
   });
-  /** Every ad that can sit in the feed; each feed slot rotates through all of them. */
-  readonly feedAds = computed(() => [...this.corporate(), ...this.government()]);
   readonly corporate = computed(() => {
     const rows = this.placements().filter(
       (item) => item.audience === 'corporate' && item.slot === 'feature',
@@ -441,6 +464,8 @@ export class DiscoverPage implements OnInit {
   readonly campaignSlides = computed(() =>
     showcaseSlides(this.campaigns(), 'Campaign', 'Create a public league'),
   );
+  /** Same compact create banner as My leagues — content from the active campaign. */
+  readonly campaign = computed(() => this.campaignSlides()[0] ?? FALLBACK_CAMPAIGN);
   readonly feedSlides = computed(() => [...this.corporateSlides(), ...this.governmentSlides()]);
   readonly composerLeague = computed(
     () => this.mine().find((row) => row.id === this.composerLeagueId()) ?? this.mine()[0] ?? null,
@@ -682,18 +707,12 @@ export class DiscoverPage implements OnInit {
     });
   }
 
-  feedAdStart(placement: MarketingPlacement): number {
-    return Math.max(0, this.feedAds().findIndex((ad) => ad.id === placement.id));
-  }
-
   private inFeedAds(): FeedItem[] {
-    const ads: MarketingPlacement[] = [];
-    const corporate = this.corporate()[0];
-    const government = this.government()[0];
-    if (corporate) ads.push(corporate);
-    if (government) ads.push(government);
-    const extra = [...this.corporate().slice(1), ...this.government().slice(1)];
-    ads.push(...extra);
+    // Prefer the photo-ready slides so in-feed cards match the rails.
+    const slides = this.feedSlides();
+    const ads = slides.length
+      ? slides
+      : [...this.corporate().slice(0, 1), ...this.government().slice(0, 1)];
     return ads.map((placement) => ({
       kind: 'promo' as const,
       id: `promo-${placement.id}`,

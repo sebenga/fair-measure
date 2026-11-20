@@ -1,8 +1,16 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  booleanAttribute,
+  inject,
+  input,
+  output,
+} from '@angular/core';
 import { TitleCasePipe } from '@angular/common';
+import { Router } from '@angular/router';
 import { IonBadge, IonButton, IonIcon } from '@ionic/angular/standalone';
 
-import type { Competition } from '../core/models';
+import type { Competition, LiveMatchSummary } from '../core/models';
 
 export type CompetitionCardPromo = {
   kind: 'corporate' | 'government' | 'competition' | 'featured';
@@ -10,13 +18,20 @@ export type CompetitionCardPromo = {
   title: string;
 };
 
+export type CompetitionCardTab = 'feed' | 'fixtures' | 'cup' | 'standings';
+
 @Component({
   selector: 'fm-competition-card',
   standalone: true,
   imports: [TitleCasePipe, IonBadge, IonButton, IonIcon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="card" [attr.data-size]="size()" [attr.data-promo]="promo()?.kind || null">
+    <div
+      class="card"
+      [attr.data-size]="size()"
+      [attr.data-promo]="promo()?.kind || null"
+      [attr.data-shortcuts]="shortcuts() ? '' : null"
+    >
       <button type="button" class="card-main" (click)="open.emit()">
         <div class="crest" [style.background]="crestColour()">
           @if (competition().logo_url) {
@@ -31,6 +46,9 @@ export type CompetitionCardPromo = {
             <h2>{{ competition().name }}</h2>
             @if (competition().is_private) {
               <ion-icon name="lock-closed-outline" aria-label="Private" />
+            }
+            @if (liveMatches().length) {
+              <span class="live-pill" aria-label="Live matches">Live</span>
             }
           </div>
 
@@ -63,6 +81,41 @@ export type CompetitionCardPromo = {
           <ion-icon name="chevron-forward-outline" class="chevron" aria-hidden="true" />
         }
       </button>
+
+      @if (shortcuts()) {
+        <nav class="shortcuts" aria-label="Open a section">
+          @if (showsFixtures()) {
+            <button type="button" (click)="goTab('fixtures', $event)">Fixtures</button>
+          }
+          @if (showsTable()) {
+            <button type="button" (click)="goTab('standings', $event)">Table</button>
+          }
+          @if (showsCup()) {
+            <button type="button" (click)="goTab('cup', $event)">Cup</button>
+          }
+          <button type="button" (click)="goTab('feed', $event)">Feed</button>
+        </nav>
+      }
+
+      @if (shortcuts() && liveMatches().length) {
+        <div class="live-row" role="region" aria-label="Live matches">
+          @for (match of liveMatches(); track match.id) {
+            <button type="button" class="live-game" (click)="goLive(match, $event)">
+              <span class="live-pill">Live</span>
+              @if (match.sides.length >= 2) {
+                <span class="teams">
+                  <span>{{ sideName(match, 0) }}</span>
+                  <strong>{{ sideScore(match, 0) }}–{{ sideScore(match, 1) }}</strong>
+                  <span>{{ sideName(match, 1) }}</span>
+                </span>
+              } @else {
+                <span class="teams">{{ match.label || 'Match' }}</span>
+              }
+              <ion-icon name="chevron-forward-outline" aria-hidden="true" />
+            </button>
+          }
+        </div>
+      }
 
       @if (promo(); as ad) {
         <button type="button" class="promo" [attr.data-kind]="ad.kind" (click)="onPromo($event)">
@@ -243,6 +296,7 @@ export type CompetitionCardPromo = {
 
       .tags {
         display: flex;
+        flex-wrap: wrap;
         gap: 6px;
         margin-top: 8px;
 
@@ -264,6 +318,87 @@ export type CompetitionCardPromo = {
         color: var(--ion-color-medium);
         font-size: 1.1rem;
         transition: transform 0.25s var(--fm-ease-out);
+      }
+
+      .shortcuts {
+        flex: 1 1 100%;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: -2px 14px 12px;
+      }
+
+      .shortcuts button {
+        min-height: 30px;
+        padding: 0 11px;
+        border: 1px solid var(--ion-color-step-150, #e3e6eb);
+        border-radius: 999px;
+        background: var(--ion-background-color, #fff);
+        color: var(--ion-text-color);
+        font: inherit;
+        font-size: 0.78rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .live-row {
+        flex: 1 1 100%;
+        display: grid;
+        gap: 6px;
+        margin: -4px 14px 12px;
+      }
+
+      .live-game {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid rgba(var(--ion-color-danger-rgb), 0.35);
+        border-radius: 12px;
+        background: rgba(var(--ion-color-danger-rgb), 0.08);
+        color: var(--ion-text-color);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .live-game .teams {
+        flex: 1 1 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        font-size: 0.86rem;
+      }
+
+      .live-game .teams span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 8.5em;
+      }
+
+      .live-game strong {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .live-game ion-icon {
+        flex: 0 0 auto;
+        color: var(--ion-color-medium);
+      }
+
+      .live-pill {
+        flex: 0 0 auto;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: var(--ion-color-danger);
+        color: #fff;
+        font-size: 0.62rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
       }
 
       .promo {
@@ -318,13 +453,64 @@ export type CompetitionCardPromo = {
   ],
 })
 export class CompetitionCardComponent {
+  private readonly router = inject(Router);
+
   readonly competition = input.required<Competition>();
   readonly size = input<'default' | 'large'>('default');
   readonly canDelete = input(false);
+  /** Discover: jump straight into fixtures, table, cup, feed, or a live match. */
+  readonly shortcuts = input(false, { transform: booleanAttribute });
   readonly promo = input<CompetitionCardPromo | null>(null);
   readonly open = output<void>();
   readonly promoClick = output<void>();
   readonly deleteClick = output<void>();
+
+  liveMatches(): LiveMatchSummary[] {
+    return this.competition().live_matches ?? [];
+  }
+
+  showsFixtures(): boolean {
+    return this.competition().scoring_basis !== 'criteria';
+  }
+
+  showsTable(): boolean {
+    return this.competition().format !== 'knockout';
+  }
+
+  showsCup(): boolean {
+    const format = this.competition().format;
+    return format === 'league' || format === 'league_knockout' || format === 'group_knockout';
+  }
+
+  goTab(tab: CompetitionCardTab, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    void this.router.navigate(['/tabs/competitions', this.competition().id], {
+      queryParams: { tab },
+    });
+  }
+
+  goLive(match: LiveMatchSummary, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    void this.router.navigate([
+      '/tabs/competitions',
+      this.competition().id,
+      'fixtures',
+      match.id,
+    ]);
+  }
+
+  sideName(match: LiveMatchSummary, index: number): string {
+    const side = [...match.sides].sort((a, b) => a.position - b.position)[index];
+    return side?.short_name || side?.name || 'TBC';
+  }
+
+  sideScore(match: LiveMatchSummary, index: number): string {
+    const side = [...match.sides].sort((a, b) => a.position - b.position)[index];
+    const value = Number(side?.score ?? 0);
+    return Number.isFinite(value) ? String(value) : String(side?.score ?? '0');
+  }
 
   onPromo(event: Event): void {
     event.preventDefault();

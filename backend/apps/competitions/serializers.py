@@ -1044,6 +1044,21 @@ class MembershipSerializer(serializers.ModelSerializer):
         return value
 
 
+class LiveMatchSideSerializer(serializers.Serializer):
+    """Compact side for Discover / list cards — name and score only."""
+
+    name = serializers.CharField()
+    short_name = serializers.CharField()
+    score = serializers.CharField()
+    position = serializers.IntegerField()
+
+
+class LiveMatchCardSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    label = serializers.CharField()
+    sides = LiveMatchSideSerializer(many=True)
+
+
 class CompetitionListSerializer(serializers.ModelSerializer):
     owner = UserSummarySerializer(read_only=True)
     participant_count = serializers.IntegerField(read_only=True)
@@ -1051,6 +1066,8 @@ class CompetitionListSerializer(serializers.ModelSerializer):
     scoring_basis = serializers.SerializerMethodField()
     is_demo = serializers.SerializerMethodField()
     demo_expires_at = serializers.SerializerMethodField()
+    live_count = serializers.SerializerMethodField()
+    live_matches = serializers.SerializerMethodField()
 
     class Meta:
         model = Competition
@@ -1075,6 +1092,8 @@ class CompetitionListSerializer(serializers.ModelSerializer):
             "scoring_basis",
             "is_demo",
             "demo_expires_at",
+            "live_count",
+            "live_matches",
             "created_at",
         ]
 
@@ -1101,6 +1120,38 @@ class CompetitionListSerializer(serializers.ModelSerializer):
 
         when = demo_expires_at(obj)
         return when.isoformat() if when is not None else None
+
+    def get_live_count(self, obj: Competition) -> int:
+        if hasattr(obj, "live_count"):
+            return int(obj.live_count or 0)
+        rows = getattr(obj, "_live_fixtures", None)
+        return len(rows) if rows is not None else 0
+
+    def get_live_matches(self, obj: Competition) -> list[dict]:
+        rows = getattr(obj, "_live_fixtures", None)
+        if not rows:
+            return []
+        payload = []
+        for fixture in rows[:3]:
+            sides = sorted(fixture.sides.all(), key=lambda side: side.position)
+            payload.append(
+                {
+                    "id": fixture.id,
+                    "label": fixture.label,
+                    "sides": [
+                        {
+                            "name": side.participant.name,
+                            "short_name": side.participant.short_name or side.participant.name,
+                            "score": format(side.score.normalize(), "f")
+                            if hasattr(side.score, "normalize")
+                            else str(side.score),
+                            "position": side.position,
+                        }
+                        for side in sides
+                    ],
+                }
+            )
+        return LiveMatchCardSerializer(payload, many=True).data
 
 
 class CompetitionDetailSerializer(CompetitionListSerializer):
