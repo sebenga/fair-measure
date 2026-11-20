@@ -395,7 +395,7 @@ export class MatchCentreComponent implements OnInit {
     forkJoin({
       live: this.api.listFixtures(id, { status: 'live', page_size: 10 }).pipe(catchError(() => none)),
       recent: this.api
-        .listFixtures(id, { status: 'completed', ordering: '-scheduled_at', page_size: 5 })
+        .listFixtures(id, { status: 'confirmed', ordering: '-scheduled_at', page_size: 5 })
         .pipe(catchError(() => none)),
       upcoming: this.api
         .listFixtures(id, { status: 'scheduled', page_size: 1 })

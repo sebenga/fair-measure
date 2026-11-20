@@ -152,6 +152,8 @@ class ScoreEventSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at"]
 
     def get_player_user_id(self, obj: ScoreEvent):
+        if obj.player_user_id:
+            return obj.player_user_id
         player = getattr(obj, "player", None)
         if player is None or player.user_id is None:
             return None
@@ -236,6 +238,13 @@ class ScoreEventSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"minutes": "Minutes belong to the profile who played."}
             )
+        source = attrs.get("source") or ScoreEvent.Source.REFEREE
+        if source == ScoreEvent.Source.ADMIN_CORRECTION:
+            note = str(attrs.get("note") or "").strip()
+            if len(note) < 3:
+                raise serializers.ValidationError(
+                    {"note": "Give a reason for this admin correction."}
+                )
         return attrs
 
     def _save_minutes(self, event: ScoreEvent, minutes: int | None) -> None:
@@ -243,6 +252,12 @@ class ScoreEventSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data: dict) -> ScoreEvent:
         minutes = validated_data.pop("minutes", None)
+        player = validated_data.get("player")
+        side = validated_data.get("side")
+        if player is not None and not validated_data.get("player_user"):
+            validated_data["player_user_id"] = player.user_id
+        if side is not None and not validated_data.get("team_name"):
+            validated_data["team_name"] = side.participant.name
         event = super().create(validated_data)
         self._save_minutes(event, minutes)
         return event
@@ -419,7 +434,8 @@ class FixtureWriteSerializer(serializers.ModelSerializer):
             "notes",
             "sides",
         ]
-        read_only_fields = ["id"]
+        # Status / phase / score change only through workflow endpoints.
+        read_only_fields = ["id", "status"]
 
     def validate_duration_minutes(self, value: int | None) -> int | None:
         if value is None or value < 1:
@@ -464,14 +480,22 @@ class FixtureWriteSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance: Fixture, validated_data: dict) -> Fixture:
-        if (
-            validated_data.get("status") == Fixture.Status.COMPLETED
-            and instance.status == Fixture.Status.LIVE
-        ):
-            from .phases import assert_can_complete
-
-            assert_can_complete(instance)
+        # Ignore any client attempt to rewrite status/score via PATCH.
+        validated_data.pop("status", None)
+        validated_data.pop("phase", None)
+        if instance.status not in {
+            Fixture.Status.SCHEDULED,
+            Fixture.Status.POSTPONED,
+        }:
+            # Location / schedule edits only before kick-off.
+            validated_data.pop("scheduled_at", None)
         sides_data = validated_data.pop("sides", None)
+        # Do not let PATCH rewrite side scores or outcomes.
+        if sides_data is not None and instance.status not in {
+            Fixture.Status.SCHEDULED,
+            Fixture.Status.POSTPONED,
+        }:
+            sides_data = None
         fixture = super().update(instance, validated_data)
 
         if sides_data is not None:

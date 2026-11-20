@@ -1923,7 +1923,10 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     const event = this.lastScoreEvent(side, category, playerId);
     if (!event) return;
     const fixture = this.fixture();
-    const counted = fixture?.status === 'completed' || fixture?.status === 'forfeit';
+    const counted =
+      fixture?.status === 'confirmed' ||
+      fixture?.status === 'completed' ||
+      fixture?.status === 'forfeit';
     const official = this.competition()?.settings_json?.['official_results'] === true;
     if (counted && official) {
       await this.removeEvent(event);
@@ -2011,7 +2014,10 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   async removeEvent(event: ScoreEvent): Promise<void> {
     if (this.saving()) return;
     const fixture = this.fixture();
-    const counted = fixture?.status === 'completed' || fixture?.status === 'forfeit';
+    const counted =
+      fixture?.status === 'confirmed' ||
+      fixture?.status === 'completed' ||
+      fixture?.status === 'forfeit';
     const official = this.competition()?.settings_json?.['official_results'] === true;
     const needsReason = counted && official;
     const who = this.participantName(event);
@@ -2061,12 +2067,28 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
 
   async openStatusSheet(): Promise<void> {
     const current = this.fixture()?.status;
-    const transitions: Array<{ status: string; label: string; destructive?: boolean }> = [
-      { status: 'live', label: 'Start / mark live' },
-      { status: 'completed', label: 'Complete fixture' },
-      { status: 'scheduled', label: 'Back to scheduled' },
-      { status: 'postponed', label: 'Postpone' },
-      { status: 'cancelled', label: 'Cancel fixture', destructive: true }].filter((option) => option.status !== current);
+    const refereeRun = Boolean(
+      this.competition()?.settings_json?.['team_sheet'] ||
+        this.competition()?.sport === 'soccer' ||
+        this.competition()?.settings_json?.['preset']?.toString().startsWith('soccer'),
+    );
+    // Soccer / match-card sports: live and completed come from phase actions + confirm.
+    const transitions: Array<{ status: string; label: string; destructive?: boolean }> = (
+      refereeRun
+        ? [
+            { status: 'scheduled', label: 'Back to scheduled' },
+            { status: 'postponed', label: 'Postpone' },
+            { status: 'cancelled', label: 'Cancel fixture', destructive: true },
+            { status: 'forfeit', label: 'Forfeit' },
+          ]
+        : [
+            { status: 'live', label: 'Start / mark live' },
+            { status: 'completed', label: 'Complete fixture' },
+            { status: 'scheduled', label: 'Back to scheduled' },
+            { status: 'postponed', label: 'Postpone' },
+            { status: 'cancelled', label: 'Cancel fixture', destructive: true },
+          ]
+    ).filter((option) => option.status !== current);
 
     const sheet = await this.actionSheets.create({
       header: 'Fixture status',
@@ -2106,7 +2128,9 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
     const labels: Record<string, string> = {
       scheduled: 'Scheduled',
       live: 'Live',
-      completed: 'Full time',
+      completed: 'Awaiting referee sign-off',
+      confirmed: 'Confirmed',
+      disputed: 'Disputed',
       postponed: 'Postponed',
       cancelled: 'Cancelled',
       forfeit: 'Forfeit',

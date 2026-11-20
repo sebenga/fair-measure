@@ -297,9 +297,29 @@ class StageSerializer(serializers.ModelSerializer):
         return stage_is_finished(obj)
 
     def get_champion(self, obj: Stage) -> str | None:
-        """The team on top of a finished league season's table."""
+        """League: top of table. Knockout: winner of the final (by outcome)."""
 
-        if obj.kind != Stage.Kind.LEAGUE or not self.get_finished(obj):
+        if not self.get_finished(obj):
+            return None
+        if obj.kind == Stage.Kind.KNOCKOUT:
+            from apps.fixtures.counted import counted_statuses
+            from apps.fixtures.models import Fixture, FixtureSide
+
+            final = (
+                Fixture.objects.filter(
+                    stage=obj,
+                    status__in=counted_statuses(obj.competition),
+                )
+                .order_by("-round_number", "-created_at")
+                .first()
+            )
+            if final is None:
+                return None
+            winner = final.sides.filter(outcome=FixtureSide.Outcome.WIN).select_related(
+                "participant"
+            ).first()
+            return winner.participant.name if winner else None
+        if obj.kind != Stage.Kind.LEAGUE:
             return None
         from apps.standings.models import StandingRow
 

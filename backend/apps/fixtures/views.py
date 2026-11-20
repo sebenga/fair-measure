@@ -361,6 +361,9 @@ class FixtureViewSet(viewsets.ModelViewSet):
             else:
                 created = generate_round_robin(competition, participants, options)
 
+        from apps.competitions.season import maybe_activate_competition
+
+        maybe_activate_competition(competition)
         publish_event(
             "fixtures.generated",
             {"competition_id": str(competition.id), "count": len(created)},
@@ -392,6 +395,9 @@ class FixtureViewSet(viewsets.ModelViewSet):
     def set_status(self, request: Request, **kwargs) -> Response:
         from apps.results.services import is_official
 
+        from .counted import requires_match_card
+        from .officials import log_match_action
+
         fixture = self.get_object()
         if not is_official(fixture.competition, request.user):
             self._assert_can_score()
@@ -399,13 +405,62 @@ class FixtureViewSet(viewsets.ModelViewSet):
         serializer = FixtureStatusSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         new_status = serializer.validated_data["status"]
+        reason = str(request.data.get("reason") or request.data.get("amendment_reason") or "").strip()
+
+        if requires_match_card(fixture.competition):
+            # Live / completed / confirmed come from phase actions and confirm only.
+            admin_states = {
+                Fixture.Status.POSTPONED,
+                Fixture.Status.CANCELLED,
+                Fixture.Status.FORFEIT,
+            }
+            if new_status in {
+                Fixture.Status.LIVE,
+                Fixture.Status.COMPLETED,
+                Fixture.Status.CONFIRMED,
+            }:
+                raise ValidationError(
+                    {
+                        "status": (
+                            "Use the match phase actions for kick-off and full time, "
+                            "and confirm for referee sign-off."
+                        )
+                    }
+                )
+            if new_status == Fixture.Status.SCHEDULED:
+                if fixture.status != Fixture.Status.POSTPONED:
+                    raise ValidationError(
+                        {"status": "Only a postponed match can return to scheduled."}
+                    )
+            elif new_status not in admin_states:
+                raise ValidationError({"status": "That status change is not allowed."})
+            if new_status in admin_states and not reason:
+                raise ValidationError({"reason": "Give a reason for this status change."})
+            if new_status == Fixture.Status.FORFEIT:
+                winner = request.data.get("forfeit_winner") or request.data.get("winner")
+                if not winner:
+                    raise ValidationError(
+                        {"forfeit_winner": "Name which side wins the forfeit."}
+                    )
+
         if new_status == Fixture.Status.LIVE and fixture.status == Fixture.Status.SCHEDULED:
             _assert_ready_for_kickoff(fixture)
         if new_status == Fixture.Status.COMPLETED and fixture.status == Fixture.Status.LIVE:
             from .phases import assert_can_complete
 
             assert_can_complete(fixture)
+
+        before = fixture.status
         self._change_status(fixture, request, new_status)
+        if requires_match_card(fixture.competition) and before != new_status:
+            log_match_action(
+                fixture=fixture,
+                user=request.user,
+                action="match.status_changed",
+                detail=reason or f"{before} → {new_status}",
+                payload={"from": before, "to": new_status, "reason": reason},
+                source="admin",
+            )
         return Response(FixtureDetailSerializer(fixture).data)
 
     def _change_status(self, fixture: Fixture, request: Request, new_status: str) -> None:
@@ -447,11 +502,17 @@ class FixtureViewSet(viewsets.ModelViewSet):
             if new_status in {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT}:
                 fixture.completed_at = timezone.now()
                 fixture.recalculate_scores()
-                # Phase 1: auto sign-off so standings and season close keep working.
-                # Phase 2 replaces this with an explicit referee match-card action
-                # that moves status to confirmed.
-                fixture.confirmed_at = timezone.now()
-                fixture.confirmed_by = request.user
+                from .counted import requires_match_card
+
+                if new_status == Fixture.Status.FORFEIT or not requires_match_card(
+                    fixture.competition
+                ):
+                    # Forfeits and non-match-card sports finalise immediately.
+                    # Team-sheet sports wait for the referee's confirm action.
+                    fixture.confirmed_at = timezone.now()
+                    fixture.confirmed_by = request.user
+                    if new_status == Fixture.Status.FORFEIT:
+                        fixture.status = Fixture.Status.FORFEIT
             fixture.save(
                 update_fields=[
                     "status",
@@ -486,8 +547,10 @@ class FixtureViewSet(viewsets.ModelViewSet):
 
         self._broadcast(fixture, f"fixture.{new_status}")
         if new_status == Fixture.Status.LIVE:
+            from apps.competitions.season import maybe_activate_competition
             from apps.social.live import publish_kickoff
 
+            maybe_activate_competition(fixture.competition)
             publish_kickoff(fixture)
         if (
             new_status
@@ -588,25 +651,39 @@ class FixtureViewSet(viewsets.ModelViewSet):
     )
     @action(detail=True, methods=["post"], url_path="confirm")
     def confirm(self, request: Request, **kwargs) -> Response:
+        from .counted import requires_match_card
         from .officials import accepted_referee, log_match_action
+        from .phases import FULL_TIME, PENALTIES, shootout_winner
 
         fixture = self.get_object()
         referee = accepted_referee(fixture)
         is_ref = referee is not None and referee.user_id == request.user.id
-        if not is_ref and not has_at_least(fixture.competition, request.user, Role.ADMIN):
-            raise PermissionDenied("Only the accepted referee (or an admin stand-in) can sign the match card.")
+        # Confirm is the referee's digital signature — not an admin shortcut.
+        if requires_match_card(fixture.competition):
+            if not is_ref:
+                raise PermissionDenied(
+                    "Only the accepted referee can sign the match card."
+                )
+        elif not is_ref and not has_at_least(fixture.competition, request.user, Role.ADMIN):
+            raise PermissionDenied(
+                "Only the accepted referee (or an admin stand-in) can sign the match card."
+            )
         notes = str(request.data.get("notes") or "").strip()
         with transaction.atomic():
             fixture = Fixture.objects.select_for_update().get(pk=fixture.pk)
-            if fixture.status not in {
-                Fixture.Status.COMPLETED,
-                Fixture.Status.LIVE,
-                Fixture.Status.CONFIRMED,
-            }:
+            if fixture.status == Fixture.Status.CONFIRMED:
+                return Response(FixtureDetailSerializer(fixture).data)
+            if fixture.status != Fixture.Status.COMPLETED:
                 raise ValidationError({"status": "Confirm the match after full time."})
-            if fixture.status == Fixture.Status.LIVE:
-                fixture.phase = "full_time"
-                fixture.completed_at = timezone.now()
+            phase = (fixture.phase or "").strip()
+            if phase == PENALTIES and shootout_winner(fixture) is None:
+                raise ValidationError(
+                    {"status": "The penalty shootout is not decided yet."}
+                )
+            if phase and phase not in {FULL_TIME, PENALTIES, ""}:
+                raise ValidationError({"status": "Confirm the match after full time."})
+            if not phase:
+                fixture.phase = FULL_TIME
             fixture.mark_confirmed(user=request.user, notes=notes)
             log_match_action(
                 fixture=fixture,

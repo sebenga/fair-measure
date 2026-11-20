@@ -141,8 +141,15 @@ SOCCER: Preset = {
         {"key": "penalty-missed", "label": "Penalty missed", "value": 0, "affects_score": False},
         {"key": "assist", "label": "Assist", "value": 0, "affects_score": False},
         YELLOW_CARD,
-        {"key": "second-yellow", "label": "Second yellow", "value": 0, "affects_score": False},
-        RED_CARD,
+        {
+            "key": "second-yellow",
+            "label": "Second yellow",
+            "value": 0,
+            "affects_score": False,
+            "sends_off": True,
+            "ban_matches": 1,
+        },
+        {**RED_CARD, "sends_off": True, "ban_matches": 1},
         {"key": "substitution", "label": "Substitution", "value": 0, "affects_score": False},
         {"key": "offside", "label": "Offside", "value": 0, "affects_score": False},
         {"key": "foul", "label": "Foul", "value": 0, "affects_score": False},
@@ -194,6 +201,9 @@ SOCCER: Preset = {
         "yellow_threshold": 5,
         "yellow_ban_matches": 1,
         "red_ban_matches": 1,
+        "second_yellow_ban_matches": 1,
+        "carry_suspensions_across_seasons": True,
+        "dispute_window_hours": 24,
     },
     "rules": [
         {

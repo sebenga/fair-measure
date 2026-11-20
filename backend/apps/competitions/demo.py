@@ -1140,15 +1140,27 @@ def _play_past_fixtures(
                         recorded_by=actor,
                     )
                 )
-        fixture.status = Fixture.Status.COMPLETED
+        from apps.fixtures.counted import requires_match_card
+
+        # Soccer demos need confirmed match cards so the table and season close.
+        done = (
+            Fixture.Status.CONFIRMED
+            if requires_match_card(fixture.competition)
+            else Fixture.Status.COMPLETED
+        )
+        fixture.status = done
         fixture.started_at = fixture.scheduled_at
         fixture.completed_at = fixture.scheduled_at + timedelta(minutes=95)
+        if done == Fixture.Status.CONFIRMED:
+            fixture.confirmed_at = fixture.completed_at
         fixture.updated_at = now
         finished.append(fixture)
     ScoreEvent.objects.bulk_create(goals, batch_size=500)
     if finished:
         Fixture.objects.bulk_update(
-            finished, ["status", "started_at", "completed_at", "updated_at"], batch_size=200
+            finished,
+            ["status", "started_at", "completed_at", "confirmed_at", "updated_at"],
+            batch_size=200,
         )
         for fixture in finished:
             fixture.recalculate_scores()
@@ -1689,13 +1701,23 @@ def _shootout_kicks(fixture: Fixture, rng, pattern: list[tuple[bool, bool]]) -> 
 
 
 def _finish(fixture: Fixture, kickoff) -> None:
-    fixture.status = Fixture.Status.COMPLETED
+    from apps.fixtures.counted import requires_match_card
+    from django.utils import timezone as tz
+
+    done = (
+        Fixture.Status.CONFIRMED
+        if requires_match_card(fixture.competition)
+        else Fixture.Status.COMPLETED
+    )
+    fixture.status = done
     fixture.phase = "full_time"
     fixture.started_at = kickoff
     fixture.completed_at = kickoff + timedelta(minutes=110)
-    fixture.save(
-        update_fields=["status", "phase", "shootout", "started_at", "completed_at", "updated_at"]
-    )
+    fields = ["status", "phase", "shootout", "started_at", "completed_at", "updated_at"]
+    if done == Fixture.Status.CONFIRMED:
+        fixture.confirmed_at = fixture.completed_at or tz.now()
+        fields.append("confirmed_at")
+    fixture.save(update_fields=fields)
     fixture.recalculate_scores()
 
 

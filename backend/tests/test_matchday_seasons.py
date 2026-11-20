@@ -42,11 +42,27 @@ def _roster(team: Participant, count: int, start: int = 1) -> list[RosterMember]
 
 
 def _appoint_ref(api, competition, fixture, user) -> None:
-    FixtureReferee.objects.get_or_create(fixture=fixture, user=user)
+    FixtureReferee.objects.update_or_create(
+        fixture=fixture,
+        user=user,
+        defaults={
+            "role": FixtureReferee.Role.REFEREE,
+            "status": FixtureReferee.Status.ACCEPTED,
+        },
+    )
     # Kickoff needs a duration; presets set it on create.
     if not fixture.duration_minutes:
         fixture.duration_minutes = 90
         fixture.save(update_fields=["duration_minutes", "updated_at"])
+
+
+def _kick_off(api, competition, fixture):
+    base = f"/api/v1/competitions/{competition.id}/fixtures/{fixture.id}"
+    fixture.refresh_from_db()
+    if fixture.status != Fixture.Status.SCHEDULED:
+        return
+    kicked = api.post(f"{base}/phase", {"action": "kick_off"}, format="json")
+    assert kicked.status_code == 200, kicked.data
 
 
 def _submit_sheets(
@@ -136,16 +152,26 @@ def _event(api, fixture, side, category, player, *, minute=10, quantity="1", sou
 
 
 def _complete(api, competition, fixture):
-    response = api.post(
-        f"/api/v1/competitions/{competition.id}/fixtures/{fixture.id}/set-status",
-        {"status": "completed"},
-        format="json",
-    )
-    assert response.status_code == 200, response.data
+    """End the match through phases and referee confirm so the result counts."""
+
+    base = f"/api/v1/competitions/{competition.id}/fixtures/{fixture.id}"
+    _kick_off(api, competition, fixture)
     fixture.refresh_from_db()
-    assert fixture.status == Fixture.Status.COMPLETED
+    if fixture.phase == "first_half":
+        ended = api.post(f"{base}/phase", {"action": "end_half"}, format="json")
+        assert ended.status_code == 200, ended.data
+        second = api.post(f"{base}/phase", {"action": "start_second_half"}, format="json")
+        assert second.status_code == 200, second.data
+    fixture.refresh_from_db()
+    if fixture.phase == "second_half":
+        full = api.post(f"{base}/phase", {"action": "end_game"}, format="json")
+        assert full.status_code == 200, full.data
+    confirmed = api.post(f"{base}/confirm", {}, format="json")
+    assert confirmed.status_code == 200, confirmed.data
+    fixture.refresh_from_db()
+    assert fixture.status == Fixture.Status.CONFIRMED
     assert fixture.confirmed_at is not None
-    return response
+    return confirmed
 
 
 def test_soccer_label_and_search_aliases(api):
@@ -252,6 +278,7 @@ def test_soccer_double_round_robin_standings_from_events(api, user):
         winner_name = winners[pair]
         winner = home if home.participant.name == winner_name else away
         loser = away if winner is home else home
+        _kick_off(api, competition, fixture)
         goal = _event(
             api,
             fixture,
@@ -320,6 +347,7 @@ def test_rugby_union_bonus_points_and_sin_bin(api, user):
     away = fixture.sides.exclude(pk=home.pk).get()
     home_players = list(home.participant.roster.order_by("number"))
     away_players = list(away.participant.roster.order_by("number"))
+    _kick_off(api, competition, fixture)
 
     for index in range(4):
         scored = _event(
@@ -397,6 +425,7 @@ def test_rugby_union_bonus_points_and_sin_bin(api, user):
         _appoint_ref(api, competition, other, user)
         scorers = _submit_sheets(api, competition, other, starters=15, named=17, formation="numbers")
         side = other.sides.order_by("position").first()
+        _kick_off(api, competition, other)
         scored = _event(api, other, side, codes["try"], scorers[side.participant_id], minute=20)
         assert scored.status_code == 201, scored.data
         _complete(api, competition, other)

@@ -193,10 +193,12 @@ def _attach_unit_tiebreakers(rows: dict[str, Row], competition: Competition) -> 
     lowest = settings.get("accumulation_ranking") == "lowest_first" or settings.get(
         "win_condition"
     ) in {"lowest_total", "count_down_to_zero"}
+    from apps.fixtures.counted import counted_statuses
+
     events = list(
         ScoreEvent.objects.filter(
             fixture__competition=competition,
-            fixture__status__in=[Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED, Fixture.Status.FORFEIT],
+            fixture__status__in=counted_statuses(competition),
         ).select_related("side", "scoring_category", "fixture")
     )
     by_fixture: dict[str, list] = defaultdict(list)
@@ -507,10 +509,12 @@ def criteria_breakdown(competition: Competition) -> dict[str, list[dict]]:
     those points were logged.
     """
 
+    from apps.fixtures.counted import counted_statuses
+
     events = (
         ScoreEvent.objects.filter(
             fixture__competition=competition,
-            fixture__status__in=[Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED, Fixture.Status.FORFEIT],
+            fixture__status__in=counted_statuses(competition),
             scoring_category__affects_score=True,
         )
         .select_related("scoring_category", "side__participant")
@@ -629,17 +633,12 @@ def compute_standings(competition: Competition, stage: Stage | None = None) -> l
     for participant in participants:
         rows[str(participant.id)] = Row(participant_id=str(participant.id), name=participant.name)
 
-    fixtures = (
-        Fixture.objects.filter(
-            competition=competition,
-            status__in=[Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED, Fixture.Status.FORFEIT],
-        )
-        .prefetch_related("sides__participant", "events__scoring_category")
-        .order_by("scheduled_at", "created_at")
-    )
-    if stage is not None:
-        fixtures = fixtures.filter(stage=stage)
-    elif competition.format == Competition.Format.LEAGUE_KNOCKOUT:
+    from apps.fixtures.counted import counted_fixtures
+
+    fixtures = counted_fixtures(competition, stage).prefetch_related(
+        "sides__participant", "events__scoring_category"
+    ).order_by("scheduled_at", "created_at")
+    if stage is None and competition.format == Competition.Format.LEAGUE_KNOCKOUT:
         fixtures = fixtures.exclude(stage__kind=Stage.Kind.KNOCKOUT)
 
     form_by_participant: dict[str, list[str]] = defaultdict(list)

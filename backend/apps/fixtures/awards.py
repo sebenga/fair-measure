@@ -146,47 +146,92 @@ class FixtureAwardsView(APIView):
         return Response({"awards": _award_rows(fixture), "can_award": True})
 
 
-def player_stats(competition) -> dict:
-    """Season totals per player for the columns the preset names."""
+DEFAULT_EVENT_COLUMNS = [
+    {"key": "goals", "label": "Goals", "codes": ["goal", "penalty-goal"]},
+    {"key": "penalty_goals", "label": "Penalty goals", "codes": ["penalty-goal"]},
+    {"key": "own_goals", "label": "Own goals", "codes": ["own-goal"]},
+    {"key": "yellow_cards", "label": "Yellow cards", "codes": ["yellow-card"]},
+    {"key": "red_cards", "label": "Red cards", "codes": ["red-card", "second-yellow"]},
+]
 
-    columns = list((competition.settings_json or {}).get("player_stats") or [])
-    counted = [Fixture.Status.COMPLETED, Fixture.Status.FORFEIT]
+
+def _stats_columns(competition) -> list[dict]:
+    configured = list((competition.settings_json or {}).get("player_stats") or [])
+    if configured:
+        return configured
+    codes = {
+        item.get("key") or item.get("code")
+        for item in ((competition.settings_json or {}).get("score_types") or [])
+        if isinstance(item, dict)
+    }
+    if not codes:
+        codes = set(competition.scoring_categories.values_list("code", flat=True))
+    return [
+        column
+        for column in DEFAULT_EVENT_COLUMNS
+        if any(code in codes for code in column["codes"])
+    ]
+
+
+def player_stats(competition, stage=None) -> dict:
+    """Totals per player from counted match events (default: current stage)."""
+
+    from .counted import counted_statuses
+
+    columns = _stats_columns(competition)
+    statuses = counted_statuses(competition)
     rows: dict = {}
 
-    def row_for(member: RosterMember) -> dict:
+    def row_for(*, member: RosterMember | None = None, user_id=None, name="", team="") -> dict:
+        key = str(member.id) if member is not None else f"user:{user_id}:{name}"
         return rows.setdefault(
-            member.id,
+            key,
             {
-                "player_id": str(member.id),
-                "user_id": str(member.user_id) if member.user_id else None,
-                "name": member.name,
-                "team": member.participant.name,
+                "player_id": str(member.id) if member is not None else None,
+                "user_id": str(user_id or (member.user_id if member else "") or "") or None,
+                "name": name or (member.name if member else ""),
+                "team": team or (member.participant.name if member else ""),
                 "values": defaultdict(Decimal),
             },
         )
 
-    codes = {code: column["key"] for column in columns for code in column.get("codes") or []}
+    codes = {code for column in columns for code in column.get("codes") or []}
     if codes:
         events = ScoreEvent.objects.filter(
             fixture__competition=competition,
-            fixture__status__in=counted,
-            player__isnull=False,
+            fixture__status__in=statuses,
             scoring_category__code__in=list(codes),
-        ).select_related("player__participant", "scoring_category")
+        ).select_related(
+            "player__participant", "player_user", "scoring_category", "side__participant"
+        )
+        if stage is not None:
+            events = events.filter(fixture__stage=stage)
         for event in events:
+            member = event.player
+            team = event.team_name or (
+                event.side.participant.name if event.side_id else ""
+            )
+            name = event.player_name or (member.name if member else "")
+            user_id = event.player_user_id or (member.user_id if member else None)
+            if member is None and not user_id and not name:
+                continue
+            bucket = row_for(member=member, user_id=user_id, name=name, team=team)
             for column in columns:
                 if event.scoring_category.code in (column.get("codes") or []):
-                    row_for(event.player)["values"][column["key"]] += Decimal(event.quantity)
+                    bucket["values"][column["key"]] += Decimal(event.quantity)
 
     awards = {column["award"]: column["key"] for column in columns if column.get("award")}
     if awards:
-        for award in FixtureAward.objects.filter(
+        award_qs = FixtureAward.objects.filter(
             fixture__competition=competition,
-            fixture__status__in=counted,
+            fixture__status__in=statuses,
             key__in=list(awards),
             player__isnull=False,
-        ).select_related("player__participant"):
-            row_for(award.player)["values"][awards[award.key]] += 1
+        ).select_related("player__participant")
+        if stage is not None:
+            award_qs = award_qs.filter(fixture__stage=stage)
+        for award in award_qs:
+            row_for(member=award.player)["values"][awards[award.key]] += 1
 
     ordered = sorted(
         rows.values(),
@@ -197,9 +242,11 @@ def player_stats(competition) -> dict:
         "columns": [{"key": column["key"], "label": column["label"]} for column in columns],
         "rows": [
             {
-                **row,
+                **{k: v for k, v in row.items() if k != "values"},
                 "values": {
-                    column["key"]: format(row["values"].get(column["key"], Decimal(0)).normalize(), "f")
+                    column["key"]: format(
+                        row["values"].get(column["key"], Decimal(0)).normalize(), "f"
+                    )
                     for column in columns
                 },
             }
@@ -213,5 +260,16 @@ class PlayerStatsView(APIView):
 
     @extend_schema(tags=TAG, summary="Season player stats the preset keeps", responses=dict)
     def get(self, request: Request, competition_pk) -> Response:
+        from apps.competitions.models import Stage
+
+        from .counted import current_stage
+
         competition = get_object_or_404(visible_competitions(request.user), pk=competition_pk)
-        return Response(player_stats(competition))
+        stage_param = request.query_params.get("stage")
+        if stage_param == "all":
+            stage = None
+        elif stage_param:
+            stage = get_object_or_404(Stage, pk=stage_param, competition=competition)
+        else:
+            stage = current_stage(competition)
+        return Response(player_stats(competition, stage))

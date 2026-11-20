@@ -4,6 +4,7 @@ import {
   DestroyRef,
   OnDestroy,
   OnInit,
+  computed,
   inject,
   signal,
   viewChild,
@@ -68,8 +69,10 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
         </ion-buttons>
         <div class="title-cluster" slot="start">
           <span class="name">{{ competition()?.name ?? 'Competition' }}</span>
-          @if (realtime.connected()) {
-            <span class="fm-live" title="Live updates on">Live</span>
+          @if (hasLiveMatch()) {
+            <span class="fm-live" title="A match is live">Live</span>
+          } @else if (competition()?.status === 'active') {
+            <span class="fm-live fm-active" title="Competition is active">Active</span>
           }
         </div>
         <ion-buttons slot="end">
@@ -607,6 +610,8 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   readonly error = signal<string | null>(null);
   readonly tab = signal<Tab>('feed');
   readonly scheduling = signal(false);
+
+  readonly hasLiveMatch = computed(() => (this.competition()?.live_count ?? 0) > 0);
 
   ngOnInit(): void {
     this.competitionId = this.route.snapshot.paramMap.get('id') ?? '';

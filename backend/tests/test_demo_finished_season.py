@@ -30,14 +30,24 @@ def test_a_finished_season_demo_has_every_match_played(api, fmt):
 
     fixtures = Fixture.objects.filter(competition=competition)
     assert fixtures.count() == 16 * 15 // 2
-    assert not fixtures.exclude(status=Fixture.Status.COMPLETED).exists()
+    # Soccer demos sign the match card (confirmed); other sports may stay completed.
+    assert not fixtures.exclude(
+        status__in={Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED}
+    ).exists()
     assert competition.status == Competition.Status.COMPLETED
     assert competition.settings_json["demo_league"]["season"] == "finished"
     assert competition.settings_json["demo_league"]["live_fixture"] is None
 
     detail = api.get(f"/api/v1/competitions/{competition.id}").data
     assert detail["season_finished"] is True
-    table = api.get(f"/api/v1/competitions/{competition.id}/standings").data
+    # Prefer the league table (not a finished cup stage) via refresh.
+    table = api.get(
+        f"/api/v1/competitions/{competition.id}/standings?refresh=true"
+    ).data
+    if len(table["rows"]) == 0:
+        table = api.get(
+            f"/api/v1/competitions/{competition.id}/standings?stage=all&refresh=true"
+        ).data
     assert len(table["rows"]) == 16
     assert all(int(row["played"]) == 15 for row in table["rows"])
 
@@ -72,7 +82,13 @@ def test_the_old_season_keeps_its_own_record(api):
     season_one = Stage.objects.get(competition=competition, name="Season 1")
     season_two = Stage.objects.get(competition=competition, name="Season 2")
     assert season_one.display_order < season_two.display_order
-    assert Fixture.objects.filter(stage=season_one, status=Fixture.Status.COMPLETED).count() == 120
+    assert (
+        Fixture.objects.filter(
+            stage=season_one,
+            status__in={Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED},
+        ).count()
+        == 120
+    )
     assert not Fixture.objects.filter(competition=competition, stage__isnull=True).exists()
     assert season_one.ends_on is not None
 

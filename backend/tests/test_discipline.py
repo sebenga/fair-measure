@@ -10,7 +10,9 @@ from apps.fixtures.models import Fixture, FixtureSide
 
 
 @pytest.fixture
-def league(api):
+def league(api, user):
+    from apps.fixtures.models import FixtureReferee
+
     created = api.post(
         "/api/v1/competitions",
         {"name": "Discipline league", "preset": "soccer", "format": "league"},
@@ -22,7 +24,7 @@ def league(api):
     player = RosterMember.objects.create(participant=home, name="Booked", number=4)
     squad = [player] + [
         RosterMember.objects.create(participant=home, name=f"Mate {index}", number=index)
-        for index in range(5, 16)
+        for index in range(5, 19)
     ]
     away_squad = [
         RosterMember.objects.create(participant=away, name=f"Away {index}", number=index)
@@ -33,6 +35,12 @@ def league(api):
     )
     first_home = FixtureSide.objects.create(fixture=first, participant=home, position=0)
     FixtureSide.objects.create(fixture=first, participant=away, position=1)
+    FixtureReferee.objects.create(
+        fixture=first,
+        user=user,
+        role=FixtureReferee.Role.REFEREE,
+        status=FixtureReferee.Status.ACCEPTED,
+    )
     second = Fixture.objects.create(
         competition=competition, label="Round 2", status=Fixture.Status.SCHEDULED, duration_minutes=90
     )
@@ -49,6 +57,7 @@ def league(api):
         "first_home": first_home,
         "second": second,
         "second_home": second_home,
+        "user": user,
     }
 
 
@@ -72,7 +81,7 @@ def _card(api, fixture, side, player, category, minute):
 
 
 def _complete(fixture):
-    fixture.status = Fixture.Status.COMPLETED
+    fixture.status = Fixture.Status.CONFIRMED
     fixture.save(update_fields=["status", "updated_at"])
     sync_roster_discipline(fixture)
     return fixture
@@ -140,6 +149,8 @@ def test_five_yellow_cards_suspend_for_next_match(api, league):
             fixture = league["first"]
             side = league["first_home"]
         else:
+            from apps.fixtures.models import FixtureReferee
+
             fixture = Fixture.objects.create(
                 competition=competition,
                 label=f"Caution round {round_number}",
@@ -148,6 +159,12 @@ def test_five_yellow_cards_suspend_for_next_match(api, league):
             )
             side = FixtureSide.objects.create(fixture=fixture, participant=home, position=0)
             FixtureSide.objects.create(fixture=fixture, participant=away, position=1)
+            FixtureReferee.objects.create(
+                fixture=fixture,
+                user=league["user"],
+                role=FixtureReferee.Role.REFEREE,
+                status=FixtureReferee.Status.ACCEPTED,
+            )
         assert _card(api, fixture, side, player, codes["yellow-card"], 20).status_code == 201
         _complete(fixture)
 
@@ -159,7 +176,9 @@ def test_five_yellow_cards_suspend_for_next_match(api, league):
     )
     FixtureSide.objects.create(fixture=next_match, participant=home, position=0)
     FixtureSide.objects.create(fixture=next_match, participant=away, position=1)
-    last = Fixture.objects.filter(competition=competition, status=Fixture.Status.COMPLETED).latest("created_at")
+    last = Fixture.objects.filter(competition=competition, status=Fixture.Status.CONFIRMED).latest(
+        "created_at"
+    )
     sync_roster_discipline(last)
 
     player.refresh_from_db()

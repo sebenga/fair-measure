@@ -35,11 +35,19 @@ class StandingsView(APIView):
         responses={200: StandingRowSerializer(many=True)},
     )
     def get(self, request: Request, competition_pk: str) -> Response:
+        from apps.fixtures.counted import current_stage
+
         competition = get_object_or_404(visible_competitions(request.user), pk=competition_pk)
 
+        stage_param = request.query_params.get("stage")
         stage = None
-        if stage_id := request.query_params.get("stage"):
-            stage = get_object_or_404(Stage, pk=stage_id, competition=competition)
+        if stage_param == "all":
+            stage = None  # combined across seasons
+        elif stage_param:
+            stage = get_object_or_404(Stage, pk=stage_param, competition=competition)
+        else:
+            # Default: the current (latest unfinished) season — not all seasons.
+            stage = current_stage(competition)
 
         rows = StandingRow.objects.filter(competition=competition, stage=stage).select_related(
             "participant"

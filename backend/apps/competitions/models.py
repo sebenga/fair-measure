@@ -461,6 +461,11 @@ class RosterMember(BaseModel):
         related_name="roster_entries",
     )
     is_active = models.BooleanField(default=True)
+    left_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_("When the player left this squad. Soft-delete keeps match history."),
+    )
     availability = models.CharField(
         max_length=12,
         choices=Availability.choices,

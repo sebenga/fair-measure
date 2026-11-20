@@ -812,8 +812,16 @@ class RosterMemberViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance) -> None:
+        """Soft-delete so past match events keep their player / team attribution."""
+
+        from django.utils import timezone
+
         self._assert_can_write()
-        instance.delete()
+        if not instance.is_active:
+            return
+        instance.is_active = False
+        instance.left_at = timezone.now()
+        instance.save(update_fields=["is_active", "left_at", "updated_at"])
 
 
 @extend_schema_view(
@@ -968,35 +976,86 @@ class PlayerLeagueProfileView(APIView):
 
     @extend_schema(tags=["Competitions"], summary="A profile's bio, league stats and timeline")
     def get(self, request: Request, competition_pk, user_pk) -> Response:
+        from django.db.models import Q
+
         competition = get_object_or_404(visible_competitions(request.user), pk=competition_pk)
         person = get_object_or_404(User, pk=user_pk, is_active=True)
         roster = (
-            RosterMember.objects.filter(participant__competition=competition, user=person)
+            RosterMember.objects.filter(
+                participant__competition=competition, user=person, is_active=True
+            )
             .select_related("participant")
             .first()
         )
         events = list(
-            ScoreEvent.objects.filter(fixture__competition=competition, player__user=person)
-            .select_related("scoring_category", "fixture", "side__participant")
+            ScoreEvent.objects.filter(fixture__competition=competition)
+            .filter(Q(player_user=person) | Q(player__user=person))
+            .select_related(
+                "scoring_category", "fixture", "fixture__stage", "side__participant"
+            )
             .order_by("-created_at")
         )
         ratings = PlayerMatchRating.objects.filter(
             fixture__competition=competition, player__user=person
         ).select_related("fixture")
-        totals: dict[str, dict] = {}
-        for event in events:
-            code = event.scoring_category.code
-            bucket = totals.setdefault(
-                code,
+
+        def _bucket_totals(event_list) -> dict[str, dict]:
+            totals: dict[str, dict] = {}
+            for event in event_list:
+                code = event.scoring_category.code
+                bucket = totals.setdefault(
+                    code,
+                    {
+                        "category": event.scoring_category.name,
+                        "count": Decimal("0"),
+                        "points": Decimal("0"),
+                        "affects_score": event.scoring_category.affects_score,
+                    },
+                )
+                bucket["count"] += event.quantity
+                bucket["points"] += event.points
+            return totals
+
+        def _totals_payload(totals: dict[str, dict]) -> list[dict]:
+            return [
                 {
-                    "category": event.scoring_category.name,
-                    "count": Decimal("0"),
-                    "points": Decimal("0"),
-                    "affects_score": event.scoring_category.affects_score,
+                    "category": bucket["category"],
+                    "code": code,
+                    "count": format(bucket["count"], "f"),
+                    "points": format(bucket["points"], "f"),
+                    "affects_score": bucket["affects_score"],
+                }
+                for code, bucket in totals.items()
+            ]
+
+        career_totals = _bucket_totals(events)
+        by_stage: dict[str, dict] = {}
+        for event in events:
+            stage = event.fixture.stage
+            stage_id = str(stage.id) if stage else "none"
+            bucket = by_stage.setdefault(
+                stage_id,
+                {
+                    "stage_id": str(stage.id) if stage else None,
+                    "stage_name": stage.name if stage else "Unassigned",
+                    "team": event.team_name or event.side.participant.name,
+                    "events": [],
                 },
             )
-            bucket["count"] += event.quantity
-            bucket["points"] += event.points
+            bucket["events"].append(event)
+            if event.team_name or event.side_id:
+                bucket["team"] = event.team_name or event.side.participant.name
+
+        seasons = [
+            {
+                "stage_id": row["stage_id"],
+                "stage_name": row["stage_name"],
+                "team": row["team"],
+                "totals": _totals_payload(_bucket_totals(row["events"])),
+            }
+            for row in by_stage.values()
+        ]
+
         return Response(
             {
                 "profile": {
@@ -1017,27 +1076,24 @@ class PlayerLeagueProfileView(APIView):
                     if roster is None
                     else {"id": str(roster.participant_id), "name": roster.participant.name}
                 ),
-                "totals": [
-                    {
-                        "category": bucket["category"],
-                        "code": code,
-                        "count": format(bucket["count"], "f"),
-                        "points": format(bucket["points"], "f"),
-                        "affects_score": bucket["affects_score"],
-                    }
-                    for code, bucket in totals.items()
-                ],
+                "totals": _totals_payload(career_totals),
+                "career_totals": _totals_payload(career_totals),
+                "seasons": seasons,
                 "timeline": [
                     {
                         "id": str(event.id),
                         "fixture_id": str(event.fixture_id),
                         "fixture_label": event.fixture.label or "Fixture",
+                        "stage_id": str(event.fixture.stage_id) if event.fixture.stage_id else None,
+                        "stage_name": (
+                            event.fixture.stage.name if event.fixture.stage_id else None
+                        ),
                         "minute": event.minute,
                         "period": event.period,
                         "category": event.scoring_category.name,
                         "quantity": format(event.quantity, "f"),
                         "points": format(event.points, "f"),
-                        "team": event.side.participant.name,
+                        "team": event.team_name or event.side.participant.name,
                         "occurred_at": event.occurred_at,
                         "created_at": event.created_at,
                     }

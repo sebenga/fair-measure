@@ -12,7 +12,7 @@ from apps.standings.services import compute_standings, refresh_standings
 pytestmark = pytest.mark.django_db
 
 
-def _sides(competition, home, away, *, round_number=1, status=Fixture.Status.COMPLETED):
+def _sides(competition, home, away, *, round_number=1, status=Fixture.Status.CONFIRMED):
     fixture = Fixture.objects.create(
         competition=competition,
         round_number=round_number,

@@ -822,7 +822,8 @@ export class CompetitionStandingsComponent implements OnInit {
 
     this.api
       .getStandings(this.competition().id, {
-        stage: this.stageId(),
+        // null means the UI "All seasons" chip → explicit combined table.
+        stage: this.stageId() ?? 'all',
         refresh: !this.shownSeason()?.finished,
       })
       .subscribe({

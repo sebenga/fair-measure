@@ -128,16 +128,13 @@ class Fixture(BaseModel):
     def is_counted(self) -> bool:
         """Whether this fixture should affect the league table.
 
-        Confirmed match cards and forfeits count. Completed-but-unsigned results
-        still count in Phase 1 (auto-confirm on full time); disputed ones do not
-        until the dispute is resolved back to confirmed.
+        Team-sheet sports only count after the referee signs the match card
+        (``confirmed``). ``completed`` is full time awaiting that sign-off.
         """
 
-        return self.status in {
-            self.Status.COMPLETED,
-            self.Status.CONFIRMED,
-            self.Status.FORFEIT,
-        }
+        from .counted import fixture_is_counted
+
+        return fixture_is_counted(self)
 
     def mark_confirmed(self, *, user=None, notes: str = "") -> None:
         """Sign off the digital match card and freeze the result for the table."""
@@ -314,6 +311,19 @@ class ScoreEvent(BaseModel):
         null=True,
         blank=True,
         related_name="score_events",
+    )
+    # Survives roster soft-delete / transfer so career profiles stay intact.
+    player_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="score_events",
+    )
+    team_name = models.CharField(
+        max_length=160,
+        blank=True,
+        help_text=_("Team the player represented when the event was recorded."),
     )
     secondary_player = models.ForeignKey(
         RosterMember,

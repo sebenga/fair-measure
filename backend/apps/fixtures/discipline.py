@@ -20,15 +20,22 @@ from .cards import RED, YELLOW
 from .models import Fixture, ScoreEvent
 
 AUTO_PREFIX = "Automatic · "
+SECOND_YELLOW = "second-yellow"
+SENDING_OFF_CODES = (RED, SECOND_YELLOW)
 
 DEFAULTS = {
     "enabled": True,
     "yellow_threshold": 5,
     "yellow_ban_matches": 1,
     "red_ban_matches": 1,
+    "second_yellow_ban_matches": 1,
 }
 
-FINISHED = {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT}
+FINISHED = {
+    Fixture.Status.COMPLETED,
+    Fixture.Status.CONFIRMED,
+    Fixture.Status.FORFEIT,
+}
 OPEN = {
     Fixture.Status.SCHEDULED,
     Fixture.Status.POSTPONED,
@@ -93,12 +100,17 @@ def _card_totals(fixture_ids: list, player_ids: list) -> dict[tuple, dict[str, i
     rows = ScoreEvent.objects.filter(
         fixture_id__in=fixture_ids,
         player_id__in=player_ids,
-        scoring_category__code__in=(YELLOW, RED),
+        scoring_category__code__in=(YELLOW, RED, SECOND_YELLOW),
     ).values_list("fixture_id", "player_id", "scoring_category__code", "quantity")
     for fixture_id, player_id, code, quantity in rows:
         key = (fixture_id, player_id)
         cards = totals.setdefault(key, {"yellow": 0, "red": 0})
-        cards["yellow" if code == YELLOW else "red"] += int(quantity or 1)
+        amount = int(quantity or 1)
+        if code == YELLOW:
+            cards["yellow"] += amount
+        else:
+            # Straight red or second yellow: both are send-offs with a ban.
+            cards["red"] += amount
     return totals
 
 
@@ -133,6 +145,12 @@ def bans_for_player(
         row = card_map.get((fixture.id, player_id), {"yellow": 0, "red": 0})
         yellows = row["yellow"]
         reds = row["red"]
+        if reds:
+            # Straight red or second yellow: ban, and yellows in this match
+            # do not count toward the season accumulation.
+            ban_len = max(1, red_ban_matches)
+            pending.extend([f"{AUTO_PREFIX}Red card"] * ban_len)
+            continue
         before = yellow_total
         yellow_total += yellows
         prev_bands = before // yellow_threshold
@@ -140,8 +158,6 @@ def bans_for_player(
         for band in range(prev_bands + 1, new_bands + 1):
             reason = f"{AUTO_PREFIX}{band * yellow_threshold} yellow cards"
             pending.extend([reason] * max(1, yellow_ban_matches))
-        if reds:
-            pending.extend([f"{AUTO_PREFIX}Red card"] * max(1, red_ban_matches))
     return bans
 
 

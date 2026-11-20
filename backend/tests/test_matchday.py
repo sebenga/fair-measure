@@ -245,7 +245,7 @@ def test_post_match_report_is_written_by_officials_after_the_result(api, league,
     _accept_referee(fixture, other_user)
     referee = APIClient()
     referee.force_authenticate(other_user)
-    started = referee.post(_url(fixture, "set-status"), {"status": "live"}, format="json")
+    started = referee.post(_url(fixture, "phase"), {"action": "kick_off"}, format="json")
     assert started.status_code == 200, started.data
     squad = _squad(sides[0])
     assert (
@@ -275,8 +275,14 @@ def test_post_match_report_is_written_by_officials_after_the_result(api, league,
         ).status_code
         == 201
     )
-    finished = referee.post(_url(fixture, "set-status"), {"status": "completed"}, format="json")
+    assert referee.post(_url(fixture, "phase"), {"action": "end_half"}, format="json").status_code == 200
+    assert (
+        referee.post(_url(fixture, "phase"), {"action": "start_second_half"}, format="json").status_code
+        == 200
+    )
+    finished = referee.post(_url(fixture, "phase"), {"action": "end_game"}, format="json")
     assert finished.status_code == 200, finished.data
+    assert referee.post(_url(fixture, "confirm"), {}, format="json").status_code == 200
 
     member = APIClient()
     member.force_authenticate(User.objects.create_user(email="fan@example.com", password="x-password-1"))
@@ -337,7 +343,7 @@ def test_kickoff_needs_both_team_sheets_of_eleven_and_officials(api, league, oth
     assert "Pick the match officials before kickoff." in problems
     assert "Submit Home XI's team sheet before kickoff." in problems
     assert "Submit Away XI's team sheet before kickoff." in problems
-    assert api.post(_url(fixture, "set-status"), {"status": "live"}, format="json").status_code == 400
+    assert api.post(_url(fixture, "phase"), {"action": "kick_off"}, format="json").status_code == 400
 
     Membership.objects.create(competition=competition, user=other_user, role=Role.MEMBER)
     FixtureReferee.objects.create(
@@ -348,13 +354,13 @@ def test_kickoff_needs_both_team_sheets_of_eleven_and_officials(api, league, oth
     )
     pending = api.get(detail).data["kickoff_problems"]
     assert "The appointed referee must accept before kickoff." in pending
-    assert api.post(_url(fixture, "set-status"), {"status": "live"}, format="json").status_code == 400
+    assert api.post(_url(fixture, "phase"), {"action": "kick_off"}, format="json").status_code == 400
 
     _accept_referee(fixture, other_user)
     officials_only = api.get(detail).data["kickoff_problems"]
     assert "Pick the match officials before kickoff." not in officials_only
     assert "The appointed referee must accept before kickoff." not in officials_only
-    assert api.post(_url(fixture, "set-status"), {"status": "live"}, format="json").status_code == 400
+    assert api.post(_url(fixture, "phase"), {"action": "kick_off"}, format="json").status_code == 400
 
     api.put(_url(fixture, f"team-sheets/{sides[0].id}"), _sheet(sides[0]), format="json")
     assert api.get(detail).data["kickoff_problems"] == [
@@ -388,7 +394,7 @@ def test_kickoff_needs_both_team_sheets_of_eleven_and_officials(api, league, oth
     api.put(_url(fixture, f"team-sheets/{sides[1].id}"), _sheet(sides[1]), format="json")
     referee = APIClient()
     referee.force_authenticate(other_user)
-    started = referee.post(_url(fixture, "set-status"), {"status": "live"}, format="json")
+    started = referee.post(_url(fixture, "phase"), {"action": "kick_off"}, format="json")
     assert started.status_code == 200, started.data
     assert started.data["status"] == "live"
 

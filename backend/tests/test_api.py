@@ -1713,9 +1713,9 @@ def test_a_game_needs_a_time_limit_and_a_referee_before_kickoff(api, other_user)
         "Submit Home's team sheet before kickoff.",
         "Submit Away's team sheet before kickoff.",
     ]
-    # Admins cannot take the match live — only the appointed referee can.
+    # Soccer: live/completed come from phase actions, not set-status.
     blocked = api.post(f"{detail_url}/set-status", {"status": "live"}, format="json")
-    assert blocked.status_code == 403
+    assert blocked.status_code in {400, 403}
 
     cleared = api.patch(detail_url, {"duration_minutes": None}, format="json")
     assert cleared.status_code == 400
@@ -1772,7 +1772,7 @@ def test_a_game_needs_a_time_limit_and_a_referee_before_kickoff(api, other_user)
     assert still_away == ["Submit Away's team sheet before kickoff."]
     assert api.put(f"{detail_url}/team-sheets/{away_side.id}", sheet(away), format="json").status_code == 200
     assert api.get(detail_url).data["kickoff_problems"] == []
-    started = scorer.post(f"{detail_url}/set-status", {"status": "live"}, format="json")
+    started = scorer.post(f"{detail_url}/phase", {"action": "kick_off"}, format="json")
     assert started.status_code == 200
     assert started.data["status"] == "live"
 

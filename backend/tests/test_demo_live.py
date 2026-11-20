@@ -29,7 +29,9 @@ def test_every_demo_has_a_schedule_and_a_live_match(api, fmt):
     info = competition.settings_json["demo_league"]
 
     fixtures = Fixture.objects.filter(competition=competition)
-    assert fixtures.filter(status=Fixture.Status.COMPLETED).exists()
+    assert fixtures.filter(
+        status__in={Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED}
+    ).exists()
     assert fixtures.filter(status=Fixture.Status.LIVE).exists()
     assert info["live_fixture"]
     live = fixtures.get(pk=info["live_fixture"])

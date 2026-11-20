@@ -48,7 +48,11 @@ FREE_FORM = {
     "lines": [],
     "formations": [],
 }
-FINISHED = {Fixture.Status.COMPLETED, Fixture.Status.FORFEIT}
+FINISHED = {
+    Fixture.Status.COMPLETED,
+    Fixture.Status.CONFIRMED,
+    Fixture.Status.FORFEIT,
+}
 BEFORE_KICKOFF = {Fixture.Status.SCHEDULED, Fixture.Status.POSTPONED}
 
 

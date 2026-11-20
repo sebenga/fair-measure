@@ -20,7 +20,6 @@ OPEN = {
     Fixture.Status.POSTPONED,
     Fixture.Status.DISPUTED,
 }
-COUNTED = {Fixture.Status.COMPLETED, Fixture.Status.CONFIRMED, Fixture.Status.FORFEIT}
 SIGNED_OFF = {Fixture.Status.CONFIRMED, Fixture.Status.FORFEIT}
 
 
@@ -47,6 +46,8 @@ def season_is_finished(competition: Competition) -> bool:
     Synthetic score-assist rows alone never finish a results season.
     """
 
+    from apps.fixtures.counted import counted_statuses, requires_match_card
+
     if not uses_match_seasons(competition):
         return False
     fixtures = competition.fixtures.exclude(status=Fixture.Status.CANCELLED)
@@ -55,21 +56,32 @@ def season_is_finished(competition: Competition) -> bool:
         return False
     if fixtures.filter(status__in=OPEN).exists():
         return False
-    # Unsigned full-time results still block the close (Phase 1 sets confirmed_at
-    # automatically when a fixture is completed).
-    unsigned = fixtures.filter(status=Fixture.Status.COMPLETED, confirmed_at__isnull=True)
-    if unsigned.exists():
+    if requires_match_card(competition):
+        # Full time without referee sign-off still blocks the season close.
+        if fixtures.filter(status=Fixture.Status.COMPLETED).exists():
+            return False
+        return scheduled.filter(status__in=SIGNED_OFF).exists()
+    return scheduled.filter(status__in=counted_statuses(competition)).exists()
+
+
+def maybe_activate_competition(competition: Competition) -> bool:
+    """Move draft → active when fixtures exist or a match kicks off."""
+
+    if competition.status != Competition.Status.DRAFT:
         return False
-    return scheduled.filter(
-        Q(status__in=SIGNED_OFF)
-        | Q(status=Fixture.Status.COMPLETED, confirmed_at__isnull=False)
-    ).exists()
+    competition.status = Competition.Status.ACTIVE
+    competition.save(update_fields=["status", "updated_at"])
+    return True
 
 
 def maybe_finish_competition(competition: Competition) -> bool:
     """Mark an active competition completed once its last fixture is confirmed."""
 
-    if competition.status != Competition.Status.ACTIVE:
+    if competition.status == Competition.Status.DRAFT:
+        # A draft that somehow finished every fixture still closes.
+        if not season_is_finished(competition):
+            return False
+    elif competition.status != Competition.Status.ACTIVE:
         return False
     if not season_is_finished(competition):
         return False
@@ -97,8 +109,23 @@ def admin_close_competition(competition: Competition, *, user, reason: str) -> C
 
 
 def stage_is_finished(stage: Stage) -> bool:
+    """A stage is finished when every fixture is signed off (confirmed/forfeit/cancelled).
+
+    Completed-but-unsigned matches still leave the stage open for team-sheet sports.
+    """
+
+    from apps.fixtures.counted import requires_match_card
+
     fixtures = stage.fixtures.exclude(status=Fixture.Status.CANCELLED)
-    return fixtures.exists() and not fixtures.filter(status__in=OPEN).exists()
+    if not fixtures.exists():
+        return False
+    if fixtures.filter(status__in=OPEN).exists():
+        return False
+    if requires_match_card(stage.competition):
+        if fixtures.filter(status=Fixture.Status.COMPLETED).exists():
+            return False
+        return not fixtures.exclude(status__in=SIGNED_OFF).exists()
+    return True
 
 
 def archive_first_season(competition: Competition) -> Stage | None:
