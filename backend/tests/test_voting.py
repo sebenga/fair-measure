@@ -1,4 +1,4 @@
-"""Custom points boards: members vote; secret hides tallies until close."""
+"""Custom points boards: members vote; private (secret) hides tallies until close."""
 
 from __future__ import annotations
 
@@ -118,3 +118,47 @@ def test_visible_voting_shows_live_tallies(api, user):
     assert cast.status_code == 200, cast.data
     assert cast.data["round"]["tallies"][0]["participant_id"] == str(beta.id)
     assert Vote.objects.filter(round_id=round_id).count() == 1
+
+
+def test_open_round_can_override_competition_visibility(api, user):
+    """Admin may open a public round even when the board default is private."""
+    competition, alpha, beta, category = _points_board(api, visibility="secret")
+    member = User.objects.create_user(email="override-voter@example.com", password="x")
+    Membership.objects.create(competition=competition, user=member, role=Role.MEMBER)
+
+    opened = api.post(
+        f"/api/v1/competitions/{competition.id}/voting-rounds",
+        {"scoring_category": str(category.id), "visibility": "visible", "title": "Public this week"},
+        format="json",
+    )
+    assert opened.status_code == 201, opened.data
+    assert opened.data["visibility"] == "visible"
+    round_id = opened.data["id"]
+
+    api.force_authenticate(member)
+    cast = api.put(
+        f"/api/v1/competitions/{competition.id}/voting-rounds/{round_id}/vote",
+        {"participant": str(alpha.id)},
+        format="json",
+    )
+    assert cast.status_code == 200, cast.data
+    assert cast.data["round"]["tallies_hidden"] is False
+    assert cast.data["round"]["tallies"][0]["participant_id"] == str(alpha.id)
+
+    api.force_authenticate(user)
+    private = api.post(
+        f"/api/v1/competitions/{competition.id}/voting-rounds",
+        {"scoring_category": str(category.id), "visibility": "secret"},
+        format="json",
+    )
+    assert private.status_code == 201, private.data
+    assert private.data["visibility"] == "secret"
+
+    bad = api.post(
+        f"/api/v1/competitions/{competition.id}/voting-rounds",
+        {"scoring_category": str(category.id), "visibility": "public"},
+        format="json",
+    )
+    assert bad.status_code == 400
+    detail = bad.data.get("error", bad.data).get("detail", bad.data)
+    assert "visibility" in detail

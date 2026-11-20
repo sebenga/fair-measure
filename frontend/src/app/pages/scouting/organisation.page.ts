@@ -1,32 +1,24 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type { Organisation, ScoutingRole } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 @Component({
   selector: 'fm-scouting-organisation',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
+  imports: [BackHrefPipe, IonBackButton, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton, IonIcon, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/scouting' | backHref" /></ion-buttons>
         <ion-title>{{ organisation()?.name ?? 'Organisation' }}</ion-title>
         <ion-buttons slot="end">
           @if (isAdmin()) {

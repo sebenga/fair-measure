@@ -18,29 +18,7 @@ import {
   ValidationErrors,
   Validators,
 } from '@angular/forms';
-import {
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonCheckbox,
-  IonContent,
-  IonFooter,
-  IonHeader,
-  IonIcon,
-  IonInput,
-  IonItem,
-  IonLabel,
-  IonList,
-  IonSelect,
-  IonSelectOption,
-  IonSpinner,
-  IonTextarea,
-  IonTitle,
-  IonToggle,
-  IonToolbar,
-  AlertController,
-  NavController,
-} from '@ionic/angular/standalone';
+import { IonButton, IonButtons, IonCheckbox, IonContent, IonFooter, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonSelect, IonSelectOption, IonSpinner, IonTextarea, IonTitle, IonToggle, IonToolbar, AlertController, NavController, IonBackButton } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
 import { COMMERCIAL, randAmount } from '../../core/commercial';
@@ -53,6 +31,9 @@ import { isPointsPreset } from '../../core/models';
 import { CommercialNoteComponent } from '../../shared/commercial-note.component';
 import { DemoGuideService } from '../../core/demo-guide.service';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 type StepKey = 'sport' | 'name' | 'format' | 'points' | 'dates' | 'visibility' | 'review';
 
 const STEPS: Array<{ key: StepKey; label: string }> = [
@@ -62,8 +43,7 @@ const STEPS: Array<{ key: StepKey; label: string }> = [
   { key: 'points', label: 'Points' },
   { key: 'dates', label: 'Dates' },
   { key: 'visibility', label: 'Visibility' },
-  { key: 'review', label: 'Review' },
-];
+  { key: 'review', label: 'Review' }];
 
 type EntrantType = 'team' | 'individual' | 'pair' | 'combination';
 
@@ -101,8 +81,7 @@ const ENTRANT_OPTIONS: Array<{
     icon: 'paw-outline',
     versus: 'A rider and a horse enter together as one combination.',
     points: 'A rider and a horse collect points together as one combination.',
-  },
-];
+  }];
 
 const ENTRANT_LABELS: Record<EntrantType, string> = {
   team: 'Teams',
@@ -145,8 +124,7 @@ const WEEKDAYS = [
   { value: 3, label: 'Thu' },
   { value: 4, label: 'Fri' },
   { value: 5, label: 'Sat' },
-  { value: 6, label: 'Sun' },
-];
+  { value: 6, label: 'Sun' }];
 
 const TIMEZONES = [
   'Africa/Cairo',
@@ -168,8 +146,7 @@ const TIMEZONES = [
   'Europe/London',
   'Europe/Paris',
   'Pacific/Auckland',
-  'UTC',
-];
+  'UTC'];
 
 function isoDay(base: Date, days = 0): string {
   const day = new Date(base.getFullYear(), base.getMonth(), base.getDate() + days);
@@ -219,16 +196,14 @@ function presetKind(preset: Preset): PresetKind {
 @Component({
   selector: 'fm-competition-create',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     ReactiveFormsModule,
     NgTemplateOutlet,
     IonHeader,
     IonToggle,
     IonToolbar,
     IonTitle,
-    IonButtons,
-    IonBackButton,
-    IonContent,
+    IonButtons, IonContent,
     IonFooter,
     IonList,
     IonItem,
@@ -241,15 +216,14 @@ function presetKind(preset: Preset): PresetKind {
     IonButton,
     IonIcon,
     IonSpinner,
-    CommercialNoteComponent,
-  ],
+    CommercialNoteComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './competition-create.page.scss',
   template: `
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button defaultHref="/tabs/competitions" />
+          <ion-back-button [defaultHref]="'/tabs/competitions' | backHref" />
         </ion-buttons>
         <ion-title>New competition</ion-title>
         <ion-buttons slot="end">
@@ -669,8 +643,8 @@ function presetKind(preset: Preset): PresetKind {
                       >
                         <ion-icon name="eye-off-outline" aria-hidden="true" />
                         <div>
-                          <strong>Secret ballots</strong>
-                          <p>Tallies stay hidden from members until the round closes.</p>
+                          <strong>Private voting</strong>
+                          <p>Tallies stay hidden from members until an admin closes the round.</p>
                         </div>
                         @if (votingVisibility() === 'secret') {
                           <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
@@ -684,8 +658,8 @@ function presetKind(preset: Preset): PresetKind {
                       >
                         <ion-icon name="eye-outline" aria-hidden="true" />
                         <div>
-                          <strong>Visible tallies</strong>
-                          <p>Members see the running vote counts while the round is open.</p>
+                          <strong>Public voting</strong>
+                          <p>Members see live vote counts while the round is open.</p>
                         </div>
                         @if (votingVisibility() === 'visible') {
                           <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
@@ -1220,8 +1194,8 @@ function presetKind(preset: Preset): PresetKind {
                       <dd>
                         {{
                           votingVisibility() === 'visible'
-                            ? 'On · visible tallies'
-                            : 'On · secret until close'
+                            ? 'On · public tallies'
+                            : 'On · private until close'
                         }}
                       </dd>
                     </div>
@@ -1383,8 +1357,7 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
       label: 'Freeform',
       blurb: 'No generated schedule. Add fixtures whenever you want.',
       icon: 'sparkles-outline',
-    },
-  ];
+    }];
 
   readonly structureFormats = this.formats.filter((option) =>
     option.value === 'league' || option.value === 'knockout' || option.value === 'league_knockout',
@@ -1455,8 +1428,7 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
     }
     const keys = [
       ...order.filter((key) => buckets.has(key)),
-      ...[...buckets.keys()].filter((key) => !order.includes(key)),
-    ];
+      ...[...buckets.keys()].filter((key) => !order.includes(key))];
     return keys.map((key) => ({
       key,
       label: labels.get(key) ?? 'Other',
@@ -1978,8 +1950,7 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
         points: '0',
         affects_score: false,
         description: 'A sending-off. Shown on the match timeline with the minute and the player.',
-      },
-    ];
+      }];
     const add = extras.filter((row) => !have.has((row.code || row.name || '').toLowerCase()));
     if (!add.length) return;
     this.scoringDrafts.update((rows) => [...rows, ...add.map((row) => this.blankDraft(row))]);
@@ -2044,8 +2015,7 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
       message: `${row.points || '0'} ${unit}. This removes it from the scoring.`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Delete', role: 'destructive', handler: () => this.removeDraft(key) },
-      ],
+        { text: 'Delete', role: 'destructive', handler: () => this.removeDraft(key) }],
     });
     await alert.present();
   }

@@ -1,31 +1,25 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonHeader, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type { CatalogItem, PhysicalTest, RecordablePlayers } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 /** Coach or official screen: record a physical test result for a player. */
 @Component({
   selector: 'fm-record-test',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonSpinner],
+  imports: [BackHrefPipe, IonBackButton, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/scouting' | backHref" /></ion-buttons>
         <ion-title>Record a test result</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -94,8 +88,7 @@ import { ScoutingService } from '../../core/scouting.service';
       .notice {
         margin: 6px 0 12px;
       }
-    `,
-  ],
+    `],
 })
 export class RecordTestPage {
   private readonly scouting = inject(ScoutingService);

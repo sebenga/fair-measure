@@ -1,44 +1,34 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import {
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, IonBackButton } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { PlayerLeagueProfile } from '../../core/models';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 @Component({
   selector: 'fm-player-profile',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     DatePipe,
     RouterLink,
     IonHeader,
     IonToolbar,
-    IonButtons,
-    IonBackButton,
-    IonTitle,
+    IonButtons, IonTitle,
     IonContent,
     IonButton,
     IonIcon,
-    IonSpinner,
-  ],
+    IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button [defaultHref]="backHref()" />
+          <ion-back-button [defaultHref]="(backHref()) | backHref" />
         </ion-buttons>
         <ion-title>{{ card()?.profile?.display_name || 'Profile' }}</ion-title>
       </ion-toolbar>
@@ -202,8 +192,7 @@ export class PlayerProfilePage implements OnInit {
       ['Experience', profile.experience],
       ['Education', profile.education],
       ['Skills', profile.skills],
-      ['Languages', profile.languages],
-    ]
+      ['Languages', profile.languages]]
       .filter((entry): entry is [string, string] => !!entry[1])
       .map(([label, value]) => ({ label, value }));
   }

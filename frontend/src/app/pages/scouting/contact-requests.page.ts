@@ -1,31 +1,25 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonHeader, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type { ContactRequestRow } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 /** Contact requests: players and guardians answer them; scouts follow what they sent. */
 @Component({
   selector: 'fm-contact-requests',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonSpinner],
+  imports: [BackHrefPipe, IonBackButton, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/scouting' | backHref" /></ion-buttons>
         <ion-title>Contact requests</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -115,8 +109,7 @@ import { ScoutingService } from '../../core/scouting.service';
         gap: 8px;
         margin-top: 8px;
       }
-    `,
-  ],
+    `],
 })
 export class ContactRequestsPage {
   private readonly scouting = inject(ScoutingService);

@@ -2,19 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signa
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonRefresher,
-  IonRefresherContent,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonHeader, IonIcon, IonRefresher, IonRefresherContent, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type {
@@ -30,31 +18,31 @@ import type {
 import { GamesService } from '../../core/games.service';
 import { RealtimeService, gamesRoom } from '../../core/realtime.service';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 type Tab = 'today' | 'medals' | 'points' | 'events' | 'nocs' | 'schedule' | 'reports';
 
 @Component({
   selector: 'fm-games-home',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     DatePipe,
     NgTemplateOutlet,
     IonHeader,
     IonToolbar,
     IonTitle,
-    IonButtons,
-    IonBackButton,
-    IonContent,
+    IonButtons, IonContent,
     IonIcon,
     IonSpinner,
     IonRefresher,
-    IonRefresherContent,
-  ],
+    IonRefresherContent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './games.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/games" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/games' | backHref" /></ion-buttons>
         <ion-title>{{ games()?.name ?? 'Games' }}</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -472,8 +460,7 @@ type Tab = 'today' | 'medals' | 'points' | 'events' | 'nocs' | 'schedule' | 'rep
           animation: none;
         }
       }
-    `,
-  ],
+    `],
 })
 export class GamesHomePage {
   private readonly service = inject(GamesService);
@@ -499,8 +486,7 @@ export class GamesHomePage {
     { key: 'events', label: 'Events' },
     { key: 'nocs', label: `${this.teamWord()}s` },
     { key: 'schedule', label: 'Schedule' },
-    { key: 'reports', label: 'Reports' },
-  ]);
+    { key: 'reports', label: 'Reports' }]);
   readonly table = computed(() => this.liveTable() ?? this.medals()?.table ?? this.overview()?.medal_table ?? []);
   readonly points = computed(() => this.livePoints() ?? this.medals()?.points_table ?? this.overview()?.points_table ?? []);
   readonly games = signal<Games | null>(null);

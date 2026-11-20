@@ -1,18 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  AlertController,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, AlertController, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type {
@@ -26,18 +15,21 @@ import { ScoutingService } from '../../core/scouting.service';
 import { PlayerRatingsComponent } from './player-ratings.component';
 import { PlayerStatsComponent } from './player-stats.component';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 type Viewable = PlayerProfile | ScoutProfileView;
 
 @Component({
   selector: 'fm-scouting-player-view',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner, PlayerStatsComponent, PlayerRatingsComponent],
+  imports: [BackHrefPipe, IonBackButton, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonIcon, IonSpinner, PlayerStatsComponent, PlayerRatingsComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting/players" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/scouting/players' | backHref" /></ion-buttons>
         <ion-title>Player</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -302,8 +294,7 @@ type Viewable = PlayerProfile | ScoutProfileView;
         gap: 8px;
         margin-top: 8px;
       }
-    `,
-  ],
+    `],
 })
 export class ScoutingPlayerViewPage {
   private readonly scouting = inject(ScoutingService);
@@ -372,8 +363,7 @@ export class ScoutingPlayerViewPage {
                   error: (err: unknown) => void this.toastMessage(extractErrorMessage(err, 'Could not add them.'), 'danger'),
                 });
               },
-            },
-          ],
+            }],
         });
         await alert.present();
       },
@@ -397,8 +387,7 @@ export class ScoutingPlayerViewPage {
               error: (err: unknown) => void this.toastMessage(extractErrorMessage(err, 'Could not send the request.'), 'danger'),
             });
           },
-        },
-      ],
+        }],
     });
     await alert.present();
   }

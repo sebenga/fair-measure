@@ -1,33 +1,26 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type { AthletePage, PersonalBest } from '../../core/games.service';
 import { GamesService } from '../../core/games.service';
 import { GamesFollowComponent } from './games-follow.component';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 @Component({
   selector: 'fm-games-athlete',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner, GamesFollowComponent],
+  imports: [BackHrefPipe, IonBackButton, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonIcon, IonSpinner, GamesFollowComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './games.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="(backHref()) | backHref" /></ion-buttons>
         <ion-title>{{ athlete()?.name ?? 'Athlete' }}</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -174,8 +167,7 @@ import { GamesFollowComponent } from './games-follow.component';
       .actions.flush {
         margin: 8px 0 0;
       }
-    `,
-  ],
+    `],
 })
 export class GamesAthletePage {
   private readonly service = inject(GamesService);

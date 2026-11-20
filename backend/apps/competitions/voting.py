@@ -1,8 +1,9 @@
 """Member voting that accumulates points on custom criteria boards.
 
-Requires ``settings_json.points_by_voting``. Visibility is ``secret`` (tallies
-hidden until the round closes) or ``visible`` (live tallies). Only competition
-members may cast a ballot; admins open and close rounds.
+Requires ``settings_json.points_by_voting``. Visibility is ``secret`` / private
+(tallies hidden until the round closes) or ``visible`` / public (live tallies).
+Only competition members may cast a ballot; admins open and close rounds, and
+may override visibility per round.
 """
 
 from __future__ import annotations
@@ -148,12 +149,24 @@ class VotingRoundListCreateView(APIView):
         )
         title = str(request.data.get("title") or "").strip()[:200]
         note = str(request.data.get("note") or "").strip()[:280]
+        raw_visibility = request.data.get("visibility")
+        if raw_visibility in {
+            VotingRound.Visibility.SECRET,
+            VotingRound.Visibility.VISIBLE,
+        }:
+            visibility = raw_visibility
+        elif raw_visibility in (None, ""):
+            visibility = voting_visibility_setting(competition)
+        else:
+            raise ValidationError(
+                {"visibility": "Use secret (private) or visible (public)."}
+            )
         round_row = VotingRound.objects.create(
             competition=competition,
             category=category,
             title=title,
             note=note,
-            visibility=voting_visibility_setting(competition),
+            visibility=visibility,
             created_by=request.user,
         )
         publish_event(

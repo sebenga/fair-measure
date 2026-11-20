@@ -1,17 +1,7 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import {
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { createOutline, printOutline } from 'ionicons/icons';
 
@@ -19,6 +9,7 @@ import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { LineupPlayer, MatchReportData } from '../../core/models';
 
+import { BackHrefPipe } from '../../shared/back-href.pipe';
 interface ReportDraft {
   summary: string;
   attendance: string;
@@ -32,22 +23,19 @@ interface ReportDraft {
   selector: 'fm-match-report',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     DatePipe,
     IonHeader,
     IonToolbar,
     IonTitle,
-    IonButtons,
-    IonBackButton,
-    IonButton,
+    IonButtons, IonButton,
     IonIcon,
-    IonContent,
-  ],
+    IonContent],
   template: `
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button [defaultHref]="backHref()" />
+          <ion-back-button [defaultHref]="(backHref()) | backHref" />
         </ion-buttons>
         <ion-title>Match report</ion-title>
         <ion-buttons slot="end">
@@ -566,8 +554,7 @@ interface ReportDraft {
           display: none !important;
         }
       }
-    `,
-  ],
+    `],
 })
 export class MatchReportPage implements OnInit {
   private readonly api = inject(ApiService);

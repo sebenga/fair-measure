@@ -1,17 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonFooter,
-  IonHeader,
-  IonSearchbar,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonFooter, IonHeader, IonSearchbar, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
@@ -19,16 +8,19 @@ import type { CatalogSport } from '../../core/games.service';
 import type { Preset } from '../../core/models';
 import { GamesService } from '../../core/games.service';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 @Component({
   selector: 'fm-games-sports',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonFooter, IonSearchbar, IonSpinner],
+  imports: [BackHrefPipe, IonBackButton, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonFooter, IonSearchbar, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './games.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="(backHref()) | backHref" /></ion-buttons>
         <ion-title>Add sports</ion-title>
       </ion-toolbar>
       <ion-toolbar>
@@ -223,8 +215,7 @@ import { GamesService } from '../../core/games.service';
         gap: 10px;
         padding: 6px 16px;
       }
-    `,
-  ],
+    `],
 })
 export class GamesSportsPage {
   private readonly service = inject(GamesService);
@@ -353,8 +344,7 @@ export class GamesSportsPage {
           ...current,
           ...this.sports()
             .filter((sport) => sport.season === season)
-            .flatMap((sport) => this.openKeys(sport)),
-        ]),
+            .flatMap((sport) => this.openKeys(sport))]),
     );
   }
 

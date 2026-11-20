@@ -1,22 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
-import {
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type { GamesReport, ReportKind } from '../../core/games.service';
 import { GamesService } from '../../core/games.service';
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
 
 const KINDS: ReportKind[] = ['medal-table', 'results-book', 'noc-summary', 'daily'];
 
@@ -24,13 +15,13 @@ const KINDS: ReportKind[] = ['medal-table', 'results-book', 'noc-summary', 'dail
 @Component({
   selector: 'fm-games-report',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonContent, IonIcon, IonSpinner],
+  imports: [BackHrefPipe, IonBackButton, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton, IonContent, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './games.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="(backHref()) | backHref" /></ion-buttons>
         <ion-title>Report</ion-title>
         <ion-buttons slot="end">
           <ion-button [disabled]="!report() || busy()" (click)="downloadCsv()">
@@ -147,8 +138,7 @@ const KINDS: ReportKind[] = ['medal-table', 'results-book', 'noc-summary', 'dail
           border-bottom-color: #ccc;
         }
       }
-    `,
-  ],
+    `],
 })
 export class GamesReportPage {
   private readonly service = inject(GamesService);

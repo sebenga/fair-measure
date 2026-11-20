@@ -1,17 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import {
-  AlertController,
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { AlertController, IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type {
@@ -23,6 +12,7 @@ import type {
 } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
 
+import { BackHrefPipe } from '../../shared/back-href.pipe';
 interface Decision {
   visibility: Visibility;
   sections: Set<string>;
@@ -32,13 +22,13 @@ interface Decision {
 @Component({
   selector: 'fm-guardian-consent',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
+  imports: [BackHrefPipe, IonBackButton, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/scouting' | backHref" /></ion-buttons>
         <ion-title>Guardian consent</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -195,8 +185,7 @@ interface Decision {
         font-size: 0.88rem;
         line-height: 1.6;
       }
-    `,
-  ],
+    `],
 })
 export class GuardianPage {
   private readonly scouting = inject(ScoutingService);
@@ -213,8 +202,7 @@ export class GuardianPage {
 
   readonly options: Array<{ key: Visibility; label: string }> = [
     { key: 'scouts', label: 'Scouts only' },
-    { key: 'public', label: 'Public' },
-  ];
+    { key: 'public', label: 'Public' }];
 
   ionViewWillEnter(): void {
     this.scouting.catalog().subscribe((catalog) => this.catalog.set(catalog));
@@ -342,8 +330,7 @@ export class GuardianPage {
               error: (err: unknown) => this.fail(err),
             });
           },
-        },
-      ],
+        }],
     });
     await alert.present();
   }

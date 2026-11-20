@@ -1,12 +1,5 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonHeader, IonTitle, IonToolbar, IonBackButton } from '@ionic/angular/standalone';
 
 import {
   COMMERCIAL,
@@ -22,26 +15,26 @@ import {
 import { LegalFooterComponent } from '../../shared/legal-footer.component';
 import { PageHeroComponent } from '../../shared/page-hero.component';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 /** What running a competition costs and earns: the proposed commercial terms for organisers. */
 @Component({
   selector: 'fm-commercial',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     IonHeader,
     IonToolbar,
     IonTitle,
-    IonButtons,
-    IonBackButton,
-    IonContent,
+    IonButtons, IonContent,
     PageHeroComponent,
-    LegalFooterComponent,
-  ],
+    LegalFooterComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button defaultHref="/tabs/competitions" />
+          <ion-back-button [defaultHref]="'/tabs/competitions' | backHref" />
         </ion-buttons>
         <ion-title>Costs and earnings</ion-title>
       </ion-toolbar>
@@ -52,7 +45,7 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
         <fm-page-hero
           eyebrow="For organisers"
           title="What running a competition costs and earns"
-          subtitle="Free in year one, with a commission on sponsorships. This page sets out what is proposed after that, so there are no surprises."
+          subtitle="Free until a competition starts making revenue, with a commission on sponsorships. This page sets out what is proposed after that, so there are no surprises."
           image="assets/landing/moment-touchline.jpg"
         />
 
@@ -81,8 +74,9 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
           <section class="card" aria-labelledby="visibility">
             <h2 id="visibility">Visibility upgrades (test)</h2>
             <p class="lede">
-              Running a competition stays free in year one. These Paystack test charges unlock
-              private competitions and landing-page placement when payment keys are configured.
+              Running a competition stays free until it starts making revenue. These Paystack
+              test charges unlock private competitions and landing-page placement when payment
+              keys are configured.
             </p>
             <ul class="plans">
               <li>
@@ -123,7 +117,7 @@ import { PageHeroComponent } from '../../shared/page-hero.component';
           </section>
 
           <section class="card" aria-labelledby="plans">
-            <h2 id="plans">Plans after year one</h2>
+            <h2 id="plans">Plans once a competition earns</h2>
             <p class="proposed">Proposed prices</p>
             <p class="lede">{{ freeTier.detail }}</p>
             <ul class="plans">

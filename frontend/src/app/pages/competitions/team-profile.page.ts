@@ -1,26 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import {
-  AlertController,
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonInput,
-  IonItem,
-  IonLabel,
-  IonList,
-  IonNote,
-  IonSearchbar,
-  IonSpinner,
-  IonTextarea,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { AlertController, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonNote, IonSearchbar, IonSpinner, IonTextarea, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 import { forkJoin } from 'rxjs';
 
 import { ApiService } from '../../core/api.service';
@@ -38,17 +19,18 @@ import type {
 import { AVAILABILITY_LABELS, availabilityText, isUnavailable } from '../../core/player-status';
 import { squadSizeOf } from '../../core/models';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 @Component({
   selector: 'fm-team-profile',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     FormsModule,
     RouterLink,
     IonHeader,
     IonToolbar,
-    IonButtons,
-    IonBackButton,
-    IonTitle,
+    IonButtons, IonTitle,
     IonContent,
     IonList,
     IonItem,
@@ -59,14 +41,13 @@ import { squadSizeOf } from '../../core/models';
     IonIcon,
     IonNote,
     IonSearchbar,
-    IonSpinner,
-  ],
+    IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ion-header translucent="true">
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button [defaultHref]="backHref()" />
+          <ion-back-button [defaultHref]="(backHref()) | backHref" />
         </ion-buttons>
         <ion-title>{{ team()?.name || 'Team' }}</ion-title>
       </ion-toolbar>
@@ -435,8 +416,7 @@ export class TeamProfilePage implements OnInit {
       })),
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Next', role: 'confirm' },
-      ],
+        { text: 'Next', role: 'confirm' }],
     });
     await choose.present();
     const picked = await choose.onDidDismiss<{ values: Availability }>();
@@ -461,12 +441,10 @@ export class TeamProfilePage implements OnInit {
             type: 'date',
             label: 'Expected back',
             value: member.availability === availability ? member.available_from ?? '' : '',
-          },
-        ],
+          }],
         buttons: [
           { text: 'Cancel', role: 'cancel' },
-          { text: 'Save', role: 'confirm' },
-        ],
+          { text: 'Save', role: 'confirm' }],
       });
       await details.present();
       const filled = await details.onDidDismiss<{ values: { note?: string; back?: string } }>();
@@ -646,8 +624,7 @@ export class TeamProfilePage implements OnInit {
               },
             });
           },
-        },
-      ],
+        }],
     });
     await alert.present();
   }

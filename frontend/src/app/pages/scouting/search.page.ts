@@ -1,18 +1,6 @@
 import { ChangeDetectionStrategy, Component, type WritableSignal, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import {
-  AlertController,
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonFooter,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { AlertController, IonButtons, IonContent, IonFooter, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type {
@@ -27,6 +15,7 @@ import type {
 } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
 
+import { BackHrefPipe } from '../../shared/back-href.pipe';
 interface ValueRow {
   key: string;
   op: FilterOp;
@@ -38,20 +27,19 @@ const OPS: Array<{ key: FilterOp; label: string }> = [
   { key: 'lte', label: 'at most' },
   { key: 'gte', label: 'at least' },
   { key: 'gt', label: 'over' },
-  { key: 'eq', label: 'exactly' },
-];
+  { key: 'eq', label: 'exactly' }];
 
 /** Talent search: filter by profile, tests, stats, percentiles and your organisation's ratings. */
 @Component({
   selector: 'fm-talent-search',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonFooter, IonIcon, IonSpinner],
+  imports: [BackHrefPipe, IonBackButton, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonFooter, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/scouting' | backHref" /></ion-buttons>
         <ion-title>Talent search</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -384,8 +372,7 @@ const OPS: Array<{ key: FilterOp; label: string }> = [
         justify-content: space-between;
         padding: 6px 16px;
       }
-    `,
-  ],
+    `],
 })
 export class TalentSearchPage {
   private readonly scouting = inject(ScoutingService);
@@ -422,8 +409,7 @@ export class TalentSearchPage {
     if (!info) return [];
     return [
       ...info.match_stats.filter((row) => row.better).map((row) => ({ key: row.key, label: row.label })),
-      ...info.physical_tests.map((row) => ({ key: row.key, label: row.label })),
-    ];
+      ...info.physical_tests.map((row) => ({ key: row.key, label: row.label }))];
   });
 
   readonly activeCount = computed(() => Object.keys(this.filters()).length);
@@ -553,8 +539,7 @@ export class TalentSearchPage {
       inputs: [{ name: 'name', type: 'text', placeholder: 'e.g. Fast U21 strikers' }],
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Save', handler: (data: { name?: string }) => this.persist(data?.name ?? '', true) },
-      ],
+        { text: 'Save', handler: (data: { name?: string }) => this.persist(data?.name ?? '', true) }],
     });
     await alert.present();
   }
@@ -628,12 +613,10 @@ export class TalentSearchPage {
               value: list.id,
               disabled: !!list.has_profile,
             })),
-            { type: 'radio' as const, label: '+ New shortlist…', value: '__new__' },
-          ],
+            { type: 'radio' as const, label: '+ New shortlist…', value: '__new__' }],
           buttons: [
             { text: 'Cancel', role: 'cancel' },
-            { text: 'Add', handler: (value: string) => this.addTo(value, row) },
-          ],
+            { text: 'Add', handler: (value: string) => this.addTo(value, row) }],
         });
         await alert.present();
       },
@@ -656,8 +639,7 @@ export class TalentSearchPage {
                 error: async (err: unknown) => this.toast(extractErrorMessage(err, 'Could not create it.'), 'danger'),
               });
             },
-          },
-        ],
+          }],
       });
       await prompt.present();
       return;

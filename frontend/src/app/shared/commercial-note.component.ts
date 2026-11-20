@@ -17,12 +17,12 @@ import { COMMERCIAL } from '../core/commercial';
       <p class="kicker">{{ compact() ? 'For organisers' : 'Commercial opportunities' }}</p>
       <p class="copy">
         @if (compact()) {
-          The marketplace is live: you keep {{ 100 - commission }}% of sponsorships. Running
-          competitions is free in year one.
+          The marketplace is live: you keep {{ 100 - commission }}% of sponsorships. A
+          competition stays free until it starts making revenue.
         } @else {
           The marketing marketplace is live from day one — Fair Measure keeps
-          {{ commission }}% of sponsorships. Competitions stay free to run in year one; paid
-          plans after that are proposed starting points only.
+          {{ commission }}% of sponsorships. A competition stays free to run until it starts
+          making revenue; paid plans after that are proposed starting points only.
         }
       </p>
       <a routerLink="/tabs/commercial">See costs, earnings and plans →</a>

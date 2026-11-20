@@ -1,20 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type { CompareResponse } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
 
 const COLOURS = ['#0f766e', '#c2410c', '#4338ca', '#b91c1c'];
 const SIZE = 260;
@@ -25,13 +17,13 @@ const RADIUS = 96;
 @Component({
   selector: 'fm-compare',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
+  imports: [BackHrefPipe, IonBackButton, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton, IonIcon, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting/search" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/scouting/search' | backHref" /></ion-buttons>
         <ion-title>Compare</ion-title>
         <ion-buttons slot="end">
           @if (data()) {
@@ -239,8 +231,7 @@ const RADIUS = 96;
       .hint.flush {
         margin: 10px 0 0;
       }
-    `,
-  ],
+    `],
 })
 export class ComparePage {
   private readonly scouting = inject(ScoutingService);

@@ -1,19 +1,12 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type { Horse } from '../../core/results.models';
 import { ResultsService } from '../../core/results.service';
+
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
 
 type Draft = Pick<
   Horse,
@@ -47,13 +40,13 @@ const EMPTY: Draft = {
 @Component({
   selector: 'fm-horses',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
+  imports: [BackHrefPipe, IonBackButton, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: '../scouting/scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/profile" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/profile' | backHref" /></ion-buttons>
         <ion-title>My horses</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -175,8 +168,7 @@ const EMPTY: Draft = {
           color: var(--ion-color-medium);
         }
       }
-    `,
-  ],
+    `],
 })
 export class HorsesPage {
   private readonly results = inject(ResultsService);
@@ -187,8 +179,7 @@ export class HorsesPage {
     { key: 'gelding', label: 'Gelding' },
     { key: 'stallion', label: 'Stallion' },
     { key: 'filly', label: 'Filly' },
-    { key: 'colt', label: 'Colt' },
-  ];
+    { key: 'colt', label: 'Colt' }];
   readonly horses = signal<Horse[]>([]);
   readonly loading = signal(true);
   readonly busy = signal(false);

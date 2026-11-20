@@ -10,23 +10,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  AlertController,
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSegment,
-  IonSegmentButton,
-  IonLabel,
-  IonModal,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { AlertController, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonSegment, IonSegmentButton, IonLabel, IonModal, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { forkJoin, of } from 'rxjs';
 
@@ -47,17 +31,18 @@ import { CommercialNoteComponent } from '../../shared/commercial-note.component'
 import { LiveStripComponent } from '../../shared/live-strip.component';
 import { MatchCentreComponent } from './match-centre.component';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
 
 @Component({
   selector: 'fm-competition-detail',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     IonHeader,
     IonToolbar,
-    IonButtons,
-    IonBackButton,
-    IonButton,
+    IonButtons, IonButton,
     IonIcon,
     IonContent,
     IonSegment,
@@ -73,14 +58,13 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
     CompetitionFantasyComponent,
     CommercialNoteComponent,
     LiveStripComponent,
-    MatchCentreComponent,
-  ],
+    MatchCentreComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button [defaultHref]="auth.isAuthenticated() ? '/tabs/competitions' : '/'" />
+          <ion-back-button [defaultHref]="(auth.isAuthenticated() ? '/tabs/competitions' : '/') | backHref" />
         </ion-buttons>
         <div class="title-cluster" slot="start">
           <span class="name">{{ competition()?.name ?? 'Competition' }}</span>
@@ -597,8 +581,7 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
         margin: 0;
         flex: 1 1 180px;
       }
-    `,
-  ],
+    `],
 })
 export class CompetitionDetailPage implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
@@ -849,8 +832,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
       max?: number;
     }> = [
       { name: 'starts_on', type: 'date', value: startsOn },
-      { name: 'kickoff', type: 'time', value: '15:00' },
-    ];
+      { name: 'kickoff', type: 'time', value: '15:00' }];
     if (kind === 'knockout' && sides > 2) {
       const suggested = sides >= 8 ? 8 : sides >= 4 ? 4 : sides;
       inputs.push({
@@ -872,8 +854,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
       inputs,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Schedule', role: 'confirm' },
-      ],
+        { text: 'Schedule', role: 'confirm' }],
     });
     await alert.present();
     const { role, data } = await alert.onDidDismiss();
@@ -967,8 +948,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
       message: 'Scoring, fixtures, and the feed are removed. This cannot be undone.',
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Delete', role: 'destructive' },
-      ],
+        { text: 'Delete', role: 'destructive' }],
     });
     await alert.present();
 

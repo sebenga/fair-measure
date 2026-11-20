@@ -1,30 +1,24 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSearchbar,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonHeader, IonIcon, IonSearchbar, IonTitle, IonToolbar, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type { ProfileCard, ScoutingCatalog } from '../../core/scouting.models';
 import { ScoutingService, groupBySport } from '../../core/scouting.service';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 @Component({
   selector: 'fm-scouting-players',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSearchbar],
+  imports: [BackHrefPipe, IonBackButton, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonIcon, IonSearchbar],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/scouting' | backHref" /></ion-buttons>
         <ion-title>Players</ion-title>
       </ion-toolbar>
       <ion-toolbar>
@@ -143,8 +137,7 @@ import { ScoutingService, groupBySport } from '../../core/scouting.service';
           color: var(--ion-color-medium);
         }
       }
-    `,
-  ],
+    `],
 })
 export class ScoutingPlayersPage {
   private readonly scouting = inject(ScoutingService);

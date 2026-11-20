@@ -1,17 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 import { Observable } from 'rxjs';
 
 import { extractErrorMessage } from '../../core/error-message';
@@ -27,6 +17,9 @@ import type {
 import { ScoutingService } from '../../core/scouting.service';
 import { UploadService } from '../../core/upload.service';
 import { ScoutEligibilityComponent } from '../../shared/scout-eligibility.component';
+
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
 
 type Identity = Pick<
   PlayerProfile,
@@ -58,24 +51,21 @@ const EMPTY_IDENTITY: Identity = {
 @Component({
   selector: 'fm-talent-profile',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     DatePipe,
     IonHeader,
     IonToolbar,
     IonTitle,
-    IonButtons,
-    IonBackButton,
-    IonContent,
+    IonButtons, IonContent,
     IonIcon,
     IonSpinner,
-    ScoutEligibilityComponent,
-  ],
+    ScoutEligibilityComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/scouting' | backHref" /></ion-buttons>
         <ion-title>Scouting</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -642,8 +632,7 @@ const EMPTY_IDENTITY: Identity = {
       .upload {
         margin-bottom: 12px;
       }
-    `,
-  ],
+    `],
 })
 export class TalentProfilePage {
   scrollToDetails(): void {
@@ -690,8 +679,7 @@ export class TalentProfilePage {
   readonly visibilityOptions: Array<{ key: Visibility; label: string }> = [
     { key: 'private', label: 'Only me' },
     { key: 'scouts', label: 'Scouts' },
-    { key: 'public', label: 'Public' },
-  ];
+    { key: 'public', label: 'Public' }];
 
   readonly measureSpec = computed(() =>
     (this.catalog()?.measurements ?? []).find((spec) => spec.key === this.measureKind()),

@@ -1,14 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonHeader, IonTitle, IonToolbar, IonBackButton } from '@ionic/angular/standalone';
 import { catchError, of } from 'rxjs';
 
 import { ApiService } from '../../core/api.service';
@@ -22,20 +15,23 @@ import type { MarketingAudience, MarketingPlacement } from '../../core/models';
 import { CommercialNoteComponent } from '../../shared/commercial-note.component';
 import { PageHeroComponent } from '../../shared/page-hero.component';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 @Component({
   selector: 'fm-partnerships',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     PageHeroComponent,
     CommercialNoteComponent,
-    IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent],
+    IonHeader, IonToolbar, IonTitle, IonButtons, IonContent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './partnerships.page.scss',
   template: `
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button [defaultHref]="backHref()" />
+          <ion-back-button [defaultHref]="(backHref()) | backHref" />
         </ion-buttons>
         <ion-title>Partnerships</ion-title>
       </ion-toolbar>

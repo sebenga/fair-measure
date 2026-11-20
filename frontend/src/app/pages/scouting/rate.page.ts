@@ -1,17 +1,6 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonFooter,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonFooter, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import { RatingQueueService } from '../../core/rating-queue.service';
@@ -30,6 +19,8 @@ import type {
 } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
 
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 const SCALE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const LONG_PRESS_MS = 450;
 
@@ -41,13 +32,13 @@ interface BarcodeDetectorLike {
 @Component({
   selector: 'fm-rate',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonFooter, IonIcon, IonSpinner],
+  imports: [BackHrefPipe, IonBackButton, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonFooter, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/scouting' | backHref" /></ion-buttons>
         <ion-title>Rate a player</ion-title>
         <ion-buttons slot="end">
           <button type="button" class="sync" [class]="'sync ' + queue.state()" (click)="queue.sync()" [attr.aria-label]="syncLabel()">
@@ -464,8 +455,7 @@ interface BarcodeDetectorLike {
         justify-content: space-between;
         padding: 6px 16px;
       }
-    `,
-  ],
+    `],
 })
 export class RatePage {
   private readonly scouting = inject(ScoutingService);
@@ -508,8 +498,7 @@ export class RatePage {
 
   readonly grades = [
     { key: 'current', label: 'Current ability', get: () => this.currentAbility(), set: (value: number | null) => this.currentAbility.set(value) },
-    { key: 'potential', label: 'Potential', get: () => this.potential(), set: (value: number | null) => this.potential.set(value) },
-  ];
+    { key: 'potential', label: 'Potential', get: () => this.potential(), set: (value: number | null) => this.potential.set(value) }];
 
   readonly areas = computed(() => {
     const fromSport = this.catalogue()?.areas;
@@ -657,8 +646,7 @@ export class RatePage {
     }
     this.clips.update((rows) => [
       ...rows,
-      { video: video?.id ?? null, title: video?.title ?? '', url: video ? '' : this.clipUrl().trim(), at_seconds: at, note: this.clipNote().trim() },
-    ]);
+      { video: video?.id ?? null, title: video?.title ?? '', url: video ? '' : this.clipUrl().trim(), at_seconds: at, note: this.clipNote().trim() }]);
     this.clipUrl.set('');
     this.clipAt.set('');
     this.clipNote.set('');

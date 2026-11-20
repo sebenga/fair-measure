@@ -14,27 +14,12 @@ import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  ActionSheetController,
-  AlertController,
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonLabel,
-  IonSegment,
-  IonSegmentButton,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { ActionSheetController, AlertController, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonLabel, IonSegment, IonSegmentButton, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
 import { isCupFixture } from '../competitions/tabs/cup';
 import { AuthService } from '../../core/auth.service';
+import { BackNavigationService } from '../../core/back-navigation.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type {
   AiEventSuggestion,
@@ -59,6 +44,9 @@ import { MatchDayComponent } from './match-day.component';
 import { MatchRatersComponent } from './match-raters.component';
 import { ScrabbleScorerComponent } from './scrabble-scorer.component';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 type FixtureTab = 'overview' | 'lineups' | 'live' | 'stats' | 'raters' | 'setup';
 
 /** What tapping a player on the line-up pitch can record (association football). */
@@ -66,8 +54,7 @@ const PITCH_CONTRIBUTIONS = [
   { code: 'yellow-card', name: 'yellow card', label: 'Yellow card' },
   { code: 'red-card', name: 'red card', label: 'Red card' },
   { code: 'goal', name: 'goal', label: 'Goal' },
-  { code: 'own-goal', name: 'own goal', label: 'Own goal' },
-];
+  { code: 'own-goal', name: 'own goal', label: 'Own goal' }];
 
 /** Rugby: scoring codes first, then timed cards. */
 const RUGBY_PITCH_CONTRIBUTIONS = [
@@ -83,8 +70,7 @@ const RUGBY_PITCH_CONTRIBUTIONS = [
     name: 'upgraded yellow (20 min)',
     label: 'Upgraded yellow (20′)',
   },
-  { code: 'red-card', name: 'red card', label: 'Red card (sent off)' },
-];
+  { code: 'red-card', name: 'red card', label: 'Red card (sent off)' }];
 const FIXTURE_TABS: FixtureTab[] = ['overview', 'lineups', 'live', 'stats', 'raters', 'setup'];
 
 interface CardMoment {
@@ -100,7 +86,7 @@ interface Celebration {
 @Component({
   selector: 'fm-fixture-detail',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     DatePipe,
     MatchAwardsComponent,
     MatchDayComponent,
@@ -114,19 +100,16 @@ interface Celebration {
     IonHeader,
     IonToolbar,
     IonTitle,
-    IonButtons,
-    IonBackButton,
-    IonButton,
+    IonButtons, IonButton,
     IonIcon,
     IonSpinner,
-    IonContent,
-  ],
+    IonContent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button [defaultHref]="backHref()" />
+          <ion-back-button [defaultHref]="(backHref()) | backHref" />
         </ion-buttons>
         <ion-title>{{ fixture()?.label || 'Fixture' }}</ion-title>
         <ion-buttons slot="end">
@@ -741,6 +724,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly realtime = inject(RealtimeService);
   private readonly router = inject(Router);
+  private readonly backNav = inject(BackNavigationService);
   private readonly actionSheets = inject(ActionSheetController);
   private readonly matchDay = viewChild(MatchDayComponent);
   private readonly alerts = inject(AlertController);
@@ -825,8 +809,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
         'score.removed',
         'fixture.updated',
         'fixture.live',
-        'fixture.completed',
-      ])
+        'fixture.completed'])
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((message) => {
         if (message.payload.fixture_id === this.fixtureId) {
@@ -1032,8 +1015,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       message: `Record a ${scored ? 'scored' : 'missed'} penalty for ${kicker?.name ?? 'this player'} (${this.sideName(sideId)})?`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Record', role: 'confirm' },
-      ],
+        { text: 'Record', role: 'confirm' }],
     });
     await alert.present();
     const { role } = await alert.onDidDismiss();
@@ -1260,7 +1242,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
   }
 
   leave(): void {
-    void this.router.navigateByUrl('/tabs/competitions');
+    void this.router.navigateByUrl(this.backNav.href(this.backHref()));
   }
 
   load(): void {
@@ -1897,11 +1879,9 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
                 handler: () => {
                   void this.matchDay()?.offerSubstitution(pick.sideId, pick.playerId);
                 },
-              },
-            ]
+              }]
           : []),
-        { text: 'Cancel', role: 'cancel' },
-      ],
+        { text: 'Cancel', role: 'cancel' }],
     });
     await sheet.present();
   }
@@ -1922,8 +1902,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       message: `Record ${category.name.toLowerCase()} for ${forWho}${when}?`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Record', role: 'confirm' },
-      ],
+        { text: 'Record', role: 'confirm' }],
     });
     await alert.present();
     const { role } = await alert.onDidDismiss();
@@ -2020,8 +1999,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       inputs: [{ name: 'player', type: 'text', placeholder: 'Player name' }],
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Record', role: 'confirm' },
-      ],
+        { text: 'Record', role: 'confirm' }],
     });
     await alert.present();
     const { role, data } = await alert.onDidDismiss<{ values?: { player?: string } }>();
@@ -2061,8 +2039,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
             this.deleteEvent(event, reason || undefined);
             return true;
           },
-        },
-      ],
+        }],
     });
     await alert.present();
   }
@@ -2089,8 +2066,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
       { status: 'completed', label: 'Complete fixture' },
       { status: 'scheduled', label: 'Back to scheduled' },
       { status: 'postponed', label: 'Postpone' },
-      { status: 'cancelled', label: 'Cancel fixture', destructive: true },
-    ].filter((option) => option.status !== current);
+      { status: 'cancelled', label: 'Cancel fixture', destructive: true }].filter((option) => option.status !== current);
 
     const sheet = await this.actionSheets.create({
       header: 'Fixture status',
@@ -2100,8 +2076,7 @@ export class FixtureDetailPage implements OnInit, OnDestroy {
           role: option.destructive ? 'destructive' : undefined,
           handler: () => this.setStatus(option.status),
         })),
-        { text: 'Cancel', role: 'cancel' },
-      ],
+        { text: 'Cancel', role: 'cancel' }],
     });
     await sheet.present();
   }

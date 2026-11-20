@@ -34,16 +34,16 @@ export interface CommercialPoint {
 /** The three things an organiser should know before creating a competition. */
 export const COMMERCIAL_KEY_POINTS: CommercialPoint[] = [
   {
-    title: 'Year one is free',
-    text: 'Creating and running competitions costs nothing in the first year.',
+    title: 'Free until you earn',
+    text: 'A competition stays free to create and run until it starts making revenue.',
   },
   {
     title: 'Sponsorship carries a commission now',
     text: 'The marketing marketplace is live, and Fair Measure keeps 15% of every sponsorship arranged through it.',
   },
   {
-    title: 'Paid plans come after year one',
-    text: 'You get 2–3 months’ notice before anything changes, and a season already running finishes on its old terms.',
+    title: 'Notice before paid plans',
+    text: 'You get 2–3 months’ notice before platform plans change, and a season already running finishes on its old terms.',
   },
 ];
 

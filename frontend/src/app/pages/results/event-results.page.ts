@@ -1,25 +1,14 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
-import {
-  AlertController,
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonRefresher,
-  IonRefresherContent,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { AlertController, IonButtons, IonContent, IonHeader, IonIcon, IonRefresher, IonRefresherContent, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 import type { Observable } from 'rxjs';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type { EntryData, ResultEntry, ResultSheet } from '../../core/results.models';
 import { ResultsService } from '../../core/results.service';
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
 
 const TYPE_LABEL: Record<string, string> = {
   finishing_order: 'Finishing order',
@@ -76,25 +65,22 @@ function raceTime(value: number | string | null | undefined): string {
 @Component({
   selector: 'fm-event-results',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     DatePipe,
     IonHeader,
     IonToolbar,
     IonTitle,
-    IonButtons,
-    IonBackButton,
-    IonContent,
+    IonButtons, IonContent,
     IonIcon,
     IonSpinner,
     IonRefresher,
-    IonRefresherContent,
-  ],
+    IonRefresherContent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './event-results.page.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="(backHref()) | backHref" /></ion-buttons>
         <ion-title>{{ sheet()?.fixture?.label || 'Event' }}</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -1097,7 +1083,7 @@ export class EventResultsPage {
     const sheet = this.sheet();
     if (!sheet) return;
     const entries = Object.entries(this.dirty())
-      .filter(([, changed]) => changed)
+      .filter(([ changed]) => changed)
       .map(([side]) => ({ side, data: this.drafts()[side] ?? {} }));
     const config = this.configDraft() ?? undefined;
     if (sheet.final) {
@@ -1120,8 +1106,7 @@ export class EventResultsPage {
         {
           text: 'Confirm',
           handler: () => this.run(this.results.finalise(sheet.fixture.id), 'Result confirmed.'),
-        },
-      ],
+        }],
     });
     await alert.present();
   }
@@ -1144,8 +1129,7 @@ export class EventResultsPage {
           label: `${this.welfareCode()} · Welfare (vet) elimination, final`,
           value: WELFARE,
         },
-        { type: 'radio' as const, label: 'Clear the decision', value: '', checked: !entry.status },
-      ],
+        { type: 'radio' as const, label: 'Clear the decision', value: '', checked: !entry.status }],
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         {
@@ -1154,8 +1138,7 @@ export class EventResultsPage {
             const welfare = choice === WELFARE;
             void this.confirmStatus(entry, welfare ? this.welfareCode() : (choice ?? ''), welfare);
           },
-        },
-      ],
+        }],
     });
     await alert.present();
   }
@@ -1190,8 +1173,7 @@ export class EventResultsPage {
             );
             return true;
           },
-        },
-      ],
+        }],
     });
     await alert.present();
   }
@@ -1203,8 +1185,7 @@ export class EventResultsPage {
       inputs: [{ name: 'reason', type: 'textarea', placeholder: 'Reason' }],
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Save', role: 'confirm' },
-      ],
+        { text: 'Save', role: 'confirm' }],
     });
     await alert.present();
     const { data, role } = await alert.onDidDismiss<{ values: { reason?: string } }>();

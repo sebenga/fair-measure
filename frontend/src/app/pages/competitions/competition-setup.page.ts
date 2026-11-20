@@ -1,32 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  AlertController,
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonCheckbox,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonInput,
-  IonItem,
-  IonLabel,
-  IonList,
-  IonNote,
-  IonSearchbar,
-  IonSegment,
-  IonSegmentButton,
-  IonSelect,
-  IonSelectOption,
-  IonSpinner,
-  IonTextarea,
-  IonTitle,
-  IonToggle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { AlertController, IonButton, IonButtons, IonCheckbox, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonNote, IonSearchbar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSpinner, IonTextarea, IonTitle, IonToggle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
 import { COMMERCIAL, randAmount } from '../../core/commercial';
@@ -59,19 +34,20 @@ import {
 } from '../../core/models';
 import { CommercialNoteComponent } from '../../shared/commercial-note.component';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
 
 @Component({
   selector: 'fm-competition-setup',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     FormsModule,
     IonHeader,
     IonToolbar,
     IonTitle,
-    IonButtons,
-    IonBackButton,
-    IonContent,
+    IonButtons, IonContent,
     IonSegment,
     IonSegmentButton,
     IonLabel,
@@ -88,14 +64,13 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
     IonSearchbar,
     IonSpinner,
     IonToggle,
-    CommercialNoteComponent,
-  ],
+    CommercialNoteComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button [defaultHref]="backHref()" />
+          <ion-back-button [defaultHref]="(backHref()) | backHref" />
         </ion-buttons>
         <ion-title>Setup</ion-title>
         <ion-buttons slot="end">
@@ -625,21 +600,22 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                 @if (votingEnabled()) {
                   <ion-item>
                     <ion-select
-                      label="Ballot visibility"
+                      label="Voting visibility"
                       labelPlacement="stacked"
                       [value]="ballotVisibility()"
                       [disabled]="busy()"
                       (ionChange)="setVotingVisibility($any($event).detail.value)"
                     >
-                      <ion-select-option value="secret">Secret until close</ion-select-option>
-                      <ion-select-option value="visible">Visible tallies</ion-select-option>
+                      <ion-select-option value="secret">Private until close</ion-select-option>
+                      <ion-select-option value="visible">Public tallies</ion-select-option>
                     </ion-select>
                   </ion-item>
                 }
               </ion-list>
               <ion-note class="footnote">
-                Voting is members only. Secret hides tallies from members until an admin
-                closes the round and awards points; visible shows live counts.
+                Voting is members only. Private hides tallies from members until an admin
+                closes the round and awards points; public shows live counts. You can still
+                pick public or private when opening each round.
               </ion-note>
             }
 
@@ -1467,8 +1443,8 @@ export class CompetitionSetupPage implements OnInit {
     this.patchScoringSettings(
       { voting_visibility: value },
       value === 'visible'
-        ? 'Vote tallies are visible while a round is open.'
-        : 'Vote tallies stay secret until a round closes.',
+        ? 'Vote tallies are public while a round is open.'
+        : 'Vote tallies stay private until a round closes.',
     );
   }
 
@@ -1514,8 +1490,7 @@ export class CompetitionSetupPage implements OnInit {
     { value: 3, label: 'Thu' },
     { value: 4, label: 'Fri' },
     { value: 5, label: 'Sat' },
-    { value: 6, label: 'Sun' },
-  ];
+    { value: 6, label: 'Sun' }];
 
   newParticipantName = '';
   timeLimit = '';
@@ -1640,8 +1615,7 @@ export class CompetitionSetupPage implements OnInit {
     { key: 'club', label: 'Club' },
     { key: 'provincial', label: 'Provincial' },
     { key: 'national', label: 'National' },
-    { key: 'international', label: 'International' },
-  ];
+    { key: 'international', label: 'International' }];
 
   setLevel(level: string): void {
     const competition = this.competition();
@@ -1970,8 +1944,7 @@ export class CompetitionSetupPage implements OnInit {
         : `This turns the competition into a one-hour demo. ${this.samplePeople()}, officials${this.demoExtras()} are filled in. The whole thing deletes after an hour.`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: updating ? 'Refresh' : 'Generate demo', role: 'confirm' },
-      ],
+        { text: updating ? 'Refresh' : 'Generate demo', role: 'confirm' }],
     });
     await alert.present();
     const { role } = await alert.onDidDismiss();
@@ -2007,8 +1980,7 @@ export class CompetitionSetupPage implements OnInit {
       message: `The whole demo ${this.sampleNoun()} is deleted, including ${this.samplePeople()}, officials and fixtures.`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Delete demo', role: 'destructive' },
-      ],
+        { text: 'Delete demo', role: 'destructive' }],
     });
     await alert.present();
     const { role } = await alert.onDidDismiss();
@@ -2164,8 +2136,7 @@ export class CompetitionSetupPage implements OnInit {
   readonly officialChoices = computed(() => {
     const taken = new Set([
       ...this.admins().map((membership) => membership.user.id),
-      ...this.pendingInvites().map((invite) => invite.user.id),
-    ]);
+      ...this.pendingInvites().map((invite) => invite.user.id)]);
     const query = this.officialQuery().trim().toLowerCase();
     return this.profiles()
       .filter((profile) => !taken.has(profile.id))
@@ -2436,8 +2407,7 @@ export class CompetitionSetupPage implements OnInit {
         next: (membership) => {
           this.memberships.update((current) => [
             ...current.filter((item) => item.id !== membership.id),
-            membership,
-          ]);
+            membership]);
           this.busy.set(false);
           void this.toast(`${name} is now an admin.`, 'success');
         },
@@ -2518,8 +2488,7 @@ export class CompetitionSetupPage implements OnInit {
             '/tabs/competitions',
             this.competitionId,
             'teams',
-            participant.id,
-          ]);
+            participant.id]);
         }
       },
       error: async (err: unknown) => {
@@ -2555,8 +2524,7 @@ export class CompetitionSetupPage implements OnInit {
                 ),
             });
           },
-        },
-      ],
+        }],
     });
     await alert.present();
   }
@@ -2615,8 +2583,7 @@ export class CompetitionSetupPage implements OnInit {
               },
             });
           },
-        },
-      ],
+        }],
     });
     await alert.present();
   }

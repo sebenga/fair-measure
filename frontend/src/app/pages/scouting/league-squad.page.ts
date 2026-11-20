@@ -1,19 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  AlertController,
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { AlertController, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 import type { Observable } from 'rxjs';
 
 import { extractErrorMessage } from '../../core/error-message';
@@ -27,6 +15,8 @@ import type {
   SquadPick,
 } from '../../core/scouting.models';
 import { SELECTOR_GUIDE, ScoutingService } from '../../core/scouting.service';
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
 
 const CONFIDENCE_LABEL: Record<EvidenceConfidence, string> = {
   strong: 'Strong evidence',
@@ -44,24 +34,21 @@ const SOURCE_LABEL: Record<string, string> = {
 @Component({
   selector: 'fm-league-squad',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     DatePipe,
     IonHeader,
     IonToolbar,
     IonTitle,
-    IonButtons,
-    IonBackButton,
-    IonButton,
+    IonButtons, IonButton,
     IonContent,
     IonIcon,
-    IonSpinner,
-  ],
+    IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="(backHref()) | backHref" /></ion-buttons>
         <ion-title>League squad</ion-title>
         <ion-buttons slot="end">
           <ion-button (click)="openTalentReport()">
@@ -702,8 +689,7 @@ const SOURCE_LABEL: Record<string, string> = {
           border: 1px solid #ccc;
         }
       }
-    `,
-  ],
+    `],
 })
 export class LeagueSquadPage {
   private readonly scouting = inject(ScoutingService);
@@ -804,8 +790,7 @@ export class LeagueSquadPage {
         {
           text: 'Publish',
           handler: () => this.run(this.scouting.publishSquad(this.leagueId()), 'Squad published.'),
-        },
-      ],
+        }],
     });
     await alert.present();
   }

@@ -1,43 +1,33 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
-import {
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type { ReportLeague, ScoutingCatalog, ScoutingReport } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 @Component({
   selector: 'fm-scouting-report',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     DatePipe,
     IonHeader,
     IonToolbar,
     IonTitle,
-    IonButtons,
-    IonBackButton,
-    IonButton,
+    IonButtons, IonButton,
     IonContent,
     IonIcon,
-    IonSpinner,
-  ],
+    IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="(backHref()) | backHref" /></ion-buttons>
         <ion-title>Scouting report</ion-title>
         <ion-buttons slot="end">
           <ion-button [disabled]="!report() || exporting()" (click)="savePdf()">
@@ -527,8 +517,7 @@ import { ScoutingService } from '../../core/scouting.service';
           break-inside: avoid;
         }
       }
-    `,
-  ],
+    `],
 })
 export class ScoutingReportPage {
   private readonly scouting = inject(ScoutingService);

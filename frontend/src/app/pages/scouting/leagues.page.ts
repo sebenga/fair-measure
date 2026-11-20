@@ -1,28 +1,23 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonHeader, IonIcon, IonTitle, IonToolbar, IonBackButton } from '@ionic/angular/standalone';
 
 import type { LeagueSummary, ScoutingCatalog } from '../../core/scouting.models';
 import { SELECTOR_GUIDE, ScoutingService, groupBySport } from '../../core/scouting.service';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 @Component({
   selector: 'fm-scouting-leagues',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon],
+  imports: [BackHrefPipe, IonBackButton, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonIcon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './scouting.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/scouting' | backHref" /></ion-buttons>
         <ion-title>League squads</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -133,8 +128,7 @@ import { SELECTOR_GUIDE, ScoutingService, groupBySport } from '../../core/scouti
           color: var(--ion-color-medium);
         }
       }
-    `,
-  ],
+    `],
 })
 export class ScoutingLeaguesPage {
   private readonly scouting = inject(ScoutingService);

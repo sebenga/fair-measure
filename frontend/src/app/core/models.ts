@@ -960,7 +960,10 @@ export function pointsByVoting(competition: {
   return competition.settings_json?.['points_by_voting'] === true;
 }
 
-/** Whether vote tallies are live (`visible`) or hidden until close (`secret`). */
+/**
+ * Competition default for vote tallies: `visible` (public / live) or
+ * `secret` (private until close). Admins may override per round when opening one.
+ */
 export function votingVisibility(competition: {
   settings_json?: Record<string, unknown>;
 }): 'secret' | 'visible' {

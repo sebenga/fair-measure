@@ -1,30 +1,24 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, IonBackButton } from '@ionic/angular/standalone';
 
 import type { NocPage } from '../../core/games.service';
 import { GamesService } from '../../core/games.service';
 import { GamesFollowComponent } from './games-follow.component';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 @Component({
   selector: 'fm-games-noc',
   standalone: true,
-  imports: [IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner, GamesFollowComponent],
+  imports: [BackHrefPipe, IonBackButton, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonIcon, IonSpinner, GamesFollowComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './games.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button [defaultHref]="backHref()" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="(backHref()) | backHref" /></ion-buttons>
         <ion-title>{{ noc()?.name ?? 'NOC' }}</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -151,8 +145,7 @@ import { GamesFollowComponent } from './games-follow.component';
       .record {
         font-size: 0.88rem;
       }
-    `,
-  ],
+    `],
 })
 export class GamesNocPage {
   private readonly service = inject(GamesService);

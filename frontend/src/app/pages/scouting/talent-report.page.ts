@@ -1,22 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
-import {
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type { ReportSection, TalentReport, TalentReportKind } from '../../core/scouting.models';
 import { ScoutingService } from '../../core/scouting.service';
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
 
 const KINDS: TalentReportKind[] = ['player', 'progress', 'compare', 'shortlist', 'competition', 'activity'];
 const COLOURS = ['#0f766e', '#c2410c', '#4338ca', '#a16207'];
@@ -28,13 +19,13 @@ const RADIUS = 86;
 @Component({
   selector: 'fm-talent-report',
   standalone: true,
-  imports: [DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton, IonIcon, IonContent, IonSpinner],
+  imports: [BackHrefPipe, IonBackButton, DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton, IonIcon, IonContent, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrls: ['./scouting.scss', './talent-report.page.scss'],
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/scouting" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/scouting' | backHref" /></ion-buttons>
         <ion-title>{{ report()?.title ?? 'Report' }}</ion-title>
         <ion-buttons slot="end">
           <ion-button [disabled]="!report() || exporting()" (click)="downloadPdf()">

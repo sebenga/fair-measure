@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, effect, inject } from '@angular/core';
 import { IonApp, IonRouterOutlet } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
+
+import { BackNavigationService } from './core/back-navigation.service';
 import {
   schoolOutline,
   rocketOutline,
@@ -153,6 +155,8 @@ export class AppComponent {
   private readonly auth = inject(AuthService);
   private readonly realtime = inject(RealtimeService);
   private readonly push = inject(PushService);
+  /** Eagerly track prior routes so back returns to the exact previous screen. */
+  private readonly backNav = inject(BackNavigationService);
 
   constructor() {
     addIcons({

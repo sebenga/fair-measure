@@ -1,31 +1,12 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  AlertController,
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonInput,
-  IonItem,
-  IonList,
-  IonNote,
-  IonSelect,
-  IonSelectOption,
-  IonSpinner,
-  IonTextarea,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-  IonLabel,
-} from '@ionic/angular/standalone';
+import { AlertController, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonList, IonNote, IonSelect, IonSelectOption, IonSpinner, IonTextarea, IonTitle, IonToolbar, ToastController, IonLabel, IonBackButton } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail, ScoreAssistEntry, VotingRound } from '../../core/models';
+import { BackHrefPipe } from '../../shared/back-href.pipe';
 import {
   isPointsTable,
   pointsByVoting,
@@ -36,14 +17,12 @@ import {
 @Component({
   selector: 'fm-competition-score',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     FormsModule,
     IonHeader,
     IonToolbar,
     IonTitle,
-    IonButtons,
-    IonBackButton,
-    IonContent,
+    IonButtons, IonContent,
     IonList,
     IonItem,
     IonInput,
@@ -54,14 +33,13 @@ import {
     IonButton,
     IonIcon,
     IonNote,
-    IonSpinner,
-  ],
+    IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button [defaultHref]="backHref()" />
+          <ion-back-button [defaultHref]="(backHref()) | backHref" />
         </ion-buttons>
         <ion-title>{{ votingOn() ? 'Vote & points' : criteriaLeague() ? 'Add points' : 'Score' }}</ion-title>
       </ion-toolbar>
@@ -74,9 +52,9 @@ import {
         @if (votingOn()) {
           <h3 class="fm-section-title">Member voting</h3>
           <p class="hint">
-            Only members can vote. Ballots are
-            {{ ballotVisibility() === 'visible' ? 'visible while open' : 'secret until an admin closes the round' }}.
-            Closing awards one criterion unit per vote to the table.
+            Only members can vote. Default for new rounds is
+            {{ ballotVisibility() === 'visible' ? 'public (live tallies)' : 'private until an admin closes the round' }}.
+            You can change that when opening a round. Closing awards one criterion unit per vote to the table.
           </p>
 
           @if (canManageVotes()) {
@@ -99,6 +77,17 @@ import {
                   maxlength="200"
                   placeholder="e.g. Week 3 popular pick"
                 />
+              </ion-item>
+              <ion-item>
+                <ion-select
+                  label="This round"
+                  labelPlacement="stacked"
+                  [(ngModel)]="voteRoundVisibility"
+                  name="vote-visibility"
+                >
+                  <ion-select-option value="secret">Private — hide tallies until close</ion-select-option>
+                  <ion-select-option value="visible">Public — show live tallies</ion-select-option>
+                </ion-select>
               </ion-item>
             </ion-list>
             <ion-button expand="block" class="submit" [disabled]="voteBusy() || !voteCategoryId" (click)="openRound()">
@@ -124,7 +113,8 @@ import {
                     <strong>{{ round.title }}</strong>
                     <small>
                       {{ round.category_name }} · {{ round.status }}
-                      · {{ round.visibility }} · {{ round.vote_count }} vote{{ round.vote_count === 1 ? '' : 's' }}
+                      · {{ round.visibility === 'visible' ? 'public' : 'private' }}
+                      · {{ round.vote_count }} vote{{ round.vote_count === 1 ? '' : 's' }}
                     </small>
                   </div>
                   @if (canManageVotes() && round.status === 'open') {
@@ -156,7 +146,7 @@ import {
                 }
 
                 @if (round.tallies_hidden) {
-                  <ion-note class="footnote">Tallies are secret until this round closes.</ion-note>
+                  <ion-note class="footnote">Tallies are private until this round closes.</ion-note>
                 } @else if (round.tallies?.length) {
                   <ul class="tallies">
                     @for (row of round.tallies; track row.participant_id) {
@@ -427,8 +417,7 @@ import {
         gap: 12px;
         font-size: 0.9rem;
       }
-    `,
-  ],
+    `],
 })
 export class CompetitionScorePage implements OnInit {
   private readonly api = inject(ApiService);
@@ -452,6 +441,8 @@ export class CompetitionScorePage implements OnInit {
   categoryId = '';
   voteCategoryId = '';
   voteTitle = '';
+  /** Per-round override; defaults to the competition setting when the board loads. */
+  voteRoundVisibility: 'secret' | 'visible' = 'secret';
   quantity = '1';
   homeId = '';
   awayId = '';
@@ -521,6 +512,7 @@ export class CompetitionScorePage implements OnInit {
         this.participantId = competition.participants[0]?.id ?? '';
         this.categoryId = competition.scoring_categories[0]?.id ?? '';
         this.voteCategoryId = competition.scoring_categories[0]?.id ?? '';
+        this.voteRoundVisibility = votingVisibility(competition);
         this.homeId = competition.participants[0]?.id ?? '';
         this.awayId = competition.participants[1]?.id ?? '';
         this.roundQuantities = Object.fromEntries(
@@ -559,6 +551,7 @@ export class CompetitionScorePage implements OnInit {
       .openVotingRound(this.competitionId, {
         scoring_category: this.voteCategoryId,
         title: this.voteTitle.trim(),
+        visibility: this.voteRoundVisibility,
       })
       .subscribe({
         next: (round) => {
@@ -631,7 +624,7 @@ export class CompetitionScorePage implements OnInit {
           scoring_category: this.categoryId,
           note: this.note.trim(),
           entries: Object.entries(this.roundQuantities)
-            .filter(([, value]) => Number(value))
+            .filter(([ value]) => Number(value))
             .map(([participant, quantity]) => ({ participant, quantity })),
         }
       : this.criteriaLeague()
@@ -708,8 +701,7 @@ export class CompetitionScorePage implements OnInit {
             this.deleteEntry(entry, reason || undefined);
             return true;
           },
-        },
-      ],
+        }],
     });
     await alert.present();
   }

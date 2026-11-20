@@ -1,21 +1,5 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
-import {
-  AlertController,
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonLabel,
-  IonSearchbar,
-  IonSegment,
-  IonSegmentButton,
-  IonSpinner,
-  IonTitle,
-  IonToggle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { AlertController, IonButtons, IonContent, IonHeader, IonIcon, IonLabel, IonSearchbar, IonSegment, IonSegmentButton, IonSpinner, IonTitle, IonToggle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { warningOutline } from 'ionicons/icons';
 import { Subject, debounceTime } from 'rxjs';
@@ -29,6 +13,9 @@ import {
   ReleasesService,
 } from '../../core/releases.service';
 import { PageHeroComponent } from '../../shared/page-hero.component';
+
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
 
 type Section = 'sports' | 'features' | 'competitions';
 type SportFilter = 'all' | 'live' | 'hidden';
@@ -46,13 +33,11 @@ type ToggleChange = CustomEvent<{ checked: boolean }> & { target: HTMLIonToggleE
 @Component({
   selector: 'fm-platform-admin',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     IonHeader,
     IonToolbar,
     IonTitle,
-    IonButtons,
-    IonBackButton,
-    IonContent,
+    IonButtons, IonContent,
     IonSegment,
     IonSegmentButton,
     IonLabel,
@@ -60,14 +45,13 @@ type ToggleChange = CustomEvent<{ checked: boolean }> & { target: HTMLIonToggleE
     IonToggle,
     IonIcon,
     IonSpinner,
-    PageHeroComponent,
-  ],
+    PageHeroComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './platform-admin.page.scss',
   template: `
     <ion-header translucent="true">
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/profile" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/profile' | backHref" /></ion-buttons>
         <ion-title>Platform releases</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -283,8 +267,7 @@ export class PlatformAdminPage implements OnInit {
   readonly sportFilters: Array<{ value: SportFilter; label: string }> = [
     { value: 'all', label: 'All' },
     { value: 'live', label: 'Live' },
-    { value: 'hidden', label: 'Hidden' },
-  ];
+    { value: 'hidden', label: 'Hidden' }];
 
   readonly section = signal<Section>('sports');
   readonly loading = signal(true);
@@ -402,8 +385,7 @@ export class PlatformAdminPage implements OnInit {
           text: live ? 'Release' : 'Hide',
           role: live ? 'confirm' : 'destructive',
           handler: () => this.save('sport', keys, live, `${keys.length} sports ${live ? 'released' : 'hidden'}.`),
-        },
-      ],
+        }],
     });
     await alert.present();
   }
@@ -444,8 +426,7 @@ export class PlatformAdminPage implements OnInit {
       message: 'Every competition on the platform goes, for every account. There is no undo.',
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        { text: 'Delete everything', role: 'destructive', handler: () => this.clearAll() },
-      ],
+        { text: 'Delete everything', role: 'destructive', handler: () => this.clearAll() }],
     });
     await alert.present();
   }

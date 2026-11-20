@@ -1,35 +1,28 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonSpinner,
-  IonTitle,
-  IonToolbar,
-  ToastController,
-} from '@ionic/angular/standalone';
+import { IonButtons, IonContent, IonHeader, IonIcon, IonSpinner, IonTitle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 
 import { extractErrorMessage } from '../../core/error-message';
 import type { Games, GamesKind, MedalRanking } from '../../core/games.service';
 import { GamesService } from '../../core/games.service';
 import { PageHeroComponent } from '../../shared/page-hero.component';
 
+
+import { BackHrefPipe } from '../../shared/back-href.pipe';
+
 @Component({
   selector: 'fm-games-list',
   standalone: true,
-  imports: [
+  imports: [BackHrefPipe, IonBackButton, 
     PageHeroComponent,
-    DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonContent, IonIcon, IonSpinner],
+    DatePipe, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonIcon, IonSpinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './games.scss',
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start"><ion-back-button defaultHref="/tabs/competitions" /></ion-buttons>
+        <ion-buttons slot="start"><ion-back-button [defaultHref]="'/tabs/competitions' | backHref" /></ion-buttons>
         <ion-title>Games</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -128,8 +121,7 @@ export class GamesListPage {
   readonly kinds: Array<{ key: GamesKind; label: string; note: string }> = [
     { key: 'summer', label: 'Summer', note: 'Olympic Summer sports' },
     { key: 'winter', label: 'Winter', note: 'Olympic Winter sports' },
-    { key: 'custom', label: 'Local games', note: 'Schools, houses, provinces' },
-  ];
+    { key: 'custom', label: 'Local games', note: 'Schools, houses, provinces' }];
   readonly list = signal<Games[]>([]);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
