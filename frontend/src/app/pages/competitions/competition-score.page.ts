@@ -8,9 +8,11 @@ import { extractErrorMessage } from '../../core/error-message';
 import type { CompetitionDetail, ScoreAssistEntry, VotingRound } from '../../core/models';
 import { BackHrefPipe } from '../../shared/back-href.pipe';
 import {
+  accumulatesAsVoteCount,
   isPointsTable,
   pointsByVoting,
   scoresAllOnCriterion,
+  votesPerMember,
   votingVisibility,
 } from '../../core/models';
 
@@ -52,9 +54,16 @@ import {
         @if (votingOn()) {
           <h3 class="fm-section-title">Member voting</h3>
           <p class="hint">
-            Only members can vote. Default for new rounds is
+            Only members can vote. Each member has
+            {{ memberVoteBudget() }} vote{{ memberVoteBudget() === 1 ? '' : 's' }} per round
+            {{ memberVoteBudget() > 1 ? ' to split across entrants' : '' }}.
+            Default for new rounds is
             {{ ballotVisibility() === 'visible' ? 'public (live tallies)' : 'private until an admin closes the round' }}.
-            You can change that when opening a round. Closing awards one criterion unit per vote to the table.
+            @if (voteCountTable()) {
+              Closing adds those votes to the table (1 vote = 1 on the standings).
+            } @else {
+              Closing awards one criterion unit per vote to the table.
+            }
           </p>
 
           @if (canManageVotes()) {
@@ -63,7 +72,11 @@ import {
                 <ion-select label="Criterion" labelPlacement="stacked" [(ngModel)]="voteCategoryId" name="vote-criterion">
                   @for (category of comp.scoring_categories; track category.id) {
                     <ion-select-option [value]="category.id">
-                      {{ category.name }} · {{ trim(category.points) }} per vote
+                      @if (voteCountTable()) {
+                        {{ category.name }} · 1 per vote
+                      } @else {
+                        {{ category.name }} · {{ trim(category.points) }} per vote
+                      }
                     </ion-select-option>
                   }
                 </ion-select>
@@ -125,23 +138,76 @@ import {
                 </div>
 
                 @if (round.status === 'open' && canVote()) {
-                  <ion-list inset="true">
-                    <ion-item>
-                      <ion-select
-                        label="Your vote"
-                        labelPlacement="stacked"
-                        [ngModel]="round.my_vote?.participant_id || ''"
-                        (ngModelChange)="castFor(round, $event)"
-                        [name]="'vote-' + round.id"
-                      >
-                        @for (participant of comp.participants; track participant.id) {
-                          <ion-select-option [value]="participant.id">{{ participant.name }}</ion-select-option>
+                  @if ((round.votes_per_member ?? memberVoteBudget()) <= 1) {
+                    <ion-list inset="true">
+                      <ion-item>
+                        <ion-select
+                          label="Your vote"
+                          labelPlacement="stacked"
+                          [ngModel]="round.my_vote?.participant_id || ''"
+                          (ngModelChange)="castFor(round, $event)"
+                          [name]="'vote-' + round.id"
+                        >
+                          @for (participant of comp.participants; track participant.id) {
+                            <ion-select-option [value]="participant.id">{{ participant.name }}</ion-select-option>
+                          }
+                        </ion-select>
+                      </ion-item>
+                    </ion-list>
+                    @if (round.my_vote) {
+                      <ion-note class="footnote">You voted for {{ round.my_vote.participant_name }}.</ion-note>
+                    }
+                  } @else {
+                    <ion-note class="footnote">
+                      {{ draftUsed(round) }} of {{ round.votes_per_member }} used ·
+                      {{ draftRemaining(round) }} left
+                    </ion-note>
+                    <ion-list inset="true">
+                      @for (participant of comp.participants; track participant.id) {
+                        <ion-item>
+                          <ion-label>{{ participant.name }}</ion-label>
+                          <div class="vote-stepper" slot="end">
+                            <ion-button
+                              size="small"
+                              fill="clear"
+                              [disabled]="voteBusy() || draftFor(round, participant.id) <= 0"
+                              (click)="nudgeAllocation(round, participant.id, -1)"
+                            >
+                              −
+                            </ion-button>
+                            <strong>{{ draftFor(round, participant.id) }}</strong>
+                            <ion-button
+                              size="small"
+                              fill="clear"
+                              [disabled]="voteBusy() || draftRemaining(round) <= 0"
+                              (click)="nudgeAllocation(round, participant.id, 1)"
+                            >
+                              +
+                            </ion-button>
+                          </div>
+                        </ion-item>
+                      }
+                    </ion-list>
+                    <ion-button
+                      expand="block"
+                      class="submit"
+                      [disabled]="voteBusy() || draftUsed(round) < 1 || !allocationDirty(round)"
+                      (click)="submitAllocations(round)"
+                    >
+                      @if (voteBusy()) {
+                        <ion-spinner name="crescent" />
+                      } @else {
+                        Save my votes
+                      }
+                    </ion-button>
+                    @if (round.my_votes?.length) {
+                      <ion-note class="footnote">
+                        Saved:
+                        @for (row of round.my_votes; track row.participant_id; let last = $last) {
+                          {{ row.votes }} for {{ row.participant_name }}{{ last ? '.' : ', ' }}
                         }
-                      </ion-select>
-                    </ion-item>
-                  </ion-list>
-                  @if (round.my_vote) {
-                    <ion-note class="footnote">You voted for {{ round.my_vote.participant_name }}.</ion-note>
+                      </ion-note>
+                    }
                   }
                 }
 
@@ -400,6 +466,15 @@ import {
       .vote-head strong {
         display: block;
       }
+      .vote-stepper {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .vote-stepper strong {
+        min-width: 1.5rem;
+        text-align: center;
+      }
       .vote-head small {
         color: var(--ion-color-medium);
         font-size: 0.78rem;
@@ -470,6 +545,19 @@ export class CompetitionScorePage implements OnInit {
     return competition ? votingVisibility(competition) : 'secret';
   });
 
+  readonly memberVoteBudget = computed(() => {
+    const competition = this.competition();
+    return competition ? votesPerMember(competition) : 1;
+  });
+
+  readonly voteCountTable = computed(() => {
+    const competition = this.competition();
+    return competition ? accumulatesAsVoteCount(competition) : false;
+  });
+
+  /** Local draft allocations per open round (participant id → votes). */
+  readonly allocationDrafts = signal<Record<string, Record<string, number>>>({});
+
   readonly roundMode = computed(() => this.criteriaLeague() && this.allOnCriterion());
 
   canVote(): boolean {
@@ -538,8 +626,82 @@ export class CompetitionScorePage implements OnInit {
 
   loadRounds(): void {
     this.api.listVotingRounds(this.competitionId).subscribe({
-      next: (rounds) => this.rounds.set(rounds),
+      next: (rounds) => {
+        this.rounds.set(rounds);
+        for (const round of rounds) {
+          this.seedDraft(round);
+        }
+      },
       error: () => this.rounds.set([]),
+    });
+  }
+
+  private draftFromRound(round: VotingRound): Record<string, number> {
+    return Object.fromEntries((round.my_votes ?? []).map((row) => [row.participant_id, row.votes]));
+  }
+
+  private seedDraft(round: VotingRound, force = false): void {
+    if (!force && this.allocationDrafts()[round.id]) return;
+    this.allocationDrafts.update((all) => ({ ...all, [round.id]: this.draftFromRound(round) }));
+  }
+
+  private draftMap(round: VotingRound): Record<string, number> {
+    return this.allocationDrafts()[round.id] ?? this.draftFromRound(round);
+  }
+
+  draftFor(round: VotingRound, participantId: string): number {
+    return this.draftMap(round)[participantId] ?? 0;
+  }
+
+  draftUsed(round: VotingRound): number {
+    return Object.values(this.draftMap(round)).reduce((sum, n) => sum + n, 0);
+  }
+
+  draftRemaining(round: VotingRound): number {
+    return Math.max(0, (round.votes_per_member ?? this.memberVoteBudget()) - this.draftUsed(round));
+  }
+
+  allocationDirty(round: VotingRound): boolean {
+    const saved = new Map((round.my_votes ?? []).map((row) => [row.participant_id, row.votes]));
+    const draft = this.draftMap(round);
+    const ids = new Set([...saved.keys(), ...Object.keys(draft)]);
+    for (const id of ids) {
+      if ((saved.get(id) ?? 0) !== (draft[id] ?? 0)) return true;
+    }
+    return false;
+  }
+
+  nudgeAllocation(round: VotingRound, participantId: string, delta: number): void {
+    if (round.status !== 'open' || this.voteBusy()) return;
+    const draft = { ...this.draftMap(round) };
+    const current = draft[participantId] ?? 0;
+    const next = current + delta;
+    if (next < 0) return;
+    if (delta > 0 && this.draftRemaining(round) < delta) return;
+    if (next === 0) delete draft[participantId];
+    else draft[participantId] = next;
+    this.allocationDrafts.update((all) => ({ ...all, [round.id]: draft }));
+  }
+
+  submitAllocations(round: VotingRound): void {
+    if (this.voteBusy() || round.status !== 'open') return;
+    const allocations = Object.entries(this.draftMap(round))
+      .filter(([, votes]) => votes > 0)
+      .map(([participant, votes]) => ({ participant, votes }));
+    if (!allocations.length) return;
+    this.voteBusy.set(true);
+    this.voteError.set(null);
+    this.api.castVote(this.competitionId, round.id, { allocations }).subscribe({
+      next: (res) => {
+        this.seedDraft(res.round, true);
+        this.rounds.update((rows) => rows.map((row) => (row.id === round.id ? res.round : row)));
+        this.voteBusy.set(false);
+        void this.notify('Votes saved.', 'success');
+      },
+      error: (err: unknown) => {
+        this.voteBusy.set(false);
+        this.voteError.set(extractErrorMessage(err, 'Could not save those votes.'));
+      },
     });
   }
 
@@ -555,6 +717,7 @@ export class CompetitionScorePage implements OnInit {
       })
       .subscribe({
         next: (round) => {
+          this.seedDraft(round, true);
           this.rounds.update((rows) => [round, ...rows]);
           this.voteTitle = '';
           this.voteBusy.set(false);
@@ -572,11 +735,13 @@ export class CompetitionScorePage implements OnInit {
     if (round.my_vote?.participant_id === participantId) return;
     this.voteBusy.set(true);
     this.voteError.set(null);
-    this.api.castVote(this.competitionId, round.id, participantId).subscribe({
+    this.api.castVote(this.competitionId, round.id, { participant: participantId }).subscribe({
       next: (res) => {
+        this.seedDraft(res.round, true);
         this.rounds.update((rows) => rows.map((row) => (row.id === round.id ? res.round : row)));
         this.voteBusy.set(false);
-        void this.notify(`Voted for ${res.vote.participant_name}.`, 'success');
+        const name = res.vote?.participant_name ?? 'entrant';
+        void this.notify(`Voted for ${name}.`, 'success');
       },
       error: (err: unknown) => {
         this.voteBusy.set(false);

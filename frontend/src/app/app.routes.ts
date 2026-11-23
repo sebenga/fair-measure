@@ -139,6 +139,12 @@ export const routes: Routes = [
           import('./pages/platform/platform-admin.page').then((m) => m.PlatformAdminPage),
       },
       {
+        path: 'platform/legal',
+        canActivate: [authGuard, platformAdminGuard],
+        loadComponent: () =>
+          import('./pages/platform/company-legal.page').then((m) => m.CompanyLegalPage),
+      },
+      {
         path: 'scouting',
         canActivate: [authGuard, featureGuard('scouting')],
         loadComponent: () =>

@@ -1,12 +1,13 @@
 import { Location, NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { IonContent, IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { arrowBackOutline } from 'ionicons/icons';
 
-import { LEGAL, LEGAL_SECTIONS, type LegalPoint, legalPieces } from '../../core/legal';
+import { CompanyLegalService } from '../../core/company-legal.service';
+import { LEGAL_SECTIONS, type LegalPoint, legalPieces } from '../../core/legal';
 import { LegalFooterComponent } from '../../shared/legal-footer.component';
 
 /** Legal notices, disclaimers, privacy and terms for Fair Measure. Open to everyone. */
@@ -22,7 +23,7 @@ import { LegalFooterComponent } from '../../shared/legal-footer.component';
         <header class="nav">
           <button type="button" class="brand" (click)="home()">
             <span class="logo" aria-hidden="true"><span></span></span>
-            {{ legal.product }}
+            {{ product() }}
           </button>
           <button type="button" class="back" (click)="back()">
             <ion-icon name="arrow-back-outline" aria-hidden="true" />
@@ -32,21 +33,21 @@ import { LegalFooterComponent } from '../../shared/legal-footer.component';
 
         <section class="head">
           <p class="eyebrow">Legal</p>
-          <h1>{{ legal.product }} — Legal Notices &amp; Disclaimers</h1>
+          <h1>{{ product() }} — Legal Notices &amp; Disclaimers</h1>
           <dl>
             <div>
               <dt>Owner</dt>
-              <dd>{{ legal.owner }} ("we", "us", "our")</dd>
+              <dd>{{ owner() }} ("we", "us", "our")</dd>
             </div>
             <div>
               <dt>Website</dt>
               <dd>
-                <a [href]="legal.website" target="_blank" rel="noopener">{{ legal.website }}</a>
+                <a [href]="website()" target="_blank" rel="noopener">{{ website() }}</a>
               </dd>
             </div>
             <div>
               <dt>Last updated</dt>
-              <dd>{{ legal.lastUpdated }}</dd>
+              <dd>{{ lastUpdated() }}</dd>
             </div>
           </dl>
         </section>
@@ -307,12 +308,27 @@ export class LegalPage {
   private readonly router = inject(Router);
   private readonly location = inject(Location);
   private readonly route = inject(ActivatedRoute);
+  private readonly companyLegal = inject(CompanyLegalService);
 
-  readonly legal = LEGAL;
   readonly sections = LEGAL_SECTIONS;
+  readonly product = computed(() => this.companyLegal.company().product || 'Fair Measure');
+  readonly owner = computed(
+    () =>
+      this.companyLegal.company().legal_name ||
+      this.companyLegal.company().product ||
+      'Fair Measure',
+  );
+  readonly website = computed(
+    () => this.companyLegal.company().website || 'https://fairmeasure-v2.onrender.com',
+  );
+  readonly lastUpdated = computed(() => {
+    const c = this.companyLegal.company();
+    return c.terms_effective_date || c.privacy_policy_effective_date || '—';
+  });
 
   constructor() {
     addIcons({ arrowBackOutline });
+    this.companyLegal.ensureLoaded();
     this.route.fragment.pipe(takeUntilDestroyed(inject(DestroyRef))).subscribe((fragment) => {
       if (fragment) setTimeout(() => this.jump(fragment), 350);
     });
@@ -323,7 +339,7 @@ export class LegalPage {
   }
 
   pieces(text: string) {
-    return legalPieces(text);
+    return legalPieces(text, this.companyLegal.snapshot());
   }
 
   jump(id: string): void {

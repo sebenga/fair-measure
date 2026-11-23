@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { AlertController, IonButtons, IonContent, IonHeader, IonIcon, IonLabel, IonSearchbar, IonSegment, IonSegmentButton, IonSpinner, IonTitle, IonToggle, IonToolbar, ToastController, IonBackButton } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { warningOutline } from 'ionicons/icons';
@@ -33,7 +34,7 @@ type ToggleChange = CustomEvent<{ checked: boolean }> & { target: HTMLIonToggleE
 @Component({
   selector: 'fm-platform-admin',
   standalone: true,
-  imports: [BackHrefPipe, IonBackButton, 
+  imports: [BackHrefPipe, IonBackButton, RouterLink,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -65,6 +66,7 @@ type ToggleChange = CustomEvent<{ checked: boolean }> & { target: HTMLIonToggleE
       >
         <span class="hero-chip"><ion-icon name="trophy-outline" aria-hidden="true" /> {{ liveSports() }} of {{ sportsOnly().length }} sports live</span>
         <span class="hero-chip"><ion-icon name="layers-outline" aria-hidden="true" /> {{ liveFeatures() }} of {{ features().length }} features live</span>
+        <a class="hero-chip" routerLink="/tabs/platform/legal">Company legal details</a>
       </fm-page-hero>
 
       <ion-segment [value]="section()" (ionChange)="section.set($any($event.detail.value))">

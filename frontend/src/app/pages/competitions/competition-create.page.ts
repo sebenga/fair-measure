@@ -435,6 +435,9 @@ function presetKind(preset: Preset): PresetKind {
                 @if (scoringLocked()) {
                   Official scoring is fixed. These categories and point values
                   cannot be changed after the competition is created.
+                } @else if (isCustom() && pointsByVoting() && accumulateAsVoteCount()) {
+                  Name each voting criterion. The table accumulates vote counts
+                  (one vote = one on the table). Point weights are locked off.
                 } @else if (isCustom()) {
                   Define the scoring criteria first. Each one needs a name, what the
                   points mean, and how many points one unit is worth. You choose
@@ -484,15 +487,19 @@ function presetKind(preset: Preset): PresetKind {
                         maxlength="120"
                         (ionInput)="patchDraft(row.key, { name: stringValue($event) })"
                       />
-                      <ion-input
-                        class="points"
-                        [label]="pointsTable() ? 'Per unit' : 'Points'"
-                        labelPlacement="stacked"
-                        type="number"
-                        inputmode="decimal"
-                        [value]="row.points"
-                        (ionInput)="patchDraft(row.key, { points: stringValue($event) })"
-                      />
+                      @if (!(pointsByVoting() && accumulateAsVoteCount())) {
+                        <ion-input
+                          class="points"
+                          [label]="pointsTable() ? 'Per unit' : 'Points'"
+                          labelPlacement="stacked"
+                          type="number"
+                          inputmode="decimal"
+                          [value]="row.points"
+                          (ionInput)="patchDraft(row.key, { points: stringValue($event) })"
+                        />
+                      } @else {
+                        <span class="pts muted">1 vote each</span>
+                      }
                       <ion-button
                         fill="clear"
                         color="danger"
@@ -623,17 +630,44 @@ function presetKind(preset: Preset): PresetKind {
                   <label class="score-all">
                     <ion-checkbox
                       [checked]="pointsByVoting()"
-                      (ionChange)="pointsByVoting.set($any($event).detail.checked === true)"
+                      (ionChange)="onPointsByVotingChange($any($event).detail.checked === true)"
                     />
                     <span>
                       <strong>Points by voting</strong>
                       <small>
-                        Members vote for an entrant on a criterion. Votes become table points when
-                        the round is closed. You must be a member to vote.
+                        Members allocate a limited number of votes across entrants on a criterion.
+                        Votes become table points when the round is closed. You must be a member to vote.
                       </small>
                     </span>
                   </label>
                   @if (pointsByVoting()) {
+                    <ion-list inset="true" class="vote-budget">
+                      <ion-item>
+                        <ion-input
+                          label="Votes per member (per round)"
+                          labelPlacement="stacked"
+                          type="number"
+                          inputmode="numeric"
+                          min="1"
+                          max="100"
+                          [value]="votesPerMember()"
+                          (ionInput)="setVotesPerMember($any($event).detail.value)"
+                        />
+                      </ion-item>
+                    </ion-list>
+                    <label class="score-all">
+                      <ion-checkbox
+                        [checked]="accumulateAsVoteCount()"
+                        (ionChange)="onAccumulateAsVoteCountChange($any($event).detail.checked === true)"
+                      />
+                      <span>
+                        <strong>Accumulate as vote count</strong>
+                        <small>
+                          Lock each criterion to 1 point per vote so the table total is
+                          the number of votes received. Turn off to use weighted points.
+                        </small>
+                      </span>
+                    </label>
                     <div class="formats vote-visibility">
                       <button
                         type="button"
@@ -1192,10 +1226,12 @@ function presetKind(preset: Preset): PresetKind {
                     <div>
                       <dt>Member voting</dt>
                       <dd>
+                        {{ votesPerMember() }} vote{{ votesPerMember() === 1 ? '' : 's' }} each ·
+                        {{ accumulateAsVoteCount() ? 'vote count table' : 'weighted points' }} ·
                         {{
                           votingVisibility() === 'visible'
-                            ? 'On · public tallies'
-                            : 'On · private until close'
+                            ? 'public tallies'
+                            : 'private until close'
                         }}
                       </dd>
                     </div>
@@ -1446,6 +1482,34 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
   readonly scoreAllOnCriterion = signal(false);
   readonly pointsByVoting = signal(false);
   readonly votingVisibility = signal<'secret' | 'visible'>('secret');
+  /** Default budget when voting is first enabled on create. */
+  readonly votesPerMember = signal(5);
+  readonly accumulateAsVoteCount = signal(false);
+
+  onPointsByVotingChange(enabled: boolean): void {
+    this.pointsByVoting.set(enabled);
+    if (enabled && this.votesPerMember() < 1) {
+      this.votesPerMember.set(5);
+    }
+    if (!enabled) {
+      this.accumulateAsVoteCount.set(false);
+    }
+  }
+
+  onAccumulateAsVoteCountChange(enabled: boolean): void {
+    this.accumulateAsVoteCount.set(enabled);
+    if (enabled) {
+      this.scoringDrafts.update((rows) =>
+        rows.map((row) => (row.affects_score ? { ...row, points: '1' } : row)),
+      );
+    }
+  }
+
+  setVotesPerMember(raw: string | number | null | undefined): void {
+    const value = Math.floor(Number(raw));
+    if (!Number.isFinite(value)) return;
+    this.votesPerMember.set(Math.max(1, Math.min(100, value)));
+  }
 
   readonly pointsTable = computed(() => this.scoringBasis() === 'criteria');
   readonly fillSample = signal(false);
@@ -1660,6 +1724,8 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
       this.scoreAllOnCriterion.set(false);
       this.pointsByVoting.set(false);
       this.votingVisibility.set('secret');
+      this.votesPerMember.set(5);
+      this.accumulateAsVoteCount.set(false);
       if (this.form.controls.format.value === 'freeform') {
         this.form.controls.format.setValue('league');
       }
@@ -2199,7 +2265,10 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
     const scoring_categories = this.namedDrafts().map((row) => ({
       name: row.name.trim(),
       description: row.description.trim(),
-      points: row.points || (this.pointsTable() ? '1' : '0'),
+      points:
+        this.pointsByVoting() && this.accumulateAsVoteCount() && row.affects_score
+          ? '1'
+          : row.points || (this.pointsTable() ? '1' : '0'),
       affects_score: row.affects_score,
       ...(row.code ? { code: row.code } : {}),
     }));
@@ -2225,6 +2294,12 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
                 score_all_on_criterion: this.scoreAllOnCriterion(),
                 points_by_voting: this.pointsByVoting(),
                 voting_visibility: this.pointsByVoting() ? this.votingVisibility() : 'secret',
+                ...(this.pointsByVoting()
+                  ? {
+                      votes_per_member: this.votesPerMember(),
+                      accumulate_as_vote_count: this.accumulateAsVoteCount(),
+                    }
+                  : {}),
               },
             }
           : {}),

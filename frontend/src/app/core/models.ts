@@ -970,7 +970,33 @@ export function votingVisibility(competition: {
   return competition.settings_json?.['voting_visibility'] === 'visible' ? 'visible' : 'secret';
 }
 
+/** Per-round vote budget for each member (defaults to 1). */
+export function votesPerMember(competition: {
+  settings_json?: Record<string, unknown>;
+}): number {
+  const raw = competition.settings_json?.['votes_per_member'];
+  const value = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(value) || value < 1) return 1;
+  return Math.min(100, Math.floor(value));
+}
+
+/** Voting boards where the table total is vote count (1 point per vote). */
+export function accumulatesAsVoteCount(competition: {
+  settings_json?: Record<string, unknown>;
+}): boolean {
+  return (
+    pointsByVoting(competition) &&
+    competition.settings_json?.['accumulate_as_vote_count'] === true
+  );
+}
+
 export interface VotingRoundTally {
+  participant_id: string;
+  participant_name: string;
+  votes: number;
+}
+
+export interface VotingAllocation {
   participant_id: string;
   participant_name: string;
   votes: number;
@@ -988,7 +1014,11 @@ export interface VotingRound {
   note: string;
   created_at: string;
   closed_at: string | null;
+  votes_per_member?: number;
   vote_count: number;
+  my_votes?: VotingAllocation[];
+  votes_used?: number;
+  votes_remaining?: number;
   my_vote: { participant_id: string; participant_name: string } | null;
   tallies: VotingRoundTally[] | null;
   tallies_hidden: boolean;

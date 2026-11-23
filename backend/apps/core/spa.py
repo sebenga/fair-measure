@@ -83,10 +83,70 @@ def _index_path() -> Path:
     return Path(settings.SPA_DIR) / "index.html"
 
 
+def _organization_json_ld() -> dict:
+    """Build Organization schema from the singleton company legal record."""
+
+    from .models import CompanyLegalDetails
+
+    solo = CompanyLegalDetails.get_solo()
+    address = solo.physical_address if isinstance(solo.physical_address, dict) else {}
+    payload: dict = {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": solo.legal_name or solo.product or "Fair Measure",
+        "url": solo.website or "https://fairmeasure-v2.onrender.com",
+    }
+    if solo.trading_name:
+        payload["alternateName"] = solo.trading_name
+    if solo.email:
+        payload["email"] = solo.email
+    if solo.phone:
+        payload["telephone"] = solo.phone
+    if solo.registration_number:
+        payload["identifier"] = solo.registration_number
+    if solo.vat_number:
+        payload["vatID"] = solo.vat_number
+    if any(address.get(key) for key in ("street", "city", "province", "postal_code")):
+        payload["address"] = {
+            "@type": "PostalAddress",
+            "streetAddress": ", ".join(
+                part
+                for part in (
+                    str(address.get("street") or "").strip(),
+                    str(address.get("suburb") or "").strip(),
+                )
+                if part
+            ),
+            "addressLocality": str(address.get("city") or "").strip(),
+            "addressRegion": str(address.get("province") or "").strip(),
+            "postalCode": str(address.get("postal_code") or "").strip(),
+            "addressCountry": "ZA",
+        }
+    return payload
+
+
+def _inject_organization_ld(html: str, nonce: str) -> str:
+    import json
+
+    try:
+        payload = _organization_json_ld()
+    except Exception:  # pragma: no cover - never block serving the SPA
+        return html
+    tag = (
+        f'<script type="application/ld+json" nonce="{nonce}">'
+        f"{json.dumps(payload, ensure_ascii=True)}"
+        f"</script>"
+    )
+    if "</head>" in html:
+        return html.replace("</head>", f"{tag}</head>", 1)
+    return html + tag
+
+
 def _index_response(index: Path) -> HttpResponse:
     html = index.read_text(encoding="utf-8")
     nonce = secrets.token_urlsafe(16)
     html = html.replace("{{CSP_NONCE}}", nonce)
+    html = _inject_organization_ld(html, nonce)
     response = HttpResponse(html, content_type="text/html")
     response["Content-Security-Policy"] = getattr(
         settings, "CONTENT_SECURITY_POLICY", "default-src 'self'"

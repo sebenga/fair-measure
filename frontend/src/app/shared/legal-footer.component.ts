@@ -1,7 +1,7 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
-import { LEGAL } from '../core/legal';
+import { CompanyLegalService } from '../core/company-legal.service';
 
 /** The short legal footer: copyright, ownership and links to the notices. */
 @Component({
@@ -12,8 +12,18 @@ import { LEGAL } from '../core/legal';
   template: `
     <footer>
       <p>
-        © {{ legal.year }} {{ legal.owner }}. All rights reserved. {{ legal.product }} is owned and operated by
-        {{ legal.owner }}, South Africa. Not affiliated with any sports federation. Results are for information only.
+        {{ copyrightLine() }}
+        @if (legalName()) {
+          {{ legalName() }}
+          @if (registrationNumber()) {
+            (Reg. {{ registrationNumber() }})
+          }
+          @if (vatNumber()) {
+            · VAT {{ vatNumber() }}
+          }.
+        }
+        {{ product() }} is owned and operated in South Africa. Not affiliated with any sports federation.
+        Results are for information only.
       </p>
       <nav aria-label="Legal">
         <a routerLink="/legal">Terms</a>
@@ -60,6 +70,18 @@ import { LEGAL } from '../core/legal';
     }
   `,
 })
-export class LegalFooterComponent {
-  readonly legal = LEGAL;
+export class LegalFooterComponent implements OnInit {
+  private readonly companyLegal = inject(CompanyLegalService);
+
+  readonly copyrightLine = this.companyLegal.copyrightLine;
+  readonly product = computed(() => this.companyLegal.company().product || 'Fair Measure');
+  readonly legalName = computed(() => this.companyLegal.company().legal_name || '');
+  readonly registrationNumber = computed(
+    () => this.companyLegal.company().registration_number || '',
+  );
+  readonly vatNumber = computed(() => this.companyLegal.company().vat_number || '');
+
+  ngOnInit(): void {
+    this.companyLegal.ensureLoaded();
+  }
 }

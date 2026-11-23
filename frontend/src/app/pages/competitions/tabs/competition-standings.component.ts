@@ -32,7 +32,12 @@ import type {
   PlayerStatsTable,
   StandingRow,
 } from '../../../core/models';
-import { isPointsTable, tableBonusEnabled, tableBonusOf } from '../../../core/models';
+import {
+  accumulatesAsVoteCount,
+  isPointsTable,
+  tableBonusEnabled,
+  tableBonusOf,
+} from '../../../core/models';
 import { KnockoutTreeComponent } from './knockout-tree.component';
 import { RealtimeService } from '../../../core/realtime.service';
 import type { CombinationStatRow } from '../../../core/results.models';
@@ -56,11 +61,17 @@ import { SeasonPickerComponent } from '../../../shared/season-picker.component';
   template: `
     @if (pointsTable() && scoringGuide().length) {
       <section class="scoring-guide fm-card">
-        <h3>How points are earned</h3>
+        <h3>{{ voteCountTable() ? 'How votes are earned' : 'How points are earned' }}</h3>
         <ul>
           @for (category of scoringGuide(); track category.id) {
             <li>
-              <strong>{{ category.name }}: {{ trim(category.points) }} points</strong>
+              <strong>
+                @if (voteCountTable()) {
+                  {{ category.name }}: 1 vote each
+                } @else {
+                  {{ category.name }}: {{ trim(category.points) }} points
+                }
+              </strong>
               @if (category.description) {
                 <p>{{ category.description }}</p>
               }
@@ -176,7 +187,7 @@ import { SeasonPickerComponent } from '../../../shared/season-picker.component';
                   <th title="Bonus points">B</th>
                 }
               }
-              <th class="pts">Pts</th>
+              <th class="pts">{{ voteCountTable() ? 'Votes' : 'Pts' }}</th>
             </tr>
           </thead>
           <tbody>
@@ -244,12 +255,28 @@ import { SeasonPickerComponent } from '../../../shared/season-picker.component';
                     @for (criterion of breakdownFor(row.participant.id); track criterion.id) {
                       <div class="criterion">
                         <strong>{{ criterion.name }}</strong>
-                        <span>{{ trim(criterion.total) }} pts</span>
-                        <p>{{ criterion.description || 'No description for these points yet.' }}</p>
+                        <span>
+                          {{ trim(criterion.total) }}
+                          {{ voteCountTable() ? 'votes' : 'pts' }}
+                        </span>
+                        <p>
+                          {{
+                            criterion.description ||
+                              (voteCountTable()
+                                ? 'No description for this vote criterion yet.'
+                                : 'No description for these points yet.')
+                          }}
+                        </p>
                         @for (entry of criterion.entries; track $index) {
                           <p class="entry">
-                            {{ trim(entry.quantity) }} × {{ trim(criterion.points_each) }}
-                            = {{ trim(entry.awarded) }}.
+                            @if (voteCountTable()) {
+                              {{ trim(entry.quantity) }}
+                              {{ isOne(entry.quantity) ? 'vote' : 'votes' }}
+                              = {{ trim(entry.awarded) }}.
+                            } @else {
+                              {{ trim(entry.quantity) }} × {{ trim(criterion.points_each) }}
+                              = {{ trim(entry.awarded) }}.
+                            }
                             {{ entry.note || 'No note on how this was accumulated.' }}
                             @if (canScore() && entry.id) {
                               <button
@@ -360,7 +387,11 @@ import { SeasonPickerComponent } from '../../../shared/season-picker.component';
           {{ seriesBlurb() }}
           Ties: {{ tiebreakerLabels() }}.
         } @else if (pointsTable()) {
-          Tap a name to see each scoring criterion, what the points mean, and how they were accumulated.
+          @if (voteCountTable()) {
+            Tap a name to see each voting criterion and how votes were accumulated.
+          } @else {
+            Tap a name to see each scoring criterion, what the points mean, and how they were accumulated.
+          }
         } @else {
           @if (leagueGuide(); as league) {
             League: {{ league }}.
@@ -879,6 +910,10 @@ export class CompetitionStandingsComponent implements OnInit {
     return !this.seriesTable() && isPointsTable(this.competition());
   }
 
+  voteCountTable(): boolean {
+    return this.pointsTable() && accumulatesAsVoteCount(this.competition());
+  }
+
   showsRounds(): boolean {
     if (this.pointsTable() || this.seriesTable()) return false;
     const format = this.competition().format;
@@ -1008,6 +1043,10 @@ export class CompetitionStandingsComponent implements OnInit {
   }
 
   /** Decimals arrive as strings so precision survives; most are whole numbers. */
+  isOne(value: string | number | null | undefined): boolean {
+    return Number(value) === 1;
+  }
+
   trim(value: string): string {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? String(parsed) : value;

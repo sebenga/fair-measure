@@ -26,10 +26,12 @@ import type {
 import {
   isPointsTable,
   isScoringLocked,
+  accumulatesAsVoteCount,
   pointsByVoting,
   scoresAllOnCriterion,
   squadSizeOf,
   tableBonusOf,
+  votesPerMember,
   votingVisibility,
 } from '../../core/models';
 import { CommercialNoteComponent } from '../../shared/commercial-note.component';
@@ -501,15 +503,17 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                 maxlength="2000"
               />
               <div class="add-category-meta">
-                <ion-input
-                  class="points-input"
-                  [(ngModel)]="newCategoryPoints"
-                  name="categoryPoints"
-                  [label]="pointsTable() ? 'Per unit' : 'Points'"
-                  labelPlacement="stacked"
-                  type="number"
-                  inputmode="decimal"
-                />
+                @if (!voteCountTable()) {
+                  <ion-input
+                    class="points-input"
+                    [(ngModel)]="newCategoryPoints"
+                    name="categoryPoints"
+                    [label]="pointsTable() ? 'Per unit' : 'Points'"
+                    labelPlacement="stacked"
+                    type="number"
+                    inputmode="decimal"
+                  />
+                }
                 <ion-checkbox
                   [(ngModel)]="newCategoryAffectsScore"
                   name="categoryAffectsScore"
@@ -537,7 +541,9 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                       <p>{{ category.description }}</p>
                     }
                     <p>
-                      @if (pointsTable()) {
+                      @if (voteCountTable() && category.affects_score) {
+                        1 vote each
+                      } @else if (pointsTable()) {
                         {{ trim(category.points) }} per unit achieved
                       } @else {
                         {{ trim(category.points) }} pts
@@ -599,6 +605,30 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                 </ion-item>
                 @if (votingEnabled()) {
                   <ion-item>
+                    <ion-input
+                      label="Votes per member (per round)"
+                      labelPlacement="stacked"
+                      type="number"
+                      inputmode="numeric"
+                      min="1"
+                      max="100"
+                      [value]="memberVoteBudget()"
+                      [disabled]="busy()"
+                      (ionBlur)="setVotesPerMember($any($event.target).value)"
+                    />
+                  </ion-item>
+                  <ion-item>
+                    <ion-checkbox
+                      labelPlacement="end"
+                      justify="start"
+                      [checked]="voteCountTable()"
+                      [disabled]="busy()"
+                      (ionChange)="setAccumulateAsVoteCount($any($event).detail.checked === true)"
+                    >
+                      Accumulate as vote count
+                    </ion-checkbox>
+                  </ion-item>
+                  <ion-item>
                     <ion-select
                       label="Voting visibility"
                       labelPlacement="stacked"
@@ -613,9 +643,13 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                 }
               </ion-list>
               <ion-note class="footnote">
-                Voting is members only. Private hides tallies from members until an admin
-                closes the round and awards points; public shows live counts. You can still
-                pick public or private when opening each round.
+                Voting is members only. Each member gets a vote budget per round and may
+                split it across entrants.
+                @if (voteCountTable()) {
+                  The table total is vote count (1 per vote).
+                }
+                Private hides tallies until an admin closes the round; public shows live
+                counts. You can still pick public or private when opening each round.
               </ion-note>
             }
 
@@ -1381,6 +1415,16 @@ export class CompetitionSetupPage implements OnInit {
     return competition ? votingVisibility(competition) : 'secret';
   });
 
+  readonly memberVoteBudget = computed(() => {
+    const competition = this.competition();
+    return competition ? votesPerMember(competition) : 1;
+  });
+
+  readonly voteCountTable = computed(() => {
+    const competition = this.competition();
+    return competition ? accumulatesAsVoteCount(competition) : false;
+  });
+
   squadSize(): number {
     const competition = this.competition();
     return competition ? squadSizeOf(competition) : 0;
@@ -1406,6 +1450,7 @@ export class CompetitionSetupPage implements OnInit {
         next: (updated) => {
           this.busy.set(false);
           this.competition.set(updated);
+          this.categories.set(updated.scoring_categories);
           void this.toast(successMessage, 'success');
         },
         error: async (err: unknown) => {
@@ -1431,10 +1476,35 @@ export class CompetitionSetupPage implements OnInit {
       {
         points_by_voting: enabled,
         voting_visibility: enabled ? this.ballotVisibility() : 'secret',
+        ...(enabled
+          ? { votes_per_member: this.memberVoteBudget() > 1 ? this.memberVoteBudget() : 5 }
+          : { accumulate_as_vote_count: false }),
       },
       enabled
         ? 'Members can vote to accumulate points. Open a round from Add points.'
         : 'Member voting is off.',
+    );
+  }
+
+  setAccumulateAsVoteCount(enabled: boolean): void {
+    if (!this.votingEnabled() || this.voteCountTable() === enabled) return;
+    this.patchScoringSettings(
+      { accumulate_as_vote_count: enabled },
+      enabled
+        ? 'The table accumulates vote counts. Criterion weights are locked to 1.'
+        : 'Criteria can use weighted points again.',
+    );
+  }
+
+  setVotesPerMember(raw: string | number | null | undefined): void {
+    if (!this.votingEnabled()) return;
+    const value = Math.floor(Number(raw));
+    if (!Number.isFinite(value)) return;
+    const clamped = Math.max(1, Math.min(100, value));
+    if (clamped === this.memberVoteBudget()) return;
+    this.patchScoringSettings(
+      { votes_per_member: clamped },
+      `Each member gets ${clamped} vote${clamped === 1 ? '' : 's'} per round.`,
     );
   }
 
@@ -2537,11 +2607,15 @@ export class CompetitionSetupPage implements OnInit {
     if (!name || this.busy()) return;
 
     this.busy.set(true);
+    const points =
+      this.voteCountTable() && this.newCategoryAffectsScore
+        ? '1'
+        : String(this.newCategoryPoints || '0');
     this.api
       .createScoringCategory(this.competitionId, {
         name,
         description: this.newCategoryDescription.trim(),
-        points: String(this.newCategoryPoints || '0'),
+        points,
         affects_score: this.newCategoryAffectsScore,
       })
       .subscribe({

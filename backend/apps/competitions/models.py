@@ -492,8 +492,9 @@ class VotingRound(BaseModel):
     """A membership ballot that awards scoring-criterion units when closed.
 
     Used by custom points boards with ``settings_json.points_by_voting``. Each
-    member casts one vote for one entrant; closing the round adds
-    ``vote_count × category.points`` to the table via the normal criterion path.
+    member has a per-round vote budget (``settings_json.votes_per_member``,
+    default 1) they may split across entrants; closing awards
+    ``votes_received × category.points`` via the normal criterion path.
     """
 
     class Status(models.TextChoices):
@@ -540,7 +541,7 @@ class VotingRound(BaseModel):
 
 
 class Vote(BaseModel):
-    """One member's ballot in a voting round (one entrant)."""
+    """Votes a member allocates to one entrant in a round (may be part of a budget)."""
 
     round = models.ForeignKey(VotingRound, on_delete=models.CASCADE, related_name="votes")
     voter = models.ForeignKey(
@@ -549,12 +550,16 @@ class Vote(BaseModel):
     participant = models.ForeignKey(
         Participant, on_delete=models.CASCADE, related_name="votes_received"
     )
+    quantity = models.PositiveIntegerField(default=1)
 
     class Meta:
         ordering = ["created_at"]
         constraints = [
-            models.UniqueConstraint(fields=["round", "voter"], name="uniq_vote_per_round_voter")
+            models.UniqueConstraint(
+                fields=["round", "voter", "participant"],
+                name="uniq_vote_per_round_voter_participant",
+            )
         ]
 
     def __str__(self) -> str:
-        return f"{self.voter_id} → {self.participant_id} ({self.round_id})"
+        return f"{self.voter_id} → {self.participant_id} ×{self.quantity} ({self.round_id})"

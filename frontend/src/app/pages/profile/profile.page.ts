@@ -464,6 +464,13 @@ export class ProfilePage implements OnInit {
         icon: 'rocket-outline',
         link: '/tabs/platform',
       });
+      rows.push({
+        id: 'company-legal',
+        label: 'Company Legal Details',
+        hint: 'Footer, /legal and JSON-LD',
+        icon: 'document-text-outline',
+        link: '/tabs/platform/legal',
+      });
     }
     return rows;
   });

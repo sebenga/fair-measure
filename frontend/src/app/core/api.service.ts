@@ -720,11 +720,16 @@ export class ApiService {
     );
   }
 
-  castVote(competitionId: string, roundId: string, participantId: string) {
-    return this.http.put<{ round: VotingRound; vote: { id: string; participant_id: string; participant_name: string } }>(
-      `${this.base}/competitions/${competitionId}/voting-rounds/${roundId}/vote`,
-      { participant: participantId },
-    );
+  castVote(
+    competitionId: string,
+    roundId: string,
+    body: { participant: string } | { allocations: { participant: string; votes: number }[] },
+  ) {
+    return this.http.put<{
+      round: VotingRound;
+      vote: { id: string | null; participant_id: string; participant_name: string } | null;
+      allocations: { participant_id: string; participant_name: string; votes: number }[];
+    }>(`${this.base}/competitions/${competitionId}/voting-rounds/${roundId}/vote`, body);
   }
 
   closeVotingRound(competitionId: string, roundId: string) {

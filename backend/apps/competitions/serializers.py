@@ -164,6 +164,46 @@ def _validate_game_time(settings: dict, instance) -> None:
         settings["overtime_minutes"] = overtime
 
 
+def _normalize_voting_settings(settings: dict) -> None:
+    """Clamp votes_per_member and accumulate_as_vote_count when voting is on."""
+    from apps.competitions.voting import VOTES_PER_MEMBER_MAX, VOTES_PER_MEMBER_MIN
+
+    if not settings.get("points_by_voting"):
+        settings.pop("votes_per_member", None)
+        settings.pop("accumulate_as_vote_count", None)
+        return
+    raw = settings.get("votes_per_member", VOTES_PER_MEMBER_MIN)
+    try:
+        value = int(raw) if raw not in (None, "") else VOTES_PER_MEMBER_MIN
+    except (TypeError, ValueError):
+        raise serializers.ValidationError(
+            {"votes_per_member": "Votes per member must be a whole number."}
+        )
+    if value < VOTES_PER_MEMBER_MIN or value > VOTES_PER_MEMBER_MAX:
+        raise serializers.ValidationError(
+            {
+                "votes_per_member": (
+                    f"Votes per member must be between {VOTES_PER_MEMBER_MIN} and "
+                    f"{VOTES_PER_MEMBER_MAX}."
+                )
+            }
+        )
+    settings["votes_per_member"] = value
+    settings["accumulate_as_vote_count"] = bool(settings.get("accumulate_as_vote_count"))
+
+
+def _accumulates_as_vote_count(settings: dict | None) -> bool:
+    settings = settings or {}
+    return bool(settings.get("points_by_voting") and settings.get("accumulate_as_vote_count"))
+
+
+def _force_vote_count_category_points(competition: Competition) -> None:
+    """Score-affecting criteria are 1 point each so the table equals vote tallies."""
+    ScoringCategory.objects.filter(competition=competition, affects_score=True).exclude(
+        points=1
+    ).update(points=1)
+
+
 def _apply_game_time_to_unstarted(competition) -> None:
     from apps.fixtures.models import Fixture
 
@@ -215,6 +255,17 @@ class ScoringCategorySerializer(serializers.ModelSerializer):
     def validate(self, attrs: dict) -> dict:
         if self.instance is None and not attrs.get("code"):
             attrs["code"] = slugify(attrs.get("name") or "")[:60] or "score"
+        competition = self.context.get("competition")
+        if competition is None and self.instance is not None:
+            competition = self.instance.competition
+        affects = attrs.get(
+            "affects_score",
+            True if self.instance is None else self.instance.affects_score,
+        )
+        if competition is not None and affects and _accumulates_as_vote_count(
+            competition.settings_json
+        ):
+            attrs["points"] = 1
         return attrs
 
     def create(self, validated_data: dict) -> ScoringCategory:
@@ -1514,6 +1565,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         settings = attrs.get("settings_json")
         if isinstance(settings, dict):
             _validate_game_time(settings, self.instance)
+            _normalize_voting_settings(settings)
             current_mode = team_entry_mode(self.instance) if self.instance is not None else None
             incoming_mode = settings.get("team_entry")
             if current_mode in {"pick", "draft"}:
@@ -1561,6 +1613,8 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
             before.get(key) != after.get(key) for key in ("time_limit_minutes", "overtime_minutes")
         ):
             _apply_game_time_to_unstarted(competition)
+        if _accumulates_as_vote_count(after):
+            _force_vote_count_category_points(competition)
         return competition
 
     # Settings that stay editable once the scoring rules are locked. Everything
@@ -1577,6 +1631,8 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         "score_all_on_criterion",
         "points_by_voting",
         "voting_visibility",
+        "votes_per_member",
+        "accumulate_as_vote_count",
     )
 
     def _update(self, instance: Competition, validated_data: dict) -> Competition:
@@ -1677,14 +1733,17 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
                     code = f"{base}-{counter}"
                     counter += 1
                 used.add(code)
+                vote_count = _accumulates_as_vote_count(competition.settings_json)
+                affects = item.get("affects_score", True)
+                points = 1 if (vote_count and affects) else item["points"]
                 rows.append(
                     ScoringCategory(
                         competition=competition,
                         name=item["name"],
                         code=code[:60],
                         description=item.get("description") or "",
-                        points=item["points"],
-                        affects_score=item.get("affects_score", True),
+                        points=points,
+                        affects_score=affects,
                         display_order=index,
                     )
                 )
@@ -1758,6 +1817,9 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
                 competition,
                 [{"name": name} for name in (cups or settings.get("cups") or ["Cup"])],
             )
+
+        if _accumulates_as_vote_count(competition.settings_json):
+            _force_vote_count_category_points(competition)
 
         return competition
 
