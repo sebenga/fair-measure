@@ -43,7 +43,17 @@ import {
         <ion-buttons slot="start">
           <ion-back-button [defaultHref]="(backHref()) | backHref" />
         </ion-buttons>
-        <ion-title>{{ votingOn() ? 'Vote & points' : criteriaLeague() ? 'Add points' : 'Score' }}</ion-title>
+        <ion-title>
+          {{
+            voteCountTable()
+              ? 'Vote'
+              : votingOn()
+                ? 'Vote & points'
+                : criteriaLeague()
+                  ? 'Add points'
+                  : 'Score'
+          }}
+        </ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -52,16 +62,23 @@ import {
         <div class="centered"><ion-spinner name="crescent" /></div>
       } @else if (competition(); as comp) {
         @if (votingOn()) {
-          <h3 class="fm-section-title">Member voting</h3>
+          <h3 class="fm-section-title">{{ voteCountTable() ? 'Vote only' : 'Member voting' }}</h3>
           <p class="hint">
-            Only members can vote. Each member has
-            {{ memberVoteBudget() }} vote{{ memberVoteBudget() === 1 ? '' : 's' }} per round
-            {{ memberVoteBudget() > 1 ? ' to split across entrants' : '' }}.
-            Default for new rounds is
-            {{ ballotVisibility() === 'visible' ? 'public (live tallies)' : 'private until an admin closes the round' }}.
             @if (voteCountTable()) {
-              Closing adds those votes to the table (1 vote = 1 on the standings).
+              @if (memberVoteBudget() <= 1) {
+                One vote for the whole competition — pick one entrant. Your ballot locks after you cast it; you cannot vote again.
+              } @else {
+                You have {{ memberVoteBudget() }} votes for this competition. Allocate all of them once across entrants, then your ballot locks and you cannot vote again.
+              }
+              Closing a round adds those votes to the table (1 vote = 1 on the standings).
+            } @else if (memberVoteBudget() <= 1) {
+              One vote each per round — pick one entrant. Your ballot locks after you cast it.
             } @else {
+              Each voter has {{ memberVoteBudget() }} votes per round to split across entrants. Saving locks the ballot.
+            }
+            Default for new rounds is
+            {{ ballotVisibility() === 'visible' ? 'live tallies' : 'hidden until an admin closes the round' }}.
+            @if (!voteCountTable()) {
               Closing awards one criterion unit per vote to the table.
             }
           </p>
@@ -138,7 +155,24 @@ import {
                 </div>
 
                 @if (round.status === 'open' && canVote()) {
-                  @if ((round.votes_per_member ?? memberVoteBudget()) <= 1) {
+                  @if (hasCastBallot(round)) {
+                    <ion-note class="footnote" role="status">
+                      Ballot locked.
+                      @if (round.my_vote) {
+                        You voted for {{ round.my_vote.participant_name }}.
+                      } @else if (round.my_votes?.length) {
+                        Saved:
+                        @for (row of round.my_votes; track row.participant_id; let last = $last) {
+                          {{ row.votes }} for {{ row.participant_name }}{{ last ? '.' : ', ' }}
+                        }
+                      }
+                      @if (voteCountTable() || round.vote_only) {
+                        You cannot vote again in this competition.
+                      } @else {
+                        You cannot vote again in this round.
+                      }
+                    </ion-note>
+                  } @else if ((round.votes_per_member ?? memberVoteBudget()) <= 1) {
                     <ion-list inset="true">
                       <ion-item>
                         <ion-select
@@ -147,6 +181,7 @@ import {
                           [ngModel]="round.my_vote?.participant_id || ''"
                           (ngModelChange)="castFor(round, $event)"
                           [name]="'vote-' + round.id"
+                          [disabled]="voteBusy()"
                         >
                           @for (participant of comp.participants; track participant.id) {
                             <ion-select-option [value]="participant.id">{{ participant.name }}</ion-select-option>
@@ -154,13 +189,15 @@ import {
                         </ion-select>
                       </ion-item>
                     </ion-list>
-                    @if (round.my_vote) {
-                      <ion-note class="footnote">You voted for {{ round.my_vote.participant_name }}.</ion-note>
-                    }
                   } @else {
                     <ion-note class="footnote">
-                      {{ draftUsed(round) }} of {{ round.votes_per_member }} used ·
+                      {{ draftUsed(round) }} of {{ round.votes_per_member ?? memberVoteBudget() }} used ·
                       {{ draftRemaining(round) }} left
+                      @if (voteCountTable() || round.vote_only) {
+                        · allocate all votes, then cast once
+                      } @else {
+                        · save once to lock your ballot
+                      }
                     </ion-note>
                     <ion-list inset="true">
                       @for (participant of comp.participants; track participant.id) {
@@ -191,23 +228,15 @@ import {
                     <ion-button
                       expand="block"
                       class="submit"
-                      [disabled]="voteBusy() || draftUsed(round) < 1 || !allocationDirty(round)"
+                      [disabled]="voteBusy() || !canSubmitBallot(round)"
                       (click)="submitAllocations(round)"
                     >
                       @if (voteBusy()) {
                         <ion-spinner name="crescent" />
                       } @else {
-                        Save my votes
+                        Cast my ballot
                       }
                     </ion-button>
-                    @if (round.my_votes?.length) {
-                      <ion-note class="footnote">
-                        Saved:
-                        @for (row of round.my_votes; track row.participant_id; let last = $last) {
-                          {{ row.votes }} for {{ row.participant_name }}{{ last ? '.' : ', ' }}
-                        }
-                      </ion-note>
-                    }
                   }
                 }
 
@@ -570,6 +599,8 @@ export class CompetitionScorePage implements OnInit {
   }
 
   canScoreAdmin(): boolean {
+    // Vote-only boards are scored solely by ballots — no manual admin awards.
+    if (this.voteCountTable()) return false;
     const role = this.competition()?.my_role;
     return role === 'owner' || role === 'admin' || role === 'scorer';
   }
@@ -685,6 +716,19 @@ export class CompetitionScorePage implements OnInit {
 
   submitAllocations(round: VotingRound): void {
     if (this.voteBusy() || round.status !== 'open') return;
+    if (this.hasCastBallot(round)) {
+      this.voteError.set(
+        this.voteCountTable()
+          ? 'You already cast your ballot in this competition.'
+          : 'You already cast your ballot in this round.',
+      );
+      return;
+    }
+    if (!this.canSubmitBallot(round)) {
+      const budget = round.votes_per_member ?? this.memberVoteBudget();
+      this.voteError.set(`Allocate all ${budget} votes before casting your ballot.`);
+      return;
+    }
     const allocations = Object.entries(this.draftMap(round))
       .filter(([, votes]) => votes > 0)
       .map(([participant, votes]) => ({ participant, votes }));
@@ -696,7 +740,7 @@ export class CompetitionScorePage implements OnInit {
         this.seedDraft(res.round, true);
         this.rounds.update((rows) => rows.map((row) => (row.id === round.id ? res.round : row)));
         this.voteBusy.set(false);
-        void this.notify('Votes saved.', 'success');
+        void this.notify('Ballot cast and locked.', 'success');
       },
       error: (err: unknown) => {
         this.voteBusy.set(false);
@@ -730,9 +774,38 @@ export class CompetitionScorePage implements OnInit {
       });
   }
 
+  hasCastBallot(round: VotingRound): boolean {
+    if (round.ballot_locked || round.competition_ballot_cast) return true;
+    if (this.voteCountTable() || round.vote_only) {
+      return this.rounds().some(
+        (row) =>
+          row.competition_ballot_cast ||
+          (row.votes_used ?? 0) > 0 ||
+          !!row.my_vote ||
+          (row.my_votes?.length ?? 0) > 0,
+      );
+    }
+    return (round.votes_used ?? 0) > 0 || !!round.my_vote || (round.my_votes?.length ?? 0) > 0;
+  }
+
+  canSubmitBallot(round: VotingRound): boolean {
+    const budget = round.votes_per_member ?? this.memberVoteBudget();
+    const used = this.draftUsed(round);
+    if (used < 1) return false;
+    if (this.voteCountTable() || round.vote_only) return used === budget;
+    return true;
+  }
+
   castFor(round: VotingRound, participantId: string): void {
     if (!participantId || this.voteBusy() || round.status !== 'open') return;
-    if (round.my_vote?.participant_id === participantId) return;
+    if (this.hasCastBallot(round)) {
+      this.voteError.set(
+        this.voteCountTable()
+          ? 'You already cast your ballot in this competition.'
+          : 'You already cast your ballot in this round.',
+      );
+      return;
+    }
     this.voteBusy.set(true);
     this.voteError.set(null);
     this.api.castVote(this.competitionId, round.id, { participant: participantId }).subscribe({
@@ -741,7 +814,7 @@ export class CompetitionScorePage implements OnInit {
         this.rounds.update((rows) => rows.map((row) => (row.id === round.id ? res.round : row)));
         this.voteBusy.set(false);
         const name = res.vote?.participant_name ?? 'entrant';
-        void this.notify(`Voted for ${name}.`, 'success');
+        void this.notify(`Voted for ${name}. Ballot locked.`, 'success');
       },
       error: (err: unknown) => {
         this.voteBusy.set(false);

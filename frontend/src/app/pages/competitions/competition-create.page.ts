@@ -430,27 +430,91 @@ function presetKind(preset: Preset): PresetKind {
                 </ion-list>
               }
 
-              <h3 class="fm-section-title">{{ pointsTable() ? 'Scoring criteria' : 'Scoring' }}</h3>
-              <p class="hint">
-                @if (scoringLocked()) {
-                  Official scoring is fixed. These categories and point values
-                  cannot be changed after the competition is created.
-                } @else if (isCustom() && pointsByVoting() && accumulateAsVoteCount()) {
-                  Name each voting criterion. The table accumulates vote counts
-                  (one vote = one on the table). Point weights are locked off.
-                } @else if (isCustom()) {
-                  Define the scoring criteria first. Each one needs a name, what the
-                  points mean, and how many points one unit is worth. You choose
-                  next whether the table uses match results or the sum of these criteria.
-                } @else if (pointsTable()) {
-                  Each row is a scoring criterion. The table accumulates what people
-                  achieve on it. Leave “per unit” at 1 to add the number they enter.
-                } @else {
-                  Each row is a scoring type: a name, what it means, and how many
-                  points it is worth. Turn off “counts toward the score” to record
-                  something without changing the total.
-                }
-              </p>
+              @if (isCustom()) {
+                <h3 class="fm-section-title">How scoring works</h3>
+                <p class="hint">
+                  Pick prescribed criteria (with names and descriptions), voting, or both.
+                  You choose VS matches vs a points board on the next step.
+                </p>
+                <div class="formats scoring-kinds">
+                  <button
+                    type="button"
+                    class="format"
+                    [class.selected]="customScoringKind() === 'prescribed'"
+                    (click)="setCustomScoringKind('prescribed')"
+                  >
+                    <ion-icon name="create-outline" aria-hidden="true" />
+                    <div>
+                      <strong>Prescribed criteria</strong>
+                      <p>Name each criterion, describe what the points mean, and set how many points one unit is worth. Admins or scorers enter the totals.</p>
+                    </div>
+                    @if (customScoringKind() === 'prescribed') {
+                      <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                    }
+                  </button>
+                  <button
+                    type="button"
+                    class="format"
+                    [class.selected]="customScoringKind() === 'voting'"
+                    (click)="setCustomScoringKind('voting')"
+                  >
+                    <ion-icon name="people-circle-outline" aria-hidden="true" />
+                    <div>
+                      <strong>Vote only</strong>
+                      <p>
+                        Each person gets the number of votes you set below, casts them once across entrants,
+                        then cannot vote again. The table is the vote count.
+                      </p>
+                    </div>
+                    @if (customScoringKind() === 'voting') {
+                      <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                    }
+                  </button>
+                  <button
+                    type="button"
+                    class="format"
+                    [class.selected]="customScoringKind() === 'both'"
+                    (click)="setCustomScoringKind('both')"
+                  >
+                    <ion-icon name="git-merge-outline" aria-hidden="true" />
+                    <div>
+                      <strong>Criteria + voting</strong>
+                      <p>Keep prescribed criteria and point weights, and also open voting rounds that award those points.</p>
+                    </div>
+                    @if (customScoringKind() === 'both') {
+                      <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                    }
+                  </button>
+                </div>
+
+                <h3 class="fm-section-title">
+                  {{ customScoringKind() === 'voting' ? 'Ballot label' : 'Scoring criteria' }}
+                </h3>
+                <p class="hint">
+                  @if (customScoringKind() === 'voting') {
+                    Name what this vote is for (optional extras if you open more than one ballot later). One ballot per person for the whole competition.
+                  } @else if (customScoringKind() === 'both') {
+                    Define each criterion’s name, description, and points per unit. Voting rounds award those same points.
+                  } @else {
+                    Each criterion needs a name, what the points mean, and how many points one unit is worth.
+                  }
+                </p>
+              } @else {
+                <h3 class="fm-section-title">{{ pointsTable() ? 'Scoring criteria' : 'Scoring' }}</h3>
+                <p class="hint">
+                  @if (scoringLocked()) {
+                    Official scoring is fixed. These categories and point values
+                    cannot be changed after the competition is created.
+                  } @else if (pointsTable()) {
+                    Each row is a scoring criterion. The table accumulates what people
+                    achieve on it. Leave “per unit” at 1 to add the number they enter.
+                  } @else {
+                    Each row is a scoring type: a name, what it means, and how many
+                    points it is worth. Turn off “counts toward the score” to record
+                    something without changing the total.
+                  }
+                </p>
+              }
 
               @if (scoringLocked()) {
                 @if (activePreset()?.result_type) {
@@ -511,12 +575,20 @@ function presetKind(preset: Preset): PresetKind {
                         <ion-icon
                           slot="icon-only"
                           name="trash-outline"
-                          [attr.aria-label]="pointsTable() ? 'Remove KPI' : 'Remove scoring type'"
+                          [attr.aria-label]="pointsTable() ? 'Remove criterion' : 'Remove scoring type'"
                         />
                       </ion-button>
                     </div>
                     <ion-textarea
-                      [label]="pointsTable() || isCustom() ? 'Description of these points' : 'What this means'"
+                      [label]="
+                        isCustom()
+                          ? customScoringKind() === 'voting'
+                            ? 'What a vote means'
+                            : 'Description of these points'
+                          : pointsTable()
+                            ? 'Description of these points'
+                            : 'What this means'
+                      "
                       labelPlacement="stacked"
                       [value]="row.description"
                       [placeholder]="
@@ -529,13 +601,15 @@ function presetKind(preset: Preset): PresetKind {
                       maxlength="2000"
                       (ionInput)="patchDraft(row.key, { description: stringValue($event) })"
                     />
-                    <ion-checkbox
-                      labelPlacement="end"
-                      [checked]="row.affects_score"
-                      (ionChange)="patchDraft(row.key, { affects_score: checkboxValue($event) })"
-                    >
-                      {{ pointsTable() ? 'Counts toward the table' : 'Counts toward the score' }}
-                    </ion-checkbox>
+                    @if (customScoringKind() !== 'voting') {
+                      <ion-checkbox
+                        labelPlacement="end"
+                        [checked]="row.affects_score"
+                        (ionChange)="patchDraft(row.key, { affects_score: checkboxValue($event) })"
+                      >
+                        {{ pointsTable() || isCustom() ? 'Counts toward the table' : 'Counts toward the score' }}
+                      </ion-checkbox>
+                    }
                   </div>
                 }
               </div>
@@ -546,6 +620,150 @@ function presetKind(preset: Preset): PresetKind {
                   {{ pointsTable() || isCustom() ? 'Add scoring criterion' : 'Add scoring type' }}
                 </ion-button>
               </div>
+              }
+
+              @if (isCustom()) {
+                <h3 class="fm-section-title">How the table builds</h3>
+                <p class="hint">
+                  Accumulative totals run across the competition. You can also score everyone on
+                  one criterion in a single round. Voting can replace or sit alongside prescribed scoring.
+                </p>
+                <div class="formats">
+                  <button
+                    type="button"
+                    class="format"
+                    [class.selected]="!scoreAllOnCriterion()"
+                    (click)="scoreAllOnCriterion.set(false)"
+                  >
+                    <ion-icon name="trending-up-outline" aria-hidden="true" />
+                    <div>
+                      <strong>Accumulative</strong>
+                      <p>Points (or votes) add up over time for each entrant.</p>
+                    </div>
+                    @if (!scoreAllOnCriterion()) {
+                      <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                    }
+                  </button>
+                  @if (customScoringKind() !== 'voting') {
+                    <button
+                      type="button"
+                      class="format"
+                      [class.selected]="scoreAllOnCriterion()"
+                      (click)="scoreAllOnCriterion.set(true)"
+                    >
+                      <ion-icon name="people-outline" aria-hidden="true" />
+                      <div>
+                        <strong>Everyone on one criterion</strong>
+                        <p>When adding points, pick a criterion and enter what each entrant achieved in the same round.</p>
+                      </div>
+                      @if (scoreAllOnCriterion()) {
+                        <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                      }
+                    </button>
+                  }
+                </div>
+
+                @if (pointsByVoting()) {
+                  <h3 class="fm-section-title">Who can vote</h3>
+                  <p class="hint">
+                    Private competitions always keep voting to members. On a public competition you
+                    can let any signed-in person score through a vote.
+                  </p>
+                  <div class="formats">
+                    <button
+                      type="button"
+                      class="format"
+                      [class.selected]="votingOpenTo() === 'members'"
+                      (click)="votingOpenTo.set('members')"
+                    >
+                      <ion-icon name="lock-closed-outline" aria-hidden="true" />
+                      <div>
+                        <strong>Members only</strong>
+                        <p>Only people in the competition cast ballots. Required if the competition is private.</p>
+                      </div>
+                      @if (votingOpenTo() === 'members') {
+                        <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                      }
+                    </button>
+                    <button
+                      type="button"
+                      class="format"
+                      [class.selected]="votingOpenTo() === 'public'"
+                      (click)="votingOpenTo.set('public')"
+                    >
+                      <ion-icon name="globe-outline" aria-hidden="true" />
+                      <div>
+                        <strong>Anyone signed in</strong>
+                        <p>Works when the competition is public. Visitors do not need to join first.</p>
+                      </div>
+                      @if (votingOpenTo() === 'public') {
+                        <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                      }
+                    </button>
+                  </div>
+
+                  <ion-list inset="true" class="vote-budget">
+                    <ion-item>
+                      <ion-input
+                        label="Votes each person gets per round"
+                        labelPlacement="stacked"
+                        type="number"
+                        inputmode="numeric"
+                        min="1"
+                        max="100"
+                        [value]="votesPerMember()"
+                        (ionInput)="setVotesPerMember($any($event).detail.value)"
+                      />
+                    </ion-item>
+                  </ion-list>
+                  <p class="hint">
+                    @if (customScoringKind() === 'voting') {
+                      @if (votesPerMember() <= 1) {
+                        Vote only: each person picks one entrant once for the whole competition. After casting, they cannot vote again.
+                      } @else {
+                        Vote only: each person must use all {{ votesPerMember() }} votes in one ballot, then cannot vote again.
+                      }
+                    } @else if (votesPerMember() <= 1) {
+                      One vote each per round. The ballot locks after it is cast.
+                    } @else {
+                      Each person can split {{ votesPerMember() }} votes across entrants in one round, then the ballot locks.
+                    }
+                  </p>
+
+                  <h3 class="fm-section-title">Vote tallies</h3>
+                  <div class="formats vote-visibility">
+                    <button
+                      type="button"
+                      class="format"
+                      [class.selected]="votingVisibility() === 'secret'"
+                      (click)="votingVisibility.set('secret')"
+                    >
+                      <ion-icon name="eye-off-outline" aria-hidden="true" />
+                      <div>
+                        <strong>Hide until close</strong>
+                        <p>Tallies stay hidden from voters until an admin closes the round.</p>
+                      </div>
+                      @if (votingVisibility() === 'secret') {
+                        <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                      }
+                    </button>
+                    <button
+                      type="button"
+                      class="format"
+                      [class.selected]="votingVisibility() === 'visible'"
+                      (click)="votingVisibility.set('visible')"
+                    >
+                      <ion-icon name="eye-outline" aria-hidden="true" />
+                      <div>
+                        <strong>Show live tallies</strong>
+                        <p>Voters see running counts while the round is open.</p>
+                      </div>
+                      @if (votingVisibility() === 'visible') {
+                        <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
+                      }
+                    </button>
+                  </div>
+                }
               }
             </ng-template>
           }
@@ -603,105 +821,16 @@ function presetKind(preset: Preset): PresetKind {
                 >
                   <ion-icon name="stats-chart-outline" aria-hidden="true" />
                   <div>
-                    <strong>Points accumulation</strong>
+                    <strong>Points board</strong>
                     <p>
-                      An admin adds points against the criteria you defined. Entrants do not
-                      play each other, and there is no fixture schedule.
+                      No fixtures. The table uses the scoring options you set on the previous step
+                      (prescribed criteria, voting, or both).
                     </p>
                   </div>
                   @if (pointsTable()) {
                     <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
                   }
                 </button>
-                @if (pointsTable()) {
-                  <label class="score-all">
-                    <ion-checkbox
-                      [checked]="scoreAllOnCriterion()"
-                      (ionChange)="scoreAllOnCriterion.set($any($event).detail.checked === true)"
-                    />
-                    <span>
-                      <strong>Score everyone on one criterion</strong>
-                      <small>
-                        When adding points, pick a criterion and enter what each entrant achieved
-                        in the same round.
-                      </small>
-                    </span>
-                  </label>
-                  <label class="score-all">
-                    <ion-checkbox
-                      [checked]="pointsByVoting()"
-                      (ionChange)="onPointsByVotingChange($any($event).detail.checked === true)"
-                    />
-                    <span>
-                      <strong>Points by voting</strong>
-                      <small>
-                        Members allocate a limited number of votes across entrants on a criterion.
-                        Votes become table points when the round is closed. You must be a member to vote.
-                      </small>
-                    </span>
-                  </label>
-                  @if (pointsByVoting()) {
-                    <ion-list inset="true" class="vote-budget">
-                      <ion-item>
-                        <ion-input
-                          label="Votes per member (per round)"
-                          labelPlacement="stacked"
-                          type="number"
-                          inputmode="numeric"
-                          min="1"
-                          max="100"
-                          [value]="votesPerMember()"
-                          (ionInput)="setVotesPerMember($any($event).detail.value)"
-                        />
-                      </ion-item>
-                    </ion-list>
-                    <label class="score-all">
-                      <ion-checkbox
-                        [checked]="accumulateAsVoteCount()"
-                        (ionChange)="onAccumulateAsVoteCountChange($any($event).detail.checked === true)"
-                      />
-                      <span>
-                        <strong>Accumulate as vote count</strong>
-                        <small>
-                          Lock each criterion to 1 point per vote so the table total is
-                          the number of votes received. Turn off to use weighted points.
-                        </small>
-                      </span>
-                    </label>
-                    <div class="formats vote-visibility">
-                      <button
-                        type="button"
-                        class="format"
-                        [class.selected]="votingVisibility() === 'secret'"
-                        (click)="votingVisibility.set('secret')"
-                      >
-                        <ion-icon name="eye-off-outline" aria-hidden="true" />
-                        <div>
-                          <strong>Private voting</strong>
-                          <p>Tallies stay hidden from members until an admin closes the round.</p>
-                        </div>
-                        @if (votingVisibility() === 'secret') {
-                          <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
-                        }
-                      </button>
-                      <button
-                        type="button"
-                        class="format"
-                        [class.selected]="votingVisibility() === 'visible'"
-                        (click)="votingVisibility.set('visible')"
-                      >
-                        <ion-icon name="eye-outline" aria-hidden="true" />
-                        <div>
-                          <strong>Public voting</strong>
-                          <p>Members see live vote counts while the round is open.</p>
-                        </div>
-                        @if (votingVisibility() === 'visible') {
-                          <ion-icon name="checkmark-outline" class="tick" aria-hidden="true" />
-                        }
-                      </button>
-                    </div>
-                  }
-                }
                 <button
                   type="button"
                   class="format"
@@ -721,6 +850,14 @@ function presetKind(preset: Preset): PresetKind {
                   }
                 </button>
               </div>
+              @if (pointsTable() && pointsByVoting()) {
+                <p class="hint">
+                  Voting is on:
+                  {{ customScoringKind() === 'voting' ? 'vote-count table' : 'criteria + voting' }},
+                  {{ votesPerMember() }} vote{{ votesPerMember() === 1 ? '' : 's' }} each,
+                  {{ votingOpenTo() === 'public' ? 'anyone signed in can vote when public' : 'members only' }}.
+                </p>
+              }
 
               <h3 class="fm-section-title">{{ pointsTable() ? 'Who takes part' : 'Who plays' }}</h3>
               <div class="formats">
@@ -1088,6 +1225,12 @@ function presetKind(preset: Preset): PresetKind {
 
           @case ('visibility') {
             <h3 class="fm-section-title">Who can see it</h3>
+            @if (pointsByVoting() && votingOpenTo() === 'public') {
+              <p class="hint">
+                Voting is open to anyone signed in. Keep the competition public for that to work;
+                a private competition will lock voting to members.
+              </p>
+            }
             <div class="visibility">
               <button
                 type="button"
@@ -1213,25 +1356,37 @@ function presetKind(preset: Preset): PresetKind {
                 }
                 @if (isCustom() && pointsTable()) {
                   <div>
-                    <dt>Scoring board</dt>
+                    <dt>Scoring type</dt>
                     <dd>
+                      @switch (customScoringKind()) {
+                        @case ('voting') {
+                          Vote only · one ballot
+                        }
+                        @case ('both') {
+                          Prescribed criteria + voting
+                        }
+                        @default {
+                          Prescribed criteria
+                        }
+                      }
+                      ·
                       {{
                         scoreAllOnCriterion()
-                          ? 'Everyone on one criterion each round'
-                          : 'One entrant at a time'
+                          ? 'everyone on one criterion'
+                          : 'accumulative'
                       }}
                     </dd>
                   </div>
                   @if (pointsByVoting()) {
                     <div>
-                      <dt>Member voting</dt>
+                      <dt>Voting</dt>
                       <dd>
                         {{ votesPerMember() }} vote{{ votesPerMember() === 1 ? '' : 's' }} each ·
-                        {{ accumulateAsVoteCount() ? 'vote count table' : 'weighted points' }} ·
+                        {{ votingOpenTo() === 'public' ? 'anyone signed in' : 'members only' }} ·
                         {{
                           votingVisibility() === 'visible'
-                            ? 'public tallies'
-                            : 'private until close'
+                            ? 'live tallies'
+                            : 'hidden until close'
                         }}
                       </dd>
                     </div>
@@ -1482,26 +1637,36 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
   readonly scoreAllOnCriterion = signal(false);
   readonly pointsByVoting = signal(false);
   readonly votingVisibility = signal<'secret' | 'visible'>('secret');
-  /** Default budget when voting is first enabled on create. */
-  readonly votesPerMember = signal(5);
+  /** Members only, or any signed-in viewer when the competition is public. */
+  readonly votingOpenTo = signal<'members' | 'public'>('members');
+  /** Per-round vote budget. Voting mode defaults to 1 (one ballot each). */
+  readonly votesPerMember = signal(1);
   readonly accumulateAsVoteCount = signal(false);
 
-  onPointsByVotingChange(enabled: boolean): void {
-    this.pointsByVoting.set(enabled);
-    if (enabled && this.votesPerMember() < 1) {
-      this.votesPerMember.set(5);
-    }
-    if (!enabled) {
-      this.accumulateAsVoteCount.set(false);
-    }
-  }
+  /** Prescribed criteria, vote-count scoring, or weighted criteria plus voting. */
+  readonly customScoringKind = computed<'prescribed' | 'voting' | 'both'>(() => {
+    if (!this.pointsByVoting()) return 'prescribed';
+    return this.accumulateAsVoteCount() ? 'voting' : 'both';
+  });
 
-  onAccumulateAsVoteCountChange(enabled: boolean): void {
-    this.accumulateAsVoteCount.set(enabled);
-    if (enabled) {
+  setCustomScoringKind(kind: 'prescribed' | 'voting' | 'both'): void {
+    if (kind === 'prescribed') {
+      this.pointsByVoting.set(false);
+      this.accumulateAsVoteCount.set(false);
+      this.votingOpenTo.set('members');
+      return;
+    }
+    this.pointsByVoting.set(true);
+    if (kind === 'voting') {
+      this.accumulateAsVoteCount.set(true);
+      this.scoreAllOnCriterion.set(false);
+      this.votesPerMember.set(1);
       this.scoringDrafts.update((rows) =>
         rows.map((row) => (row.affects_score ? { ...row, points: '1' } : row)),
       );
+    } else {
+      this.accumulateAsVoteCount.set(false);
+      if (this.votesPerMember() < 1) this.votesPerMember.set(5);
     }
   }
 
@@ -1724,7 +1889,8 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
       this.scoreAllOnCriterion.set(false);
       this.pointsByVoting.set(false);
       this.votingVisibility.set('secret');
-      this.votesPerMember.set(5);
+      this.votingOpenTo.set('members');
+      this.votesPerMember.set(1);
       this.accumulateAsVoteCount.set(false);
       if (this.form.controls.format.value === 'freeform') {
         this.form.controls.format.setValue('league');
@@ -1734,6 +1900,14 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
     this.scoringBasis.set('criteria');
     this.form.controls.format.setValue('freeform');
     this.form.controls.match_weekdays.setValue([]);
+  }
+
+  setPrivate(value: boolean): void {
+    this.form.controls.is_private.setValue(value);
+    if (value) {
+      this.form.controls.show_on_landing.setValue(false);
+      this.votingOpenTo.set('members');
+    }
   }
 
   setBonusEnabled(enabled: boolean): void {
@@ -1784,7 +1958,7 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
   formatHint(): string {
     if (this.isCustom()) {
       return this.pointsTable()
-        ? 'Choose how the table is built. Points accumulation collects points without a match schedule.'
+        ? 'A points board has no fixtures. Scoring criteria and voting were set on the previous step.'
         : 'Choose league, knockout, or both. A VS competition plays fixtures and ranks on match results.';
     }
     if (this.scoringLocked()) {
@@ -2223,13 +2397,6 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
     this.show(target);
   }
 
-  setPrivate(isPrivate: boolean): void {
-    this.form.controls.is_private.setValue(isPrivate);
-    if (isPrivate) {
-      this.form.controls.show_on_landing.setValue(false);
-    }
-  }
-
   visibilityLabel(): string {
     if (this.form.controls.is_private.value) return 'Private';
     if (this.form.controls.show_on_landing.value) return 'Public · on the landing page';
@@ -2298,6 +2465,7 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
                   ? {
                       votes_per_member: this.votesPerMember(),
                       accumulate_as_vote_count: this.accumulateAsVoteCount(),
+                      voting_open_to: raw.is_private ? 'members' : this.votingOpenTo(),
                     }
                   : {}),
               },

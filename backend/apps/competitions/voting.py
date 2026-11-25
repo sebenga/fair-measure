@@ -1,11 +1,15 @@
-"""Member voting that accumulates points on custom criteria boards.
+"""Voting that accumulates points on custom criteria boards.
 
-Requires ``settings_json.points_by_voting``. Each member has a per-round vote
-budget (``settings_json.votes_per_member``, default 1) they may split across
-entrants. Visibility is ``secret`` / private (tallies hidden until the round
-closes) or ``visible`` / public (live tallies). Only competition members may
-cast a ballot; admins open and close rounds, and may override visibility per
-round.
+Requires ``settings_json.points_by_voting``. Each voter has a vote budget
+(``settings_json.votes_per_member``, default 1) they may split across entrants.
+
+Vote-only boards (``accumulate_as_vote_count``) use that budget once for the
+whole competition: cast the full allocation, then the ballot is locked forever.
+Hybrid boards lock per round only.
+
+Tally visibility is ``secret`` or ``visible``. Who may vote is
+``voting_open_to``: ``members`` or ``public`` (signed-in viewers of a public
+competition). Private competitions always require membership.
 """
 
 from __future__ import annotations
@@ -41,6 +45,13 @@ def points_by_voting_enabled(competition: Competition) -> bool:
     return bool((competition.settings_json or {}).get("points_by_voting"))
 
 
+def accumulates_as_vote_count(competition: Competition) -> bool:
+    """Vote-only board: table is vote count; one competition-wide ballot per voter."""
+    return points_by_voting_enabled(competition) and bool(
+        (competition.settings_json or {}).get("accumulate_as_vote_count")
+    )
+
+
 def votes_per_member(competition: Competition) -> int:
     raw = (competition.settings_json or {}).get("votes_per_member")
     try:
@@ -48,6 +59,10 @@ def votes_per_member(competition: Competition) -> int:
     except (TypeError, ValueError):
         value = VOTES_PER_MEMBER_MIN
     return max(VOTES_PER_MEMBER_MIN, min(VOTES_PER_MEMBER_MAX, value))
+
+
+def voter_has_cast_in_competition(competition: Competition, user) -> bool:
+    return Vote.objects.filter(round__competition=competition, voter=user).exists()
 
 
 def voting_visibility_setting(competition: Competition) -> str:
@@ -59,6 +74,14 @@ def voting_visibility_setting(competition: Competition) -> str:
     )
 
 
+def voting_open_to(competition: Competition) -> str:
+    """Who may cast a ballot: members only, or any signed-in viewer of a public competition."""
+    if competition.is_private:
+        return "members"
+    raw = (competition.settings_json or {}).get("voting_open_to") or "members"
+    return "public" if raw == "public" else "members"
+
+
 def _competition(user, competition_pk) -> Competition:
     return get_object_or_404(visible_competitions(user), pk=competition_pk)
 
@@ -68,6 +91,16 @@ def _require_member(competition: Competition, user) -> Membership:
     if membership is None:
         raise PermissionDenied("Join this competition before voting.")
     return membership
+
+
+def _require_voter(competition: Competition, user) -> Membership | None:
+    """Members always; non-members only when voting_open_to is public on a public competition."""
+    membership = Membership.objects.filter(competition=competition, user=user).first()
+    if membership is not None:
+        return membership
+    if voting_open_to(competition) == "public":
+        return None
+    raise PermissionDenied("Join this competition before voting.")
 
 
 def _require_admin(competition: Competition, user) -> None:
@@ -126,11 +159,14 @@ def _vote_total(round_row: VotingRound) -> int:
 
 
 def _round_payload(round_row: VotingRound, user) -> dict:
-    budget = votes_per_member(round_row.competition)
+    competition = round_row.competition
+    budget = votes_per_member(competition)
     my_votes = _my_allocations(round_row, user)
     votes_used = sum(row["votes"] for row in my_votes)
     show_tallies = _can_see_tallies(round_row, user)
     first = my_votes[0] if my_votes else None
+    vote_only = accumulates_as_vote_count(competition)
+    competition_cast = voter_has_cast_in_competition(competition, user) if user else False
     return {
         "id": str(round_row.id),
         "competition_id": str(round_row.competition_id),
@@ -148,6 +184,9 @@ def _round_payload(round_row: VotingRound, user) -> dict:
         "my_votes": my_votes,
         "votes_used": votes_used,
         "votes_remaining": max(0, budget - votes_used),
+        "vote_only": vote_only,
+        "ballot_locked": bool(my_votes) or (vote_only and competition_cast),
+        "competition_ballot_cast": competition_cast if vote_only else bool(my_votes),
         # Legacy single-pick shape for clients that still read my_vote.
         "my_vote": (
             {
@@ -162,7 +201,9 @@ def _round_payload(round_row: VotingRound, user) -> dict:
     }
 
 
-def _parse_allocations(data, budget: int) -> list[tuple[str, int]]:
+def _parse_allocations(
+    data, budget: int, *, require_full_budget: bool = False
+) -> list[tuple[str, int]]:
     """Return [(participant_id, votes), ...] validated against the budget."""
     raw_allocations = data.get("allocations")
     if raw_allocations is None:
@@ -171,9 +212,8 @@ def _parse_allocations(data, budget: int) -> list[tuple[str, int]]:
             raise ValidationError(
                 {"allocations": "Provide allocations, or a single participant for a one-vote ballot."}
             )
-        # Legacy: one vote when budget is 1, otherwise the full budget on that entrant.
-        votes = 1 if budget == 1 else budget
-        raw_allocations = [{"participant": participant_id, "votes": votes}]
+        # Single pick spends the full budget on that entrant.
+        raw_allocations = [{"participant": participant_id, "votes": budget}]
 
     if not isinstance(raw_allocations, list):
         raise ValidationError({"allocations": "Send a list of {participant, votes} objects."})
@@ -206,8 +246,17 @@ def _parse_allocations(data, budget: int) -> list[tuple[str, int]]:
         raise ValidationError(
             {
                 "allocations": (
-                    f"You have {budget} vote{'s' if budget != 1 else ''} this round; "
+                    f"You have {budget} vote{'s' if budget != 1 else ''} to cast; "
                     f"you tried to use {total}."
+                )
+            }
+        )
+    if require_full_budget and total != budget:
+        raise ValidationError(
+            {
+                "allocations": (
+                    f"Use all {budget} vote{'s' if budget != 1 else ''} in one ballot "
+                    f"(you allocated {total})."
                 )
             }
         )
@@ -220,7 +269,7 @@ class VotingRoundListCreateView(APIView):
     @extend_schema(tags=TAG, summary="List voting rounds")
     def get(self, request: Request, competition_pk) -> Response:
         competition = _competition(request.user, competition_pk)
-        _require_member(competition, request.user)
+        _require_voter(competition, request.user)
         if not points_by_voting_enabled(competition):
             return Response([])
         rounds = (
@@ -278,7 +327,7 @@ class VotingRoundDetailView(APIView):
     @extend_schema(tags=TAG, summary="Get a voting round")
     def get(self, request: Request, competition_pk, round_pk) -> Response:
         competition = _competition(request.user, competition_pk)
-        _require_member(competition, request.user)
+        _require_voter(competition, request.user)
         round_row = get_object_or_404(
             VotingRound.objects.select_related("category", "competition"),
             pk=round_pk,
@@ -293,7 +342,7 @@ class VoteCastView(APIView):
     @extend_schema(tags=TAG, summary="Cast or change your vote allocation")
     def put(self, request: Request, competition_pk, round_pk) -> Response:
         competition = _competition(request.user, competition_pk)
-        _require_member(competition, request.user)
+        _require_voter(competition, request.user)
         if not points_by_voting_enabled(competition):
             raise ValidationError({"points_by_voting": "Voting is not enabled for this competition."})
         round_row = get_object_or_404(
@@ -305,7 +354,10 @@ class VoteCastView(APIView):
             raise ValidationError({"round": "This voting round is closed."})
 
         budget = votes_per_member(competition)
-        allocations = _parse_allocations(request.data, budget)
+        vote_only = accumulates_as_vote_count(competition)
+        allocations = _parse_allocations(
+            request.data, budget, require_full_budget=vote_only
+        )
         participant_ids = [pid for pid, _votes in allocations]
         participants = {
             str(p.id): p
@@ -318,7 +370,31 @@ class VoteCastView(APIView):
             raise ValidationError({"allocations": "One or more entrants are not in this competition."})
 
         with transaction.atomic():
-            Vote.objects.filter(round=round_row, voter=request.user).delete()
+            # Vote-only: one ballot for the whole competition.
+            # Hybrid: one ballot per round (no changing after cast).
+            if vote_only:
+                already = (
+                    Vote.objects.select_for_update()
+                    .filter(round__competition=competition, voter=request.user)
+                    .exists()
+                )
+                lock_message = (
+                    "You already cast your ballot in this competition. "
+                    f"Each person gets {budget} vote{'s' if budget != 1 else ''} "
+                    "in total and cannot vote again."
+                )
+            else:
+                already = (
+                    Vote.objects.select_for_update()
+                    .filter(round=round_row, voter=request.user)
+                    .exists()
+                )
+                lock_message = (
+                    "You already cast your ballot in this round. "
+                    "Each person gets one ballot; it cannot be changed."
+                )
+            if already:
+                raise ValidationError({"vote": lock_message})
             Vote.objects.bulk_create(
                 [
                     Vote(

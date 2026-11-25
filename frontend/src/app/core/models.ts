@@ -953,7 +953,7 @@ export function scoresAllOnCriterion(competition: {
   return competition.settings_json?.['score_all_on_criterion'] === true;
 }
 
-/** Custom points boards where members vote to accumulate criterion points. */
+/** Custom points boards where people vote to accumulate criterion points. */
 export function pointsByVoting(competition: {
   settings_json?: Record<string, unknown>;
 }): boolean {
@@ -961,13 +961,25 @@ export function pointsByVoting(competition: {
 }
 
 /**
- * Competition default for vote tallies: `visible` (public / live) or
- * `secret` (private until close). Admins may override per round when opening one.
+ * Competition default for vote tallies: `visible` (live) or
+ * `secret` (hidden until close). Admins may override per round when opening one.
  */
 export function votingVisibility(competition: {
   settings_json?: Record<string, unknown>;
 }): 'secret' | 'visible' {
   return competition.settings_json?.['voting_visibility'] === 'visible' ? 'visible' : 'secret';
+}
+
+/**
+ * Who may cast a ballot. Private competitions always behave as `members`.
+ * `public` means any signed-in user who can see the competition.
+ */
+export function votingOpenTo(competition: {
+  is_private?: boolean;
+  settings_json?: Record<string, unknown>;
+}): 'members' | 'public' {
+  if (competition.is_private) return 'members';
+  return competition.settings_json?.['voting_open_to'] === 'public' ? 'public' : 'members';
 }
 
 /** Per-round vote budget for each member (defaults to 1). */
@@ -1019,6 +1031,12 @@ export interface VotingRound {
   my_votes?: VotingAllocation[];
   votes_used?: number;
   votes_remaining?: number;
+  /** Vote-only board: one competition-wide ballot. */
+  vote_only?: boolean;
+  /** True once this voter may no longer cast (round or competition lock). */
+  ballot_locked?: boolean;
+  /** Vote-only: voter already used their competition ballot. */
+  competition_ballot_cast?: boolean;
   my_vote: { participant_id: string; participant_name: string } | null;
   tallies: VotingRoundTally[] | null;
   tallies_hidden: boolean;

@@ -171,6 +171,7 @@ def _normalize_voting_settings(settings: dict) -> None:
     if not settings.get("points_by_voting"):
         settings.pop("votes_per_member", None)
         settings.pop("accumulate_as_vote_count", None)
+        settings.pop("voting_open_to", None)
         return
     raw = settings.get("votes_per_member", VOTES_PER_MEMBER_MIN)
     try:
@@ -190,6 +191,12 @@ def _normalize_voting_settings(settings: dict) -> None:
         )
     settings["votes_per_member"] = value
     settings["accumulate_as_vote_count"] = bool(settings.get("accumulate_as_vote_count"))
+    open_to = settings.get("voting_open_to") or "members"
+    if open_to not in ("members", "public"):
+        raise serializers.ValidationError(
+            {"voting_open_to": "Use members or public."}
+        )
+    settings["voting_open_to"] = open_to
 
 
 def _accumulates_as_vote_count(settings: dict | None) -> bool:
@@ -1566,6 +1573,13 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         if isinstance(settings, dict):
             _validate_game_time(settings, self.instance)
             _normalize_voting_settings(settings)
+            # Private competitions always keep ballots to members.
+            will_be_private = attrs.get(
+                "is_private",
+                getattr(self.instance, "is_private", False) if self.instance else False,
+            )
+            if will_be_private and settings.get("points_by_voting"):
+                settings["voting_open_to"] = "members"
             current_mode = team_entry_mode(self.instance) if self.instance is not None else None
             incoming_mode = settings.get("team_entry")
             if current_mode in {"pick", "draft"}:
@@ -1631,6 +1645,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         "score_all_on_criterion",
         "points_by_voting",
         "voting_visibility",
+        "voting_open_to",
         "votes_per_member",
         "accumulate_as_vote_count",
     )

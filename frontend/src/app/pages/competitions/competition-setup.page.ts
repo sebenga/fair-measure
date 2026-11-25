@@ -32,6 +32,7 @@ import {
   squadSizeOf,
   tableBonusOf,
   votesPerMember,
+  votingOpenTo,
   votingVisibility,
 } from '../../core/models';
 import { CommercialNoteComponent } from '../../shared/commercial-note.component';
@@ -575,38 +576,42 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
             </ion-list>
 
             @if (pointsTable() && isCustom()) {
-              <h3 class="fm-section-title">Scoring board</h3>
+              <h3 class="fm-section-title">How scoring works</h3>
               <p class="hint">
-                Choose whether points are added one entrant at a time, for every
-                entrant on the same criterion in one round, or by member votes.
+                Prescribed criteria (admin enters points), voting, or both. Voting can be
+                members only, or anyone signed in when the competition is public.
               </p>
               <ion-list inset="true">
                 <ion-item>
-                  <ion-checkbox
-                    labelPlacement="end"
-                    justify="start"
-                    [checked]="scoreAllOnCriterion()"
+                  <ion-select
+                    label="Scoring type"
+                    labelPlacement="stacked"
+                    [value]="customScoringKind()"
                     [disabled]="busy()"
-                    (ionChange)="setScoreAllOnCriterion($any($event).detail.checked === true)"
+                    (ionChange)="setCustomScoringKind($any($event).detail.value)"
                   >
-                    Score everyone on one criterion
-                  </ion-checkbox>
+                    <ion-select-option value="prescribed">Prescribed criteria</ion-select-option>
+                    <ion-select-option value="voting">Vote only (one ballot, vote-count table)</ion-select-option>
+                    <ion-select-option value="both">Criteria + voting</ion-select-option>
+                  </ion-select>
                 </ion-item>
-                <ion-item>
-                  <ion-checkbox
-                    labelPlacement="end"
-                    justify="start"
-                    [checked]="votingEnabled()"
-                    [disabled]="busy()"
-                    (ionChange)="setPointsByVoting($any($event).detail.checked === true)"
-                  >
-                    Points by voting
-                  </ion-checkbox>
-                </ion-item>
+                @if (customScoringKind() !== 'voting') {
+                  <ion-item>
+                    <ion-checkbox
+                      labelPlacement="end"
+                      justify="start"
+                      [checked]="scoreAllOnCriterion()"
+                      [disabled]="busy()"
+                      (ionChange)="setScoreAllOnCriterion($any($event).detail.checked === true)"
+                    >
+                      Score everyone on one criterion
+                    </ion-checkbox>
+                  </ion-item>
+                }
                 @if (votingEnabled()) {
                   <ion-item>
                     <ion-input
-                      label="Votes per member (per round)"
+                      label="Votes per person (per round)"
                       labelPlacement="stacked"
                       type="number"
                       inputmode="numeric"
@@ -618,38 +623,38 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                     />
                   </ion-item>
                   <ion-item>
-                    <ion-checkbox
-                      labelPlacement="end"
-                      justify="start"
-                      [checked]="voteCountTable()"
-                      [disabled]="busy()"
-                      (ionChange)="setAccumulateAsVoteCount($any($event).detail.checked === true)"
+                    <ion-select
+                      label="Who can vote"
+                      labelPlacement="stacked"
+                      [value]="ballotOpenTo()"
+                      [disabled]="busy() || competition()?.is_private"
+                      (ionChange)="setVotingOpenTo($any($event).detail.value)"
                     >
-                      Accumulate as vote count
-                    </ion-checkbox>
+                      <ion-select-option value="members">Members only</ion-select-option>
+                      <ion-select-option value="public">Anyone signed in (public comps)</ion-select-option>
+                    </ion-select>
                   </ion-item>
                   <ion-item>
                     <ion-select
-                      label="Voting visibility"
+                      label="Vote tallies"
                       labelPlacement="stacked"
                       [value]="ballotVisibility()"
                       [disabled]="busy()"
                       (ionChange)="setVotingVisibility($any($event).detail.value)"
                     >
-                      <ion-select-option value="secret">Private until close</ion-select-option>
-                      <ion-select-option value="visible">Public tallies</ion-select-option>
+                      <ion-select-option value="secret">Hide until close</ion-select-option>
+                      <ion-select-option value="visible">Show live tallies</ion-select-option>
                     </ion-select>
                   </ion-item>
                 }
               </ion-list>
               <ion-note class="footnote">
-                Voting is members only. Each member gets a vote budget per round and may
-                split it across entrants.
-                @if (voteCountTable()) {
+                @if (customScoringKind() === 'voting') {
                   The table total is vote count (1 per vote).
+                } @else if (customScoringKind() === 'both') {
+                  Voting rounds award each criterion’s point weight.
                 }
-                Private hides tallies until an admin closes the round; public shows live
-                counts. You can still pick public or private when opening each round.
+                Private competitions always keep voting to members.
               </ion-note>
             }
 
@@ -1415,6 +1420,11 @@ export class CompetitionSetupPage implements OnInit {
     return competition ? votingVisibility(competition) : 'secret';
   });
 
+  readonly ballotOpenTo = computed(() => {
+    const competition = this.competition();
+    return competition ? votingOpenTo(competition) : 'members';
+  });
+
   readonly memberVoteBudget = computed(() => {
     const competition = this.competition();
     return competition ? votesPerMember(competition) : 1;
@@ -1423,6 +1433,11 @@ export class CompetitionSetupPage implements OnInit {
   readonly voteCountTable = computed(() => {
     const competition = this.competition();
     return competition ? accumulatesAsVoteCount(competition) : false;
+  });
+
+  readonly customScoringKind = computed<'prescribed' | 'voting' | 'both'>(() => {
+    if (!this.votingEnabled()) return 'prescribed';
+    return this.voteCountTable() ? 'voting' : 'both';
   });
 
   squadSize(): number {
@@ -1470,29 +1485,48 @@ export class CompetitionSetupPage implements OnInit {
     );
   }
 
-  setPointsByVoting(enabled: boolean): void {
-    if (this.votingEnabled() === enabled) return;
+  setCustomScoringKind(kind: 'prescribed' | 'voting' | 'both'): void {
+    if (kind === this.customScoringKind()) return;
+    if (kind === 'prescribed') {
+      this.patchScoringSettings(
+        {
+          points_by_voting: false,
+          accumulate_as_vote_count: false,
+          voting_open_to: 'members',
+        },
+        'Prescribed criteria only. Voting is off.',
+      );
+      return;
+    }
+    const accumulate = kind === 'voting';
+    const budget = accumulate
+      ? 1
+      : this.memberVoteBudget() > 1
+        ? this.memberVoteBudget()
+        : 5;
     this.patchScoringSettings(
       {
-        points_by_voting: enabled,
-        voting_visibility: enabled ? this.ballotVisibility() : 'secret',
-        ...(enabled
-          ? { votes_per_member: this.memberVoteBudget() > 1 ? this.memberVoteBudget() : 5 }
-          : { accumulate_as_vote_count: false }),
+        points_by_voting: true,
+        accumulate_as_vote_count: accumulate,
+        voting_visibility: this.ballotVisibility(),
+        voting_open_to: this.ballotOpenTo(),
+        votes_per_member: budget,
+        ...(accumulate ? { score_all_on_criterion: false } : {}),
       },
-      enabled
-        ? 'Members can vote to accumulate points. Open a round from Add points.'
-        : 'Member voting is off.',
+      kind === 'voting'
+        ? 'Voting on. One vote each; the table accumulates vote counts.'
+        : 'Criteria plus voting. Rounds award each criterion’s point weight.',
     );
   }
 
-  setAccumulateAsVoteCount(enabled: boolean): void {
-    if (!this.votingEnabled() || this.voteCountTable() === enabled) return;
+  setVotingOpenTo(value: 'members' | 'public'): void {
+    if (!this.votingEnabled() || this.ballotOpenTo() === value) return;
+    if (this.competition()?.is_private && value === 'public') return;
     this.patchScoringSettings(
-      { accumulate_as_vote_count: enabled },
-      enabled
-        ? 'The table accumulates vote counts. Criterion weights are locked to 1.'
-        : 'Criteria can use weighted points again.',
+      { voting_open_to: value },
+      value === 'public'
+        ? 'Anyone signed in can vote while this competition is public.'
+        : 'Only members can vote.',
     );
   }
 
@@ -1504,7 +1538,9 @@ export class CompetitionSetupPage implements OnInit {
     if (clamped === this.memberVoteBudget()) return;
     this.patchScoringSettings(
       { votes_per_member: clamped },
-      `Each member gets ${clamped} vote${clamped === 1 ? '' : 's'} per round.`,
+      clamped === 1
+        ? 'One vote each per round. The ballot locks after it is cast.'
+        : `Each person gets ${clamped} votes per round to split across entrants, then the ballot locks.`,
     );
   }
 

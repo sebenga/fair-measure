@@ -109,6 +109,99 @@ def test_member_vote_secret_hides_tallies_until_close(api, user):
     assert event.side.participant_id == alpha.id
 
 
+def test_second_cast_in_same_round_is_rejected(api, user):
+    competition, alpha, beta, category = _points_board(api, votes_per_member=1)
+    member = User.objects.create_user(email="once@example.com", password="x")
+    Membership.objects.create(competition=competition, user=member, role=Role.MEMBER)
+    opened = api.post(
+        f"/api/v1/competitions/{competition.id}/voting-rounds",
+        {"scoring_category": str(category.id)},
+        format="json",
+    )
+    round_id = opened.data["id"]
+    api.force_authenticate(member)
+    first = api.put(
+        f"/api/v1/competitions/{competition.id}/voting-rounds/{round_id}/vote",
+        {"participant": str(alpha.id)},
+        format="json",
+    )
+    assert first.status_code == 200, first.data
+    second = api.put(
+        f"/api/v1/competitions/{competition.id}/voting-rounds/{round_id}/vote",
+        {"participant": str(beta.id)},
+        format="json",
+    )
+    assert second.status_code == 400
+    detail = second.data.get("error", second.data).get("detail", second.data)
+    assert "vote" in detail
+    assert Vote.objects.filter(round_id=round_id, voter=member).count() == 1
+    assert Vote.objects.get(round_id=round_id, voter=member).participant_id == alpha.id
+
+
+def test_vote_only_locks_ballot_for_whole_competition(api, user):
+    competition, alpha, beta, category = _points_board(
+        api, votes_per_member=2, accumulate_as_vote_count=True
+    )
+    member = User.objects.create_user(email="vote-only@example.com", password="x")
+    Membership.objects.create(competition=competition, user=member, role=Role.MEMBER)
+    first_round = api.post(
+        f"/api/v1/competitions/{competition.id}/voting-rounds",
+        {"scoring_category": str(category.id), "title": "Ballot 1"},
+        format="json",
+    ).data["id"]
+    api.force_authenticate(member)
+    cast = api.put(
+        f"/api/v1/competitions/{competition.id}/voting-rounds/{first_round}/vote",
+        {
+            "allocations": [
+                {"participant": str(alpha.id), "votes": 1},
+                {"participant": str(beta.id), "votes": 1},
+            ]
+        },
+        format="json",
+    )
+    assert cast.status_code == 200, cast.data
+    assert cast.data["round"]["vote_only"] is True
+    assert cast.data["round"]["ballot_locked"] is True
+    assert cast.data["round"]["competition_ballot_cast"] is True
+
+    # Partial ballot rejected on vote-only boards.
+    other = User.objects.create_user(email="partial@example.com", password="x")
+    Membership.objects.create(competition=competition, user=other, role=Role.MEMBER)
+    api.force_authenticate(other)
+    partial = api.put(
+        f"/api/v1/competitions/{competition.id}/voting-rounds/{first_round}/vote",
+        {"allocations": [{"participant": str(alpha.id), "votes": 1}]},
+        format="json",
+    )
+    assert partial.status_code == 400
+
+    # A later round still rejects the voter who already cast.
+    api.force_authenticate(user)
+    api.post(
+        f"/api/v1/competitions/{competition.id}/voting-rounds/{first_round}/close",
+        {},
+        format="json",
+    )
+    second_round = api.post(
+        f"/api/v1/competitions/{competition.id}/voting-rounds",
+        {"scoring_category": str(category.id), "title": "Ballot 2"},
+        format="json",
+    ).data["id"]
+    api.force_authenticate(member)
+    again = api.put(
+        f"/api/v1/competitions/{competition.id}/voting-rounds/{second_round}/vote",
+        {
+            "allocations": [
+                {"participant": str(alpha.id), "votes": 2},
+            ]
+        },
+        format="json",
+    )
+    assert again.status_code == 400
+    assert Vote.objects.filter(voter=member, round__competition=competition).count() == 2
+
+
 def test_visible_voting_shows_live_tallies(api, user):
     competition, alpha, beta, category = _points_board(api, visibility="visible")
     member = User.objects.create_user(email="visible-voter@example.com", password="x")
@@ -335,6 +428,49 @@ def test_accumulate_as_vote_count_locks_category_points_to_one(api, user):
     }
     assert events[str(alpha.id)] == 2
     assert events[str(beta.id)] == 1
+
+
+def test_public_competition_can_let_signed_in_non_members_vote(api, user):
+    competition, alpha, beta, category = _points_board(api)
+    competition.is_private = False
+    competition.settings_json = {
+        **(competition.settings_json or {}),
+        "voting_open_to": "public",
+    }
+    competition.save(update_fields=["is_private", "settings_json"])
+
+    opened = api.post(
+        f"/api/v1/competitions/{competition.id}/voting-rounds",
+        {"scoring_category": str(category.id), "title": "Open ballot"},
+        format="json",
+    )
+    assert opened.status_code == 201, opened.data
+    round_id = opened.data["id"]
+
+    outsider = User.objects.create_user(email="outsider@example.com", password="x")
+    api.force_authenticate(outsider)
+    cast = api.put(
+        f"/api/v1/competitions/{competition.id}/voting-rounds/{round_id}/vote",
+        {"participant": str(alpha.id)},
+        format="json",
+    )
+    assert cast.status_code == 200, cast.data
+    assert Vote.objects.filter(round_id=round_id, voter=outsider).exists()
+
+    # Members-only setting blocks non-members on the same public competition.
+    competition.settings_json = {
+        **(competition.settings_json or {}),
+        "voting_open_to": "members",
+    }
+    competition.save(update_fields=["settings_json"])
+    blocked = User.objects.create_user(email="blocked@example.com", password="x")
+    api.force_authenticate(blocked)
+    denied = api.put(
+        f"/api/v1/competitions/{competition.id}/voting-rounds/{round_id}/vote",
+        {"participant": str(beta.id)},
+        format="json",
+    )
+    assert denied.status_code == 403
 
 
 def test_weighted_criterion_points_still_multiply_when_vote_count_off(api, user):

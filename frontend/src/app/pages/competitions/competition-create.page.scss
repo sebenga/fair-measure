@@ -137,6 +137,18 @@
   padding: 4px 0 8px;
   border-radius: 14px;
   background: color-mix(in srgb, var(--ion-color-primary) 5%, transparent);
+
+  .scoring-kinds {
+    padding-bottom: 4px;
+  }
+
+  .formats {
+    padding: 0 16px 12px;
+  }
+
+  .vote-budget {
+    margin-top: 4px;
+  }
 }
 
 .variant-chips {
