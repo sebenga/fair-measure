@@ -334,7 +334,7 @@ function presetKind(preset: Preset): PresetKind {
                     <small>{{ kindCaption(preset) }}</small>
                   </button>
                 @if (focused() && selectedPreset() === preset.key) {
-                  <div class="inline-scoring"><ng-container *ngTemplateOutlet="scoringPanel" /></div>
+                  <div id="create-scoring-panel" class="inline-scoring"><ng-container *ngTemplateOutlet="scoringPanel" /></div>
                 }
                 }
               </div>
@@ -384,7 +384,7 @@ function presetKind(preset: Preset): PresetKind {
                         <small>{{ card.caption }}</small>
                       </button>
                     @if (familySelected(card)) {
-                      <div class="inline-scoring">
+                      <div id="create-scoring-panel" class="inline-scoring">
                         @if (card.presets.length > 1) {
                           <div class="variant-chips">
                             @for (preset of card.presets; track preset.key) {
@@ -431,7 +431,7 @@ function presetKind(preset: Preset): PresetKind {
               }
 
               @if (isCustom()) {
-                <h3 class="fm-section-title">How scoring works</h3>
+                <h3 id="create-scoring-kind" class="fm-section-title">How scoring works</h3>
                 <p class="hint">
                   Pick prescribed criteria (with names and descriptions), voting, or both.
                   You choose VS matches vs a points board on the next step.
@@ -487,7 +487,7 @@ function presetKind(preset: Preset): PresetKind {
                   </button>
                 </div>
 
-                <h3 class="fm-section-title">
+                <h3 id="create-criteria" class="fm-section-title">
                   {{ customScoringKind() === 'voting' ? 'Ballot label' : 'Scoring criteria' }}
                 </h3>
                 <p class="hint">
@@ -623,7 +623,7 @@ function presetKind(preset: Preset): PresetKind {
               }
 
               @if (isCustom()) {
-                <h3 class="fm-section-title">How the table builds</h3>
+                <h3 id="create-table-builds" class="fm-section-title">How the table builds</h3>
                 <p class="hint">
                   Accumulative totals run across the competition. You can also score everyone on
                   one criterion in a single round. Voting can replace or sit alongside prescribed scoring.
@@ -633,7 +633,7 @@ function presetKind(preset: Preset): PresetKind {
                     type="button"
                     class="format"
                     [class.selected]="!scoreAllOnCriterion()"
-                    (click)="scoreAllOnCriterion.set(false)"
+                    (click)="pickTableBuild(false)"
                   >
                     <ion-icon name="trending-up-outline" aria-hidden="true" />
                     <div>
@@ -649,7 +649,7 @@ function presetKind(preset: Preset): PresetKind {
                       type="button"
                       class="format"
                       [class.selected]="scoreAllOnCriterion()"
-                      (click)="scoreAllOnCriterion.set(true)"
+                      (click)="pickTableBuild(true)"
                     >
                       <ion-icon name="people-outline" aria-hidden="true" />
                       <div>
@@ -664,7 +664,7 @@ function presetKind(preset: Preset): PresetKind {
                 </div>
 
                 @if (pointsByVoting()) {
-                  <h3 class="fm-section-title">Who can vote</h3>
+                  <h3 id="create-who-votes" class="fm-section-title">Who can vote</h3>
                   <p class="hint">
                     Private competitions always keep voting to members. On a public competition you
                     can let any signed-in person score through a vote.
@@ -674,7 +674,7 @@ function presetKind(preset: Preset): PresetKind {
                       type="button"
                       class="format"
                       [class.selected]="votingOpenTo() === 'members'"
-                      (click)="votingOpenTo.set('members')"
+                      (click)="pickVotingOpenTo('members')"
                     >
                       <ion-icon name="lock-closed-outline" aria-hidden="true" />
                       <div>
@@ -689,7 +689,7 @@ function presetKind(preset: Preset): PresetKind {
                       type="button"
                       class="format"
                       [class.selected]="votingOpenTo() === 'public'"
-                      (click)="votingOpenTo.set('public')"
+                      (click)="pickVotingOpenTo('public')"
                     >
                       <ion-icon name="globe-outline" aria-hidden="true" />
                       <div>
@@ -702,6 +702,7 @@ function presetKind(preset: Preset): PresetKind {
                     </button>
                   </div>
 
+                  <div id="create-vote-budget">
                   <ion-list inset="true" class="vote-budget">
                     <ion-item>
                       <ion-input
@@ -729,14 +730,15 @@ function presetKind(preset: Preset): PresetKind {
                       Each person can split {{ votesPerMember() }} votes across entrants in one round, then the ballot locks.
                     }
                   </p>
+                  </div>
 
-                  <h3 class="fm-section-title">Vote tallies</h3>
+                  <h3 id="create-vote-tallies" class="fm-section-title">Vote tallies</h3>
                   <div class="formats vote-visibility">
                     <button
                       type="button"
                       class="format"
                       [class.selected]="votingVisibility() === 'secret'"
-                      (click)="votingVisibility.set('secret')"
+                      (click)="pickVotingVisibility('secret')"
                     >
                       <ion-icon name="eye-off-outline" aria-hidden="true" />
                       <div>
@@ -751,7 +753,7 @@ function presetKind(preset: Preset): PresetKind {
                       type="button"
                       class="format"
                       [class.selected]="votingVisibility() === 'visible'"
-                      (click)="votingVisibility.set('visible')"
+                      (click)="pickVotingVisibility('visible')"
                     >
                       <ion-icon name="eye-outline" aria-hidden="true" />
                       <div>
@@ -812,7 +814,7 @@ function presetKind(preset: Preset): PresetKind {
             <p class="hint">{{ formatHint() }}</p>
 
             @if (isCustom()) {
-              <div class="formats">
+              <div id="create-board-mode" class="formats">
                 <button
                   type="button"
                   class="format"
@@ -859,7 +861,7 @@ function presetKind(preset: Preset): PresetKind {
                 </p>
               }
 
-              <h3 class="fm-section-title">{{ pointsTable() ? 'Who takes part' : 'Who plays' }}</h3>
+              <h3 id="create-who-takes-part" class="fm-section-title">{{ pointsTable() ? 'Who takes part' : 'Who plays' }}</h3>
               <div class="formats">
                 @for (option of entrantOptions; track option.value) {
                   <button
@@ -867,7 +869,7 @@ function presetKind(preset: Preset): PresetKind {
                     class="format"
                     [class.selected]="versusEntrants() === option.value"
                     [attr.aria-pressed]="versusEntrants() === option.value"
-                    (click)="versusEntrants.set(option.value)"
+                    (click)="pickEntrants(option.value)"
                   >
                     <ion-icon [name]="option.icon" aria-hidden="true" />
                     <div>
@@ -882,7 +884,7 @@ function presetKind(preset: Preset): PresetKind {
               </div>
 
               @if (!pointsTable()) {
-                <h3 class="fm-section-title">Format</h3>
+                <h3 id="create-structure" class="fm-section-title">Format</h3>
                 <p class="hint">Choose league, knockout, or both. You must pick one.</p>
                 <div class="formats">
                   @for (option of structureFormats; track option.value) {
@@ -1224,7 +1226,7 @@ function presetKind(preset: Preset): PresetKind {
           }
 
           @case ('visibility') {
-            <h3 class="fm-section-title">Who can see it</h3>
+            <h3 id="create-visibility" class="fm-section-title">Who can see it</h3>
             @if (pointsByVoting() && votingOpenTo() === 'public') {
               <p class="hint">
                 Voting is open to anyone signed in. Keep the competition public for that to work;
@@ -1259,10 +1261,11 @@ function presetKind(preset: Preset): PresetKind {
               </button>
               @if (!form.controls.is_private.value) {
                 <button
+                  id="create-landing"
                   type="button"
                   class="vis landing"
                   [class.selected]="form.controls.show_on_landing.value"
-                  (click)="form.controls.show_on_landing.setValue(!form.controls.show_on_landing.value)"
+                  (click)="form.controls.show_on_landing.setValue(!form.controls.show_on_landing.value); scrollToSection(scoutable() ? 'create-scouting' : 'create-landing')"
                 >
                   <ion-icon name="megaphone-outline" aria-hidden="true" />
                   <strong>Show on the landing page</strong>
@@ -1279,7 +1282,7 @@ function presetKind(preset: Preset): PresetKind {
             </div>
 
             @if (scoutable()) {
-              <h3 class="fm-section-title">Scouting</h3>
+              <h3 id="create-scouting" class="fm-section-title">Scouting</h3>
               <div class="visibility">
                 <button
                   type="button"
@@ -1654,6 +1657,7 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
       this.pointsByVoting.set(false);
       this.accumulateAsVoteCount.set(false);
       this.votingOpenTo.set('members');
+      this.scrollToSection('create-criteria');
       return;
     }
     this.pointsByVoting.set(true);
@@ -1668,6 +1672,27 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
       this.accumulateAsVoteCount.set(false);
       if (this.votesPerMember() < 1) this.votesPerMember.set(5);
     }
+    this.scrollToSection('create-criteria');
+  }
+
+  pickTableBuild(scoreAll: boolean): void {
+    this.scoreAllOnCriterion.set(scoreAll);
+    this.scrollToSection(this.pointsByVoting() ? 'create-who-votes' : 'create-table-builds');
+  }
+
+  pickVotingOpenTo(value: 'members' | 'public'): void {
+    this.votingOpenTo.set(value);
+    this.scrollToSection('create-vote-budget');
+  }
+
+  pickVotingVisibility(value: 'secret' | 'visible'): void {
+    this.votingVisibility.set(value);
+    this.scrollToSection('create-vote-tallies');
+  }
+
+  pickEntrants(value: EntrantType): void {
+    this.versusEntrants.set(value);
+    this.scrollToSection(this.pointsTable() ? 'create-who-takes-part' : 'create-structure');
   }
 
   setVotesPerMember(raw: string | number | null | undefined): void {
@@ -1895,11 +1920,13 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
       if (this.form.controls.format.value === 'freeform') {
         this.form.controls.format.setValue('league');
       }
+      this.scrollToSection('create-who-takes-part');
       return;
     }
     this.scoringBasis.set('criteria');
     this.form.controls.format.setValue('freeform');
     this.form.controls.match_weekdays.setValue([]);
+    this.scrollToSection('create-who-takes-part');
   }
 
   setPrivate(value: boolean): void {
@@ -1907,7 +1934,10 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
     if (value) {
       this.form.controls.show_on_landing.setValue(false);
       this.votingOpenTo.set('members');
+      this.scrollToSection(this.scoutable() ? 'create-scouting' : 'create-visibility');
+      return;
     }
+    this.scrollToSection('create-landing');
   }
 
   setBonusEnabled(enabled: boolean): void {
@@ -2075,13 +2105,14 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
     const current = card.presets.find((preset) => preset.key === this.selectedPreset());
     this.selectPreset((current ?? this.familyHead(card.presets)).key);
     this.focused.set(true);
-    this.scrollToStart();
+    this.scrollToSection(this.isCustom() ? 'create-scoring-kind' : 'create-scoring-panel');
   }
 
   selectVariant(key: string, event: Event): void {
     event.stopPropagation();
     this.selectPreset(key);
     this.focused.set(true);
+    this.scrollToSection('create-scoring-panel');
   }
 
   firstSentence(text: string): string {
@@ -2104,7 +2135,7 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
     }
     if (key !== this.selectedPreset()) this.selectPreset(key);
     this.focused.set(true);
-    this.scrollToStart();
+    this.scrollToSection(key === 'custom' || this.isCustom() ? 'create-scoring-kind' : 'create-scoring-panel');
   }
 
   groupOpen(key: string): boolean {
@@ -2169,6 +2200,7 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
     if (value !== 'freeform') {
       this.ensureMatchEventDrafts();
     }
+    this.scrollToSection('create-structure');
   }
 
   /** VS matches record who scored or was booked, so those event types stay on the sheet. */
@@ -2235,6 +2267,30 @@ export class CompetitionCreatePage implements OnInit, OnDestroy {
     void this.content()
       ?.scrollToTop(250)
       ?.catch(() => undefined);
+  }
+
+  /** After a choice, bring the next section into view inside ion-content. */
+  scrollToSection(id: string, delayMs = 90): void {
+    window.setTimeout(() => {
+      const host = document.getElementById(id);
+      if (!host) return;
+      const content = this.content();
+      if (!content) {
+        host.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      void content
+        .getScrollElement()
+        .then((scrollEl) => {
+          const top =
+            host.getBoundingClientRect().top -
+            scrollEl.getBoundingClientRect().top +
+            scrollEl.scrollTop -
+            20;
+          return content.scrollToPoint(0, Math.max(0, top), 320);
+        })
+        .catch(() => undefined);
+    }, delayMs);
   }
 
   addDraft(): void {
