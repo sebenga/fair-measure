@@ -52,6 +52,7 @@ import type {
   VisibilityCheckoutKind,
   User,
   VotingRound,
+  PointsMilestoneHit,
 } from './models';
 
 type Query = Record<string, string | number | boolean | undefined | null>;
@@ -703,10 +704,14 @@ export class ApiService {
   }
 
   recordScoreAssist(competitionId: string, body: Record<string, unknown>) {
-    return this.http.post<{ id?: string; count?: number; awarded?: string; label?: string; note?: string }>(
-      `${this.base}/competitions/${competitionId}/score-assist`,
-      body,
-    );
+    return this.http.post<{
+      id?: string;
+      count?: number;
+      awarded?: string;
+      label?: string;
+      note?: string;
+      milestones?: PointsMilestoneHit[];
+    }>(`${this.base}/competitions/${competitionId}/score-assist`, body);
   }
 
   listVotingRounds(competitionId: string) {

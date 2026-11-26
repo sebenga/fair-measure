@@ -199,6 +199,12 @@ def _normalize_voting_settings(settings: dict) -> None:
     settings["voting_open_to"] = open_to
 
 
+def _normalize_milestone_settings(settings: dict) -> None:
+    from apps.competitions.milestones import normalize_milestone_settings
+
+    normalize_milestone_settings(settings)
+
+
 def _accumulates_as_vote_count(settings: dict | None) -> bool:
     settings = settings or {}
     return bool(settings.get("points_by_voting") and settings.get("accumulate_as_vote_count"))
@@ -963,19 +969,13 @@ class ParticipantSerializer(serializers.ModelSerializer):
             mode = team_entry_mode(competition)
             member_ids = list(dict.fromkeys(attrs.get("member_ids") or []))
             if mode in {"pick", "draft"}:
-                if creating_team and team_entry_is_open(competition):
-                    raise serializers.ValidationError(
-                        {
-                            "name": (
-                                "Teams are already set. Start picking or drafting on those teams."
-                            )
-                        }
-                    )
+                # Teams can still be named after picking/drafting starts (late joiners).
+                # Squads are filled on the team profile, not in this create call.
                 if member_ids:
                     raise serializers.ValidationError(
                         {
                             "member_ids": (
-                                "Name every team first. Start picking or drafting after that."
+                                "Name the team first. Pick or draft players on the team profile."
                             )
                         }
                     )
@@ -1573,6 +1573,7 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         if isinstance(settings, dict):
             _validate_game_time(settings, self.instance)
             _normalize_voting_settings(settings)
+            _normalize_milestone_settings(settings)
             # Private competitions always keep ballots to members.
             will_be_private = attrs.get(
                 "is_private",
@@ -1648,6 +1649,8 @@ class CompetitionWriteSerializer(serializers.ModelSerializer):
         "voting_open_to",
         "votes_per_member",
         "accumulate_as_vote_count",
+        "points_milestone_interval",
+        "points_milestones",
     )
 
     def _update(self, instance: Competition, validated_data: dict) -> Competition:

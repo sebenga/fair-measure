@@ -28,7 +28,9 @@ import {
   isScoringLocked,
   accumulatesAsVoteCount,
   pointsByVoting,
+  pointsMilestones,
   scoresAllOnCriterion,
+  type PointsMilestoneDef,
   squadSizeOf,
   tableBonusOf,
   votesPerMember,
@@ -187,22 +189,23 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   @if (!entryOpen()) {
                     Name every team first. When the list is complete, start
                     {{ teamEntry() === 'pick' ? 'picking' : 'the draft' }}.
+                    You can still add more teams later if a new club joins.
                   } @else if (teamEntry() === 'pick') {
-                    Teams are set. Open a team and pick
+                    Open a team and pick
                     @if (squadSize() > 0) {
                       at least {{ squadSize() }} profiles. You can pick more than that.
                     } @else {
                       players.
                     }
-                    They accept before they count.
+                    They accept before they count. Add a late team below any time, fill its squad, then regenerate the schedule with “Replace fixtures that have not been played” so they catch up.
                   } @else {
-                    Teams are set. Draft
+                    Draft
                     @if (squadSize() > 0) {
                       at least {{ squadSize() }} players onto each team. You can keep drafting after that.
                     } @else {
                       players onto each team.
                     }
-                    They join when they are drafted.
+                    They join when they are drafted. Add a late team below any time, fill its squad, then regenerate the schedule with “Replace fixtures that have not been played” so they catch up.
                   }
                 </p>
               }
@@ -254,7 +257,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   <ion-button type="button" size="small" fill="clear" (click)="openHorses()">Register a horse</ion-button>
                 </div>
               </form>
-            } @else if (!demoActive() && (entrantKind() !== 'team' || (teamEntry() && !entryOpen()))) {
+            } @else if (!demoActive() && (entrantKind() !== 'team' || teamEntry())) {
               <form class="add-row" (submit)="addParticipant($event)">
                 <p class="hint">
                   @if (profileEntrants() && pointsTable()) {
@@ -268,12 +271,24 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   } @else if (entrantKind() === 'pair') {
                     Name the pair first. Open it and pick two profiles. Each person accepts before they are in.
                   } @else if (teamEntry() && !entryOpen()) {
-                    Add the team name only. Do not pick or draft players until every team is on the list.
+                    Add the team name only. Do not pick or draft players until you start
+                    {{ teamEntry() === 'pick' ? 'picking' : 'the draft' }}.
                   } @else if (teamEntry() === 'draft') {
-                    Players are drafted onto the teams, one pick at a time. A team needs at least
-                    {{ squadSize() }} to start, and you can keep drafting after that.
+                    Add another team any time. Draft
+                    @if (squadSize() > 0) {
+                      at least {{ squadSize() }} players onto it,
+                    } @else {
+                      players onto it,
+                    }
+                    then regenerate unplayed fixtures so the league catches up.
                   } @else if (teamEntry() === 'pick') {
-                    Open a team to pick players. A team needs at least {{ squadSize() }} to start.
+                    Add another team any time. Open it to pick
+                    @if (squadSize() > 0) {
+                      at least {{ squadSize() }} players,
+                    } @else {
+                      players,
+                    }
+                    then regenerate unplayed fixtures so the league catches up.
                   }
                 </p>
                 @if (profileEntrants()) {
@@ -444,7 +459,7 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                     >
                       Profile
                     </ion-button>
-                    @if (!teamEntry() || !entryOpen() || isDemo(participant)) {
+                    @if (canManage() || isDemo(participant)) {
                       <ion-button
                         slot="end"
                         fill="clear"
@@ -656,6 +671,91 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                 }
                 Private competitions always keep voting to members.
               </ion-note>
+
+              <h3 class="fm-section-title">Points milestones</h3>
+              <p class="hint">
+                Optional named goals that recur every N points — for example
+                “Star sticker” every 50, “Treat” every 100. Fireworks play each time
+                an entrant’s total crosses that mark again.
+              </p>
+              <ion-list inset="true">
+                @for (item of milestones(); track item.id) {
+                  <ion-item>
+                    <ion-input
+                      label="Name"
+                      labelPlacement="stacked"
+                      [value]="item.name"
+                      maxlength="80"
+                      [disabled]="busy()"
+                      (ionBlur)="renameMilestone(item.id, $any($event.target).value)"
+                    />
+                    <ion-input
+                      slot="end"
+                      label="Every"
+                      labelPlacement="stacked"
+                      type="number"
+                      inputmode="numeric"
+                      min="1"
+                      max="100000"
+                      [value]="item.interval"
+                      [disabled]="busy()"
+                      (ionBlur)="setMilestoneEvery(item.id, $any($event.target).value)"
+                      style="max-width: 7rem"
+                    />
+                    <ion-button
+                      slot="end"
+                      fill="clear"
+                      color="danger"
+                      size="small"
+                      [disabled]="busy()"
+                      (click)="removeMilestone(item.id)"
+                    >
+                      <ion-icon slot="icon-only" name="trash-outline" aria-label="Remove milestone" />
+                    </ion-button>
+                  </ion-item>
+                }
+                <ion-item lines="none">
+                  <ion-input
+                    label="New milestone name"
+                    labelPlacement="stacked"
+                    [(ngModel)]="newMilestoneName"
+                    name="newMilestoneName"
+                    maxlength="80"
+                    placeholder="e.g. Star sticker"
+                    [disabled]="busy()"
+                  />
+                </ion-item>
+                <ion-item>
+                  <ion-input
+                    label="Points interval"
+                    labelPlacement="stacked"
+                    type="number"
+                    inputmode="numeric"
+                    min="1"
+                    max="100000"
+                    [(ngModel)]="newMilestoneInterval"
+                    name="newMilestoneInterval"
+                    placeholder="50"
+                    [disabled]="busy()"
+                  />
+                  <ion-button
+                    slot="end"
+                    size="small"
+                    [disabled]="busy() || !canAddMilestone()"
+                    (click)="addMilestone()"
+                  >
+                    Add
+                  </ion-button>
+                </ion-item>
+              </ion-list>
+              @if (milestones().length) {
+                <ion-note class="footnote">
+                  @for (item of milestones(); track item.id; let last = $last) {
+                    “{{ item.name }}” at {{ item.interval }}, {{ item.interval * 2 }},
+                    {{ item.interval * 3 }}…@if (!last) { · }
+                  }
+                </ion-note>
+              }
             }
 
             @if (pointsTable()) {
@@ -976,6 +1076,10 @@ type Section = 'entrants' | 'scoring' | 'schedule' | 'officials' | 'scouting';
                   </ion-checkbox>
                 </ion-item>
               </ion-list>
+              <p class="hint">
+                After a late team joins and has a squad, tick “Replace fixtures that have not been played”
+                so the schedule rebuilds for the full league. Finished matches stay on the table.
+              </p>
 
               <div class="weekdays">
                 <p class="label">Match days</p>
@@ -1435,6 +1539,14 @@ export class CompetitionSetupPage implements OnInit {
     return competition ? accumulatesAsVoteCount(competition) : false;
   });
 
+  readonly milestones = computed(() => {
+    const competition = this.competition();
+    return competition ? pointsMilestones(competition) : [];
+  });
+
+  newMilestoneName = '';
+  newMilestoneInterval = '50';
+
   readonly customScoringKind = computed<'prescribed' | 'voting' | 'both'>(() => {
     if (!this.votingEnabled()) return 'prescribed';
     return this.voteCountTable() ? 'voting' : 'both';
@@ -1551,6 +1663,67 @@ export class CompetitionSetupPage implements OnInit {
       value === 'visible'
         ? 'Vote tallies are public while a round is open.'
         : 'Vote tallies stay private until a round closes.',
+    );
+  }
+
+  canAddMilestone(): boolean {
+    return !!this.newMilestoneName.trim() && Number(this.newMilestoneInterval) >= 1;
+  }
+
+  private saveMilestones(next: PointsMilestoneDef[], message: string): void {
+    this.patchScoringSettings(
+      {
+        points_milestones: next,
+        points_milestone_interval: null,
+      },
+      message,
+    );
+  }
+
+  addMilestone(): void {
+    if (!this.canAddMilestone() || this.busy()) return;
+    const name = this.newMilestoneName.trim();
+    const interval = Math.max(1, Math.min(100_000, Math.floor(Number(this.newMilestoneInterval))));
+    if (!Number.isFinite(interval)) return;
+    const id = `ms-${Date.now().toString(36)}`;
+    const next = [...this.milestones(), { id, name, interval }];
+    this.newMilestoneName = '';
+    this.newMilestoneInterval = '50';
+    this.saveMilestones(next, `Added “${name}” every ${interval} points.`);
+  }
+
+  renameMilestone(id: string, raw: string | null | undefined): void {
+    const name = String(raw ?? '').trim();
+    if (!name) return;
+    const current = this.milestones();
+    const item = current.find((row) => row.id === id);
+    if (!item || item.name === name) return;
+    this.saveMilestones(
+      current.map((row) => (row.id === id ? { ...row, name } : row)),
+      `Renamed milestone to “${name}”.`,
+    );
+  }
+
+  setMilestoneEvery(id: string, raw: string | number | null | undefined): void {
+    const interval = Math.floor(Number(raw));
+    if (!Number.isFinite(interval)) return;
+    const clamped = Math.max(1, Math.min(100_000, interval));
+    const current = this.milestones();
+    const item = current.find((row) => row.id === id);
+    if (!item || item.interval === clamped) return;
+    this.saveMilestones(
+      current.map((row) => (row.id === id ? { ...row, interval: clamped } : row)),
+      `“${item.name}” now every ${clamped} points.`,
+    );
+  }
+
+  removeMilestone(id: string): void {
+    const current = this.milestones();
+    const item = current.find((row) => row.id === id);
+    if (!item) return;
+    this.saveMilestones(
+      current.filter((row) => row.id !== id),
+      `Removed “${item.name}”.`,
     );
   }
 
@@ -2255,7 +2428,6 @@ export class CompetitionSetupPage implements OnInit {
   });
 
   canAddParticipant(): boolean {
-    if (this.teamEntry() && this.entryOpen()) return false;
     return !!this.newParticipantName.trim();
   }
 
@@ -2583,11 +2755,24 @@ export class CompetitionSetupPage implements OnInit {
         kind: this.entrantKind() === 'individual' ? 'individual' : 'team',
       })
       .subscribe({
-      next: (participant) => {
+      next: async (participant) => {
         this.participants.update((current) => [...current, participant]);
         this.newParticipantName = '';
         this.selectedProfileIds.set([]);
         this.busy.set(false);
+        if (this.teamEntry() && this.entryOpen() && participant.kind === 'team') {
+          await this.toast(
+            'Team added. Fill its squad, then regenerate unplayed fixtures on Schedule so they catch up.',
+            'success',
+          );
+          void this.router.navigate([
+            '/tabs/competitions',
+            this.competitionId,
+            'teams',
+            participant.id,
+          ]);
+          return;
+        }
         if (this.teamEntry()) return;
         if (participant.kind === 'team') {
           void this.router.navigate([

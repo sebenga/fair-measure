@@ -746,12 +746,9 @@ class ParticipantViewSet(CompetitionScopedViewSet):
 
     def perform_destroy(self, instance) -> None:
         self._assert_can_write()
-        competition = self.get_competition()
-        if team_entry_mode(competition) in {"pick", "draft"} and team_entry_is_open(competition):
-            if not (instance.metadata or {}).get("demo"):
-                raise ValidationError(
-                    {"name": "Teams are already set. Start picking or drafting on those teams."}
-                )
+        # Admins may remove teams even after picking/drafting has started (e.g. a
+        # late joiner that never fielded a squad). Fixture catch-up is done by
+        # regenerating with replace_existing on Setup → Schedule.
         super().perform_destroy(instance)
 
 

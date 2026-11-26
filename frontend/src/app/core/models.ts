@@ -960,6 +960,97 @@ export function pointsByVoting(competition: {
   return competition.settings_json?.['points_by_voting'] === true;
 }
 
+/** A named, recurring points milestone (fires every `interval` points). */
+export interface PointsMilestoneDef {
+  id: string;
+  name: string;
+  interval: number;
+}
+
+/**
+ * Named recurring milestones for custom criteria boards.
+ * Migrates legacy `points_milestone_interval` into one “Milestone” entry.
+ */
+export function pointsMilestones(competition: {
+  settings_json?: Record<string, unknown>;
+}): PointsMilestoneDef[] {
+  const settings = competition.settings_json ?? {};
+  const raw = settings['points_milestones'];
+  if (Array.isArray(raw) && raw.length) {
+    const out: PointsMilestoneDef[] = [];
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') continue;
+      const row = item as Record<string, unknown>;
+      const name = String(row['name'] ?? '').trim();
+      const interval = Math.floor(Number(row['interval']));
+      if (!name || !Number.isFinite(interval) || interval < 1) continue;
+      const id = String(row['id'] ?? '').trim() || `ms-${out.length + 1}`;
+      out.push({ id, name, interval: Math.min(100_000, interval) });
+    }
+    if (out.length) return out;
+  }
+  const legacy = settings['points_milestone_interval'];
+  const value = typeof legacy === 'number' ? legacy : Number(legacy);
+  if (!Number.isFinite(value) || value < 1) return [];
+  return [{ id: 'legacy', name: 'Milestone', interval: Math.min(100_000, Math.floor(value)) }];
+}
+
+/** @deprecated Prefer pointsMilestones — smallest interval, or null when off. */
+export function pointsMilestoneInterval(competition: {
+  settings_json?: Record<string, unknown>;
+}): number | null {
+  const items = pointsMilestones(competition);
+  if (!items.length) return null;
+  return Math.min(...items.map((item) => item.interval));
+}
+
+/** One named milestone with every mark reached so far from a points total. */
+export interface ReachedMilestone {
+  id: string;
+  name: string;
+  interval: number;
+  count: number;
+  latest: number;
+  marks: number[];
+}
+
+/** Which recurring milestones a points total has already crossed. */
+export function reachedMilestones(
+  points: number | string,
+  defs: PointsMilestoneDef[],
+): ReachedMilestone[] {
+  const total = Math.floor(Number(points));
+  if (!Number.isFinite(total) || total < 1 || !defs.length) return [];
+  const out: ReachedMilestone[] = [];
+  for (const def of defs) {
+    const interval = def.interval;
+    if (interval < 1) continue;
+    const count = Math.floor(total / interval);
+    if (count < 1) continue;
+    const marks = Array.from({ length: count }, (_, index) => (index + 1) * interval);
+    out.push({
+      id: def.id,
+      name: def.name,
+      interval,
+      count,
+      latest: marks[marks.length - 1],
+      marks,
+    });
+  }
+  return out;
+}
+
+/** One milestone crossing returned after scoring or closing a vote round. */
+export interface PointsMilestoneHit {
+  participant_id: string;
+  participant_name: string;
+  milestone_id?: string;
+  milestone_name?: string;
+  milestone: number;
+  points: string;
+  interval: number;
+}
+
 /**
  * Competition default for vote tallies: `visible` (live) or
  * `secret` (hidden until close). Admins may override per round when opening one.
@@ -1040,6 +1131,8 @@ export interface VotingRound {
   my_vote: { participant_id: string; participant_name: string } | null;
   tallies: VotingRoundTally[] | null;
   tallies_hidden: boolean;
+  /** Present when closing a round crossed one or more points milestones. */
+  milestones?: PointsMilestoneHit[];
 }
 
 /** Fantasy picks a squad from club rosters. Only team-sport leagues have those. */

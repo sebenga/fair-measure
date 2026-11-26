@@ -1,12 +1,22 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertController, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonList, IonNote, IonSelect, IonSelectOption, IonSpinner, IonTextarea, IonTitle, IonToolbar, ToastController, IonLabel, IonBackButton } from '@ionic/angular/standalone';
 
 import { ApiService } from '../../core/api.service';
 import { extractErrorMessage } from '../../core/error-message';
-import type { CompetitionDetail, ScoreAssistEntry, VotingRound } from '../../core/models';
+import type {
+  CompetitionDetail,
+  PointsMilestoneHit,
+  ScoreAssistEntry,
+  VotingRound,
+} from '../../core/models';
 import { BackHrefPipe } from '../../shared/back-href.pipe';
+import {
+  CelebrateOverlayComponent,
+  buildCelebrateMoment,
+  type CelebrateMoment,
+} from '../../shared/celebrate-overlay.component';
 import {
   accumulatesAsVoteCount,
   isPointsTable,
@@ -19,7 +29,7 @@ import {
 @Component({
   selector: 'fm-competition-score',
   standalone: true,
-  imports: [BackHrefPipe, IonBackButton, 
+  imports: [BackHrefPipe, IonBackButton, CelebrateOverlayComponent,
     FormsModule,
     IonHeader,
     IonToolbar,
@@ -56,6 +66,8 @@ import {
         </ion-title>
       </ion-toolbar>
     </ion-header>
+
+    <fm-celebrate-overlay [moment]="celebration()" />
 
     <ion-content>
       @if (loading()) {
@@ -523,7 +535,7 @@ import {
       }
     `],
 })
-export class CompetitionScorePage implements OnInit {
+export class CompetitionScorePage implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -531,6 +543,7 @@ export class CompetitionScorePage implements OnInit {
   private readonly alerts = inject(AlertController);
 
   private competitionId = '';
+  private celebrationTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly competition = signal<CompetitionDetail | null>(null);
   readonly entries = signal<ScoreAssistEntry[]>([]);
@@ -540,6 +553,7 @@ export class CompetitionScorePage implements OnInit {
   readonly voteBusy = signal(false);
   readonly error = signal<string | null>(null);
   readonly voteError = signal<string | null>(null);
+  readonly celebration = signal<CelebrateMoment | null>(null);
 
   participantId = '';
   categoryId = '';
@@ -832,6 +846,12 @@ export class CompetitionScorePage implements OnInit {
         this.rounds.update((rows) => rows.map((row) => (row.id === round.id ? updated : row)));
         this.voteBusy.set(false);
         if (this.canScoreAdmin()) this.loadEntries();
+        const hits = updated.milestones ?? [];
+        if (hits.length) {
+          this.playMilestones(hits);
+          void this.notify(this.milestoneMessage(hits), 'success');
+          return;
+        }
         void this.notify('Round closed. Points added to the table.', 'success');
       },
       error: (err: unknown) => {
@@ -839,6 +859,10 @@ export class CompetitionScorePage implements OnInit {
         this.voteError.set(extractErrorMessage(err, 'Could not close that round.'));
       },
     });
+  }
+
+  ngOnDestroy(): void {
+    if (this.celebrationTimer) clearTimeout(this.celebrationTimer);
   }
 
   canSubmit(): boolean {
@@ -882,7 +906,7 @@ export class CompetitionScorePage implements OnInit {
           };
 
     this.api.recordScoreAssist(this.competitionId, body).subscribe({
-      next: async () => {
+      next: async (result) => {
         this.busy.set(false);
         this.note = '';
         if (this.roundMode()) {
@@ -891,20 +915,28 @@ export class CompetitionScorePage implements OnInit {
           );
         }
         const criteria = this.criteriaLeague();
+        const hits = result.milestones ?? [];
+        if (hits.length) this.playMilestones(hits);
         const toast = await this.toasts.create({
-          message: criteria
-            ? this.roundMode()
-              ? 'Round added to the table.'
-              : 'Points added to the table.'
-            : 'Score recorded.',
-          duration: 1800,
+          message: hits.length
+            ? this.milestoneMessage(hits)
+            : criteria
+              ? this.roundMode()
+                ? 'Round added to the table.'
+                : 'Points added to the table.'
+              : 'Score recorded.',
+          duration: hits.length ? 2800 : 1800,
           position: 'bottom',
+          color: hits.length ? 'success' : undefined,
         });
         await toast.present();
         if (criteria) {
-          void this.router.navigate(['/tabs/competitions', this.competitionId], {
-            queryParams: { tab: 'standings' },
-          });
+          const delay = hits.length ? 2200 : 0;
+          setTimeout(() => {
+            void this.router.navigate(['/tabs/competitions', this.competitionId], {
+              queryParams: { tab: 'standings' },
+            });
+          }, delay);
           return;
         }
         this.loadEntries();
@@ -914,6 +946,39 @@ export class CompetitionScorePage implements OnInit {
         this.error.set(extractErrorMessage(err, 'Could not record that score.'));
       },
     });
+  }
+
+  private playMilestones(hits: PointsMilestoneHit[]): void {
+    const latest = hits[hits.length - 1];
+    const title =
+      hits.length === 1
+        ? this.milestoneBanner(latest)
+        : `${latest.participant_name} · ${hits.length} milestones!`;
+    if (this.celebrationTimer) clearTimeout(this.celebrationTimer);
+    this.celebration.set(buildCelebrateMoment(title));
+    this.celebrationTimer = setTimeout(() => this.celebration.set(null), 2600);
+  }
+
+  private milestoneBanner(hit: PointsMilestoneHit): string {
+    const name = hit.milestone_name?.trim();
+    const points = `${hit.milestone} pts`;
+    if (name) return `${hit.participant_name} · ${name} · ${points}!`;
+    return `${hit.participant_name} · ${points}!`;
+  }
+
+  private milestoneMessage(hits: PointsMilestoneHit[]): string {
+    if (hits.length === 1) {
+      const hit = hits[0];
+      const name = hit.milestone_name?.trim();
+      return name
+        ? `${hit.participant_name} hit ${name} (${hit.milestone} pts)!`
+        : `${hit.participant_name} hit ${hit.milestone} points!`;
+    }
+    const parts = hits.map((hit) => {
+      const name = hit.milestone_name?.trim();
+      return name ? `${name} (${hit.milestone})` : `${hit.milestone} pts`;
+    });
+    return `${hits[0].participant_name}: ${parts.join(' · ')} — fireworks!`;
   }
 
   /** Delete a logged score after a confirmation; the table is worked out again. */

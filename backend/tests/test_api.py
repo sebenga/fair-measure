@@ -481,7 +481,19 @@ def test_teams_are_picked_or_drafted_with_fourteen_players(api, other_user):
     assert opened.status_code == 200
 
     late_team = api.post(participants_url, {"name": "Late", "kind": "team"}, format="json")
-    assert late_team.status_code == 400
+    assert late_team.status_code == 201, late_team.data
+    assert late_team.data["roster"] == []
+    # Still cannot attach a full squad on the create call itself.
+    with_members = api.post(
+        participants_url,
+        {
+            "name": "Instant squad",
+            "kind": "team",
+            "member_ids": [str(player.id) for player in players[:2]],
+        },
+        format="json",
+    )
+    assert with_members.status_code == 400
 
     for player in players:
         picked = api.post(

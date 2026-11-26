@@ -461,6 +461,9 @@ class VotingRoundCloseView(APIView):
         label = round_row.title or round_row.category.name
         note = (round_row.note or f"Voting round: {label}").strip()[:280]
 
+        from apps.competitions.milestones import milestone_payloads, snapshot_before
+
+        before = snapshot_before(competition, participants.keys())
         with transaction.atomic():
             for participant_id, quantity in counts.items():
                 participant = participants.get(participant_id)
@@ -489,4 +492,10 @@ class VotingRoundCloseView(APIView):
             "standings.updated",
             {"competition_id": str(competition.id)},
         )
-        return Response(_round_payload(round_row, request.user))
+        payload = _round_payload(round_row, request.user)
+        payload["milestones"] = milestone_payloads(
+            competition=competition,
+            before=before,
+            participants=participants,
+        )
+        return Response(payload)

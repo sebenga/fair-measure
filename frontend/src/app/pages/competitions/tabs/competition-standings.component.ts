@@ -35,8 +35,11 @@ import type {
 import {
   accumulatesAsVoteCount,
   isPointsTable,
+  pointsMilestones,
+  reachedMilestones,
   tableBonusEnabled,
   tableBonusOf,
+  type ReachedMilestone,
 } from '../../../core/models';
 import { KnockoutTreeComponent } from './knockout-tree.component';
 import { RealtimeService } from '../../../core/realtime.service';
@@ -78,6 +81,14 @@ import { SeasonPickerComponent } from '../../../shared/season-picker.component';
             </li>
           }
         </ul>
+        @if (milestones().length) {
+          <p class="milestone-note">
+            Milestones:
+            @for (item of milestones(); track item.id; let last = $last) {
+              {{ item.name }} every {{ item.interval }}@if (!last) { · }
+            }
+          </p>
+        }
       </section>
     } @else if (!pointsTable() && !seriesTable() && (leagueGuide() || bonusGuide())) {
       <section class="scoring-guide fm-card">
@@ -212,7 +223,20 @@ import { SeasonPickerComponent } from '../../../shared/season-picker.component';
                   }
                 </td>
                 <td class="team fm-wrap">
-                  <span class="name">{{ row.participant.short_name || row.participant.name }}</span>
+                  <span class="name-row">
+                    <span class="name">{{ row.participant.short_name || row.participant.name }}</span>
+                    @for (mark of reachedFor(row); track mark.id) {
+                      <span
+                        class="ms-badge"
+                        [title]="mark.name + ' every ' + mark.interval + ' pts · latest ' + mark.latest"
+                      >
+                        {{ mark.name }}
+                        @if (mark.count > 1) {
+                          <em>×{{ mark.count }}</em>
+                        }
+                      </span>
+                    }
+                  </span>
                   @if (pointsTable()) {
                     <span class="form">{{ expanded() === row.participant.id ? 'Hide' : 'How' }}</span>
                   } @else if (row.form.length) {
@@ -252,6 +276,22 @@ import { SeasonPickerComponent } from '../../../shared/season-picker.component';
                 <tr class="breakdown">
                   <td class="pos"></td>
                   <td class="detail" colspan="3">
+                    @if (reachedFor(row); as reached) {
+                      @if (reached.length) {
+                        <div class="criterion milestones">
+                          <strong>Milestones</strong>
+                          <span>{{ reached.length }} type{{ reached.length === 1 ? '' : 's' }}</span>
+                          @for (mark of reached; track mark.id) {
+                            <p class="entry">
+                              <strong>{{ mark.name }}</strong>
+                              — every {{ mark.interval }} pts · hit
+                              {{ mark.marks.join(', ') }}
+                              ({{ mark.count }}× · latest {{ mark.latest }})
+                            </p>
+                          }
+                        </div>
+                      }
+                    }
                     @for (criterion of breakdownFor(row.participant.id); track criterion.id) {
                       <div class="criterion">
                         <strong>{{ criterion.name }}</strong>
@@ -293,7 +333,9 @@ import { SeasonPickerComponent } from '../../../shared/season-picker.component';
                         }
                       </div>
                     } @empty {
-                      <p class="entry">No scoring criteria logged yet.</p>
+                      @if (!reachedFor(row).length) {
+                        <p class="entry">No scoring criteria logged yet.</p>
+                      }
                     }
                   </td>
                 </tr>
@@ -392,6 +434,9 @@ import { SeasonPickerComponent } from '../../../shared/season-picker.component';
           } @else {
             Tap a name to see each scoring criterion, what the points mean, and how they were accumulated.
           }
+          @if (milestones().length) {
+            Milestone badges next to a name show which named goals they have reached.
+          }
         } @else {
           @if (leagueGuide(); as league) {
             League: {{ league }}.
@@ -437,6 +482,12 @@ import { SeasonPickerComponent } from '../../../shared/season-picker.component';
         margin: 2px 0 0;
         color: var(--ion-color-medium);
         font-size: 0.82rem;
+      }
+
+      .scoring-guide .milestone-note {
+        margin: 10px 0 0;
+        font-weight: 600;
+        color: var(--ion-color-primary);
       }
 
       .stage-picker {
@@ -654,6 +705,35 @@ import { SeasonPickerComponent } from '../../../shared/season-picker.component';
         padding: 8px 12px 12px 4px;
       }
 
+      .name-row {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 6px;
+      }
+
+      .ms-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        max-width: 9.5rem;
+        padding: 1px 7px;
+        border-radius: 999px;
+        font-size: 0.68rem;
+        font-weight: 700;
+        line-height: 1.35;
+        color: #0f766e;
+        background: color-mix(in srgb, #14b8a6 16%, #fff);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+
+        em {
+          font-style: normal;
+          opacity: 0.75;
+        }
+      }
+
       .criterion {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -661,6 +741,15 @@ import { SeasonPickerComponent } from '../../../shared/season-picker.component';
         padding: 8px 0;
         border-top: 1px solid var(--ion-color-step-100, #e6e9ee);
         font-size: 0.8rem;
+      }
+
+      .criterion.milestones {
+        border-top: none;
+        padding-top: 4px;
+
+        strong {
+          color: #0f766e;
+        }
       }
 
       .combo-stats {
@@ -822,6 +911,15 @@ export class CompetitionStandingsComponent implements OnInit {
   readonly scoringGuide = computed(() =>
     this.competition().scoring_categories.filter((category) => category.affects_score),
   );
+
+  readonly milestones = computed(() =>
+    this.pointsTable() ? pointsMilestones(this.competition()) : [],
+  );
+
+  reachedFor(row: StandingRow): ReachedMilestone[] {
+    if (!this.pointsTable()) return [];
+    return reachedMilestones(row.points, this.milestones());
+  }
 
   constructor() {
     effect(() => {

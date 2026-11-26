@@ -1046,37 +1046,60 @@ class ScoreAssistView(APIView):
         data = serializer.validated_data
         try:
             if data["kind"] == "criterion":
+                from apps.competitions.milestones import milestone_payloads, snapshot_before
+
+                participant = data["participant"]
+                before = snapshot_before(competition, [participant.id])
                 event = award_criterion(
                     competition=competition,
-                    participant=data["participant"],
+                    participant=participant,
                     category=data["scoring_category"],
                     quantity=data["quantity"],
                     note=data["note"].strip(),
                     user=request.user,
                 )
                 self._publish_table(competition)
+                milestones = milestone_payloads(
+                    competition=competition,
+                    before=before,
+                    participants={str(participant.id): participant},
+                )
                 return Response(
                     {
                         "id": str(event.id),
                         "awarded": str(event.points),
                         "note": event.note,
+                        "milestones": milestones,
                     },
                     status=status.HTTP_201_CREATED,
                 )
             if data["kind"] == "criterion_round":
+                from apps.competitions.milestones import milestone_payloads, snapshot_before
+
+                entries = data["entries"]
+                participants = {
+                    str(row["participant"].id): row["participant"] for row in entries
+                }
+                before = snapshot_before(competition, participants.keys())
                 result = award_criterion_round(
                     competition=competition,
                     category=data["scoring_category"],
-                    entries=data["entries"],
+                    entries=entries,
                     note=data["note"].strip(),
                     user=request.user,
                 )
                 self._publish_table(competition)
+                milestones = milestone_payloads(
+                    competition=competition,
+                    before=before,
+                    participants=participants,
+                )
                 return Response(
                     {
                         "count": result["count"],
                         "awarded": str(result["awarded"]),
                         "note": data["note"].strip(),
+                        "milestones": milestones,
                     },
                     status=status.HTTP_201_CREATED,
                 )
