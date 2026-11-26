@@ -1,0 +1,12 @@
+{
+	admin off
+}
+
+:{$PORT:10000} {
+	handle /healthz {
+		respond "ok" 200
+	}
+	handle {
+		redir https://fair-measure.com{uri} 301
+	}
+}
