@@ -15,6 +15,7 @@ import { AlertController, IonButton, IonButtons, IonContent, IonHeader, IonIcon,
 
 import { forkJoin, of } from 'rxjs';
 
+import { AdBreakGate, competitionAdCreative } from '../../core/ad-break';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { ReleasesService } from '../../core/releases.service';
@@ -28,6 +29,7 @@ import { CompetitionFantasyComponent } from './tabs/competition-fantasy.componen
 import { CompetitionFeedComponent } from './tabs/competition-feed.component';
 import { CompetitionFixturesComponent } from './tabs/competition-fixtures.component';
 import { CompetitionStandingsComponent } from './tabs/competition-standings.component';
+import { AdBreakComponent } from '../../shared/ad-break.component';
 import { CommercialNoteComponent } from '../../shared/commercial-note.component';
 import { LiveStripComponent } from '../../shared/live-strip.component';
 import { MatchCentreComponent } from './match-centre.component';
@@ -57,12 +59,13 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
     CompetitionCupComponent,
     CompetitionStandingsComponent,
     CompetitionFantasyComponent,
+    AdBreakComponent,
     CommercialNoteComponent,
     LiveStripComponent,
     MatchCentreComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <ion-header>
+    <ion-header [attr.inert]="adOpenings().length ? '' : null">
       <ion-toolbar>
         <ion-buttons slot="start">
           <ion-back-button [defaultHref]="(auth.isAuthenticated() ? '/tabs/competitions' : '/') | backHref" />
@@ -139,7 +142,7 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
       }
     </ion-header>
 
-    <ion-content fullscreen="true">
+    <ion-content fullscreen="true" [attr.inert]="adOpenings().length ? '' : null">
       @if (loading()) {
         <div class="centered"><ion-spinner name="crescent" /></div>
       } @else if (error()) {
@@ -328,6 +331,9 @@ type Tab = 'feed' | 'fixtures' | 'cup' | 'standings' | 'fantasy';
         }
       }
     </ion-content>
+    @for (opening of adOpenings(); track opening) {
+      <fm-ad-break [creative]="adCreative" (finished)="finishAdBreak()" />
+    }
   `,
   styles: [
     `
@@ -599,9 +605,14 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   readonly realtime = inject(RealtimeService);
 
   private competitionId = '';
+  private focusTimer = 0;
 
   private readonly standings = viewChild(CompetitionStandingsComponent);
+  private readonly adGate = new AdBreakGate();
 
+  readonly adCreative = competitionAdCreative();
+  /** One entry while the pre-roll for this opening is on screen. The id changes on each open. */
+  readonly adOpenings = signal<readonly number[]>([]);
   readonly competition = signal<CompetitionDetail | null>(null);
   readonly myPicks = signal<TeamPick[]>([]);
   readonly infoOpen = signal(false);
@@ -614,6 +625,7 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   readonly hasLiveMatch = computed(() => (this.competition()?.live_count ?? 0) > 0);
 
   ngOnInit(): void {
+    this.adGate.start();
     this.competitionId = this.route.snapshot.paramMap.get('id') ?? '';
     const requestedTab = this.route.snapshot.queryParamMap.get('tab');
     if (
@@ -647,11 +659,19 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
   }
 
   ionViewWillEnter(): void {
+    this.adGate.enter();
+    this.publishAd();
     this.standings()?.load(false);
     if (this.competitionId) this.load(false);
   }
 
+  ionViewWillLeave(): void {
+    this.adGate.leave();
+    this.syncAdOpenings();
+  }
+
   ngOnDestroy(): void {
+    window.clearTimeout(this.focusTimer);
     if (this.competitionId) {
       this.realtime.unsubscribe(competitionRoom(this.competitionId));
     }
@@ -669,7 +689,8 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
     }).subscribe({
       next: ({ competition, picks }) => {
         this.competition.set(competition);
-        this.guide.offerFor(competition);
+        this.publishAd();
+        this.maybeOfferGuide();
         this.myPicks.set(picks);
         if (isPointsTable(competition) && this.tab() === 'fixtures') {
           this.selectTab('standings');
@@ -975,6 +996,37 @@ export class CompetitionDetailPage implements OnInit, OnDestroy {
         );
       },
     });
+  }
+
+  finishAdBreak(): void {
+    this.adGate.complete();
+    this.syncAdOpenings();
+    this.maybeOfferGuide();
+    window.clearTimeout(this.focusTimer);
+    this.focusTimer = window.setTimeout(() => this.focusAfterAd(), 0);
+  }
+
+  /** Public competitions play the pre-roll. A refresh of the same opening does not restart it. */
+  private publishAd(): void {
+    const competition = this.competition();
+    if (competition) this.adGate.consider(!competition.is_private);
+    this.syncAdOpenings();
+  }
+
+  private syncAdOpenings(): void {
+    this.adOpenings.set(this.adGate.show ? [this.adGate.opening] : []);
+  }
+
+  /** The demo tour waits until the pre-roll has finished, so it does not talk over the ad. */
+  private maybeOfferGuide(): void {
+    if (this.adOpenings().length > 0) return;
+    const competition = this.competition();
+    if (competition) this.guide.offerFor(competition);
+  }
+
+  private focusAfterAd(): void {
+    if (this.adOpenings().length > 0) return;
+    (document.querySelector('fm-competition-detail ion-back-button') as HTMLElement | null)?.focus();
   }
 
   goLogin(): void {
